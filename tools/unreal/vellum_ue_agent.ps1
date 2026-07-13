@@ -54,6 +54,9 @@ function Invoke-CaptureJob {
   $contentRoot = if ($payload.content_root) { [string]$payload.content_root } else { "/Game/FireworksV1" }
   $engineVersion = if ($payload.engine_version) { [string]$payload.engine_version } else { "5.8" }
   $intakeRunId = [string]$Job.intake_run_id
+  $maxSystems = if ($payload.max_systems) { [int]$payload.max_systems } else { 3 }
+  $width = if ($payload.width) { [int]$payload.width } else { 1920 }
+  $height = if ($payload.height) { [int]$payload.height } else { 1080 }
 
   Write-Host "Running capture for $assetId ($($Job.job_id))"
   & $Runner `
@@ -64,7 +67,10 @@ function Invoke-CaptureJob {
     -Lane $lane `
     -EngineVersion $engineVersion `
     -IntakeRunId $intakeRunId `
-    -UeCmd (Find-UeCmd -Hint $UeCmd)
+    -UeCmd (Find-UeCmd -Hint $UeCmd) `
+    -MaxSystems $maxSystems `
+    -Width $width `
+    -Height $height
 
   $outDir = Join-Path (Split-Path $uproject -Parent) "Saved\VellumCapture"
   $manifestPath = Join-Path $outDir "manifest.json"
@@ -102,9 +108,12 @@ Write-Host "Vellum UE agent polling $VellumBase every ${PollSeconds}s"
 Write-Host "UI trigger: asset detail → Capture from Unreal"
 Write-Host "Agent scripts: $Runner"
 Write-Host "Repo root: $RepoRoot"
-# Fingerprint so we can tell if Windows is still on an old pull.
-$runnerHead = (Get-Content $Runner -TotalCount 8 | Select-Object -Last 1)
-Write-Host "Runner fingerprint: $runnerHead"
+Write-Host "Agent fingerprint: game-mode-capture-map (2026-07-13)"
+# Fingerprint so we can tell if Windows is still on an old pull. Search the
+# whole file instead of a fixed line number so this survives runner edits.
+$runnerVersionLine = (Get-Content $Runner | Where-Object { $_ -match "Runner version:" } | Select-Object -First 1)
+if (-not $runnerVersionLine) { $runnerVersionLine = "(no 'Runner version:' line found — old pull?)" }
+Write-Host "Runner fingerprint: $($runnerVersionLine.Trim())"
 
 while ($true) {
   try {
