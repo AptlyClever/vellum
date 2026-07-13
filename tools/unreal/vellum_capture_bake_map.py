@@ -11,18 +11,8 @@
 # Epic's own Python API docs and forum threads). So instead of a BeginPlay
 # graph that reads job.json at runtime, THIS script reads job.json and bakes
 # its content directly into the level while we still have full Editor Python
-# access. What ends up in the map needs zero custom code to "run" under
-# `-game`:
-#   - NiagaraComponent.auto_activate = True -> system starts simulating on
-#     BeginPlay natively (this is how every Niagara component behaves; no
-#     script required).
-#   - CameraActor.auto_activate_for_player = PLAYER0 -> the engine calls
-#     PlayerController.SetViewTarget(this) on BeginPlay natively (this is the
-#     literal purpose of that property; also no script required).
-# The runner then launches `-game` on this map with
-# `-ExecCmds="HighResShot ...,quit"` (tools/unreal/run_vellum_capture.ps1) to
-# get an actual rendered frame — something UnrealEditor-Cmd's editor world
-# never has under -unattended.
+# access. Niagara auto_activate + SceneCapture stills happen here in-editor.
+# `-game` HighResShot was abandoned (blank window, zero PNGs).
 #
 # Config (Saved/VellumCapture/job.json, staged alongside this script):
 #   {
@@ -30,10 +20,11 @@
 #     "map_path": "/Game/Vellum/Maps/VellumNiagaraCapture",
 #     "system_object_path": "/Game/FireworksV1/....NS_Foo",
 #     "system_name": "NS_Foo",
-#     "width": 1920, "height": 1080
+#     "width": 1920, "height": 1080,
+#     "still_path": "C:/epic/.../Saved/VellumCapture/stills/....png"  # optional
 #   }
 #
-# Writes Saved/VellumCapture/bake-result.json with ok/errors.
+# Writes Saved/VellumCapture/bake-result.json with ok/errors/still_path.
 
 from __future__ import annotations
 
@@ -223,6 +214,181 @@ def _camera_pose_for_actor(unreal_mod, actor, upward_bias: float = 0.45):
     return cam, rot
 
 
+def _activate_niagara(unreal_mod, comp, notes: list[str]) -> None:
+    if comp is None:
+        return
+    for prop, val in (("auto_activate", True), ("AutoActivate", True)):
+        try:
+            comp.set_editor_property(prop, val)
+            break
+        except Exception:  # noqa: BLE001
+            continue
+    try:
+        comp.activate(True)
+        notes.append("niagara_activate")
+    except Exception as exc:  # noqa: BLE001
+        notes.append(f"niagara_activate_failed:{exc}")
+    for meth in ("reinitialize_system", "ReinitializeSystem", "reset_system", "ResetSystem"):
+        if hasattr(comp, meth):
+            try:
+                getattr(comp, meth)()
+                notes.append(f"niagara_{meth}")
+                break
+            except Exception:  # noqa: BLE001
+                continue
+    # Advance simulation so particles exist without PIE / -game.
+    for meth, args in (
+        ("advance_simulation_by_time", (2.0, 1.0 / 60.0)),
+        ("AdvanceSimulationByTime", (2.0, 1.0 / 60.0)),
+    ):
+        if hasattr(comp, meth):
+            try:
+                getattr(comp, meth)(*args)
+                notes.append(f"niagara_{meth}")
+                break
+            except Exception as exc:  # noqa: BLE001
+                notes.append(f"niagara_{meth}_failed:{exc}")
+
+
+def _capture_still(
+    unreal_mod,
+    actor_sub,
+    world,
+    cam_loc,
+    cam_rot,
+    width: int,
+    height: int,
+    still_path: Path,
+    notes: list[str],
+    errors: list[str],
+) -> bool:
+    """Render via SceneCapture2D and write a PNG. Returns True on non-empty file."""
+    still_path.parent.mkdir(parents=True, exist_ok=True)
+    if still_path.is_file():
+        try:
+            still_path.unlink()
+        except Exception:  # noqa: BLE001
+            pass
+
+    rt = None
+    capture_actor = None
+    try:
+        rt = unreal_mod.RenderingLibrary.create_render_target2d(
+            world, int(width), int(height), unreal_mod.TextureRenderTargetFormat.RTF_RGBA8
+        )
+        if rt is None:
+            errors.append("create_render_target_failed")
+            return False
+        notes.append(f"rt_{width}x{height}")
+
+        capture_actor = actor_sub.spawn_actor_from_class(
+            unreal_mod.SceneCapture2D, cam_loc, cam_rot, True
+        )
+        if capture_actor is None:
+            errors.append("spawn_scene_capture_failed")
+            return False
+        try:
+            capture_actor.set_actor_label(f"{ACTOR_LABEL_PREFIX}SceneCapture")
+        except Exception:  # noqa: BLE001
+            pass
+
+        comp = None
+        try:
+            comp = capture_actor.get_capture_component2d()
+        except Exception:  # noqa: BLE001
+            comp = None
+        if comp is None:
+            try:
+                comp = capture_actor.get_component_by_class(unreal_mod.SceneCaptureComponent2D)
+            except Exception:  # noqa: BLE001
+                comp = None
+        if comp is None:
+            errors.append("no_scene_capture_component")
+            return False
+
+        try:
+            comp.set_editor_property("texture_target", rt)
+        except Exception:
+            try:
+                comp.texture_target = rt
+            except Exception as exc:  # noqa: BLE001
+                errors.append(f"set_texture_target_failed:{exc}")
+                return False
+
+        for prop, val in (
+            ("capture_every_frame", False),
+            ("b_capture_every_frame", False),
+            ("always_persist_rendering_state", True),
+            ("b_always_persist_rendering_state", True),
+        ):
+            try:
+                comp.set_editor_property(prop, val)
+            except Exception:  # noqa: BLE001
+                pass
+        try:
+            comp.set_editor_property(
+                "capture_source", unreal_mod.SceneCaptureSource.SCS_FINAL_COLOR_LDR
+            )
+            notes.append("capture_source_final_color_ldr")
+        except Exception as exc:  # noqa: BLE001
+            notes.append(f"capture_source_failed:{exc}")
+
+        # Warm + capture twice (first frame often black before RT settles).
+        for i in range(2):
+            try:
+                comp.capture_scene()
+                notes.append(f"capture_scene_{i}")
+            except Exception as exc:  # noqa: BLE001
+                errors.append(f"capture_scene_failed:{exc}")
+                return False
+            try:
+                unreal_mod.SystemLibrary.execute_console_command(
+                    world, "r.FlushRenderingCommands 1"
+                )
+            except Exception:  # noqa: BLE001
+                pass
+
+        export_dir = str(still_path.parent).replace("\\", "/")
+        export_name = still_path.name
+        # export_render_target writes <directory>/<filename>
+        try:
+            unreal_mod.RenderingLibrary.export_render_target(world, rt, export_dir, export_name)
+            notes.append(f"export_render_target:{export_dir}/{export_name}")
+        except Exception as exc:  # noqa: BLE001
+            errors.append(f"export_render_target_failed:{exc}")
+            return False
+
+        # UE sometimes appends nothing; confirm bytes on disk.
+        if not still_path.is_file():
+            # Some versions write without expecting extension handling — probe.
+            alt = still_path.with_suffix("")
+            candidates = list(still_path.parent.glob(still_path.stem + ".*"))
+            if candidates:
+                candidates[0].replace(still_path)
+                notes.append(f"renamed_export:{candidates[0].name}")
+            elif alt.is_file():
+                alt.replace(still_path)
+            else:
+                errors.append(f"export_missing_file:{still_path}")
+                return False
+
+        size = still_path.stat().st_size
+        notes.append(f"still_bytes:{size}")
+        if size < 64:
+            errors.append(f"still_too_small:{size}")
+            return False
+        return True
+    except Exception as exc:  # noqa: BLE001
+        errors.append(f"capture_still_failed:{exc}")
+        return False
+    finally:
+        if capture_actor is not None and actor_sub is not None:
+            try:
+                actor_sub.destroy_actor(capture_actor)
+            except Exception:  # noqa: BLE001
+                pass
+
+
 def _stage_lighting(unreal_mod, actor_sub, notes: list[str]) -> None:
     try:
         light = actor_sub.spawn_actor_from_class(
@@ -267,6 +433,7 @@ def main() -> None:
     baked_system = ""
     baked_object_path = ""
     map_path = "/Game/Vellum/Maps/VellumNiagaraCapture"
+    still_path_out = ""
 
     try:
         if not job_path.is_file():
@@ -276,6 +443,9 @@ def main() -> None:
         system_object_path = str(job.get("system_object_path") or "")
         baked_system = str(job.get("system_name") or "")
         baked_object_path = system_object_path
+        width = int(job.get("width") or 1920)
+        height = int(job.get("height") or 1080)
+        still_override = str(job.get("still_path") or "").strip()
         if not system_object_path:
             raise ValueError("job.json missing system_object_path")
 
@@ -307,6 +477,8 @@ def main() -> None:
         if niagara_actor is None:
             raise RuntimeError("spawn_niagara_failed")
 
+        _activate_niagara(unreal, _get_niagara_component(unreal, niagara_actor), notes)
+
         cam_loc, cam_rot = _camera_pose_for_actor(unreal, niagara_actor)
         camera = actor_sub.spawn_actor_from_class(unreal.CameraActor, cam_loc, cam_rot, True)
         if camera is None:
@@ -319,6 +491,33 @@ def main() -> None:
             errors.append(f"camera_auto_activate_failed:{exc}")
 
         world = _editor_world(unreal)
+        if world is None:
+            raise RuntimeError("no_editor_world")
+
+        if still_override:
+            still_path = Path(still_override)
+        else:
+            safe = "".join(c if c.isalnum() or c in "-_" else "_" for c in baked_system) or "system"
+            still_path = job_path.parent / "stills" / f"{job.get('asset_id') or 'asset'}-{safe}.png"
+
+        captured = _capture_still(
+            unreal,
+            actor_sub,
+            world,
+            cam_loc,
+            cam_rot,
+            width,
+            height,
+            still_path,
+            notes,
+            errors,
+        )
+        if captured:
+            still_path_out = str(still_path).replace("\\", "/")
+            notes.append(f"still_ok:{still_path_out}")
+        else:
+            raise RuntimeError("scene_capture_still_failed")
+
         saved = False
         try:
             saved = bool(unreal.EditorLoadingAndSavingUtils.save_map(world, map_path))
@@ -331,10 +530,12 @@ def main() -> None:
             except Exception as exc:  # noqa: BLE001
                 errors.append(f"save_failed:{exc}")
         if not saved:
-            raise RuntimeError("map_save_failed")
+            notes.append("map_save_skipped_or_failed")
 
         ok = True
-        unreal.log(f"Vellum bake-map saved {map_path} system={baked_system} notes={','.join(notes)}")
+        unreal.log(
+            f"Vellum bake-map still={still_path_out} system={baked_system} notes={','.join(notes)}"
+        )
     except Exception as exc:  # noqa: BLE001
         errors.append(str(exc))
         errors.append(traceback.format_exc()[-1200:])
@@ -351,6 +552,7 @@ def main() -> None:
             "map_path": map_path,
             "system_name": baked_system,
             "system_object_path": baked_object_path,
+            "still_path": still_path_out,
             "notes": notes,
             "errors": errors,
             "ok": ok,

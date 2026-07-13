@@ -4,32 +4,10 @@
   Unsupervised Fireworks scratch inspect + still capture -> Vellum.
 
 .DESCRIPTION
-  Two Unreal phases, because UnrealEditor-Cmd has no live viewport under
-  -unattended (HighResShot / editor SceneCapture2D both returned empty PNGs —
-  see docs/scratch-inspect-niagara.md):
-
-  Phase A (editor, -ExecutePythonScript):
-    tools/unreal/vellum_capture.py — inventory only. Lists Niagara systems
-    under -ContentRoot, picks up to -MaxSystems, writes manifest-inventory.json.
-
-  Phase B, once per picked system (editor bake + real -game shot):
-    1) tools/unreal/vellum_capture_bake_map.py (editor, -ExecutePythonScript)
-       bakes that ONE system + a light + an auto-activating camera into
-       /Game/Vellum/Maps/VellumNiagaraCapture (property-driven; no Blueprint
-       graph, no GameMode code — see the script's header comment for why).
-    2) UnrealEditor-Cmd.exe <uproject> <map> -game -windowed -ResX -ResY
-       -unattended -ExecCmds="HighResShot <res>,quit" — a real game-mode
-       render loop actually produces a PNG under Saved/Screenshots/.
-
-  Manifests are merged into Saved/VellumCapture/manifest.json (same shape
-  vellum_ue_agent.ps1 already reads), PNGs are ingested via
-  /api/lookdev/ingest-render, and a scratch/record note is posted.
-
-  One-time setup on the Windows box:
-  - Enable Python Editor Script Plugin in the VellumImport project
-  - Set VELLUM_UE_CMD if UnrealEditor-Cmd is not under a default path
-  - No manual map/Blueprint authoring needed — the bake script creates/
-    overwrites the capture map on every run.
+  Phase A (editor Cmd): inventory Niagara systems.
+  Phase B (editor Cmd): bake one system into a capture map and write a PNG via
+  SceneCapture2D + export_render_target. The old `-game` HighResShot path is
+  gone — on this workstation the game window stayed blank and wrote zero PNGs.
 
 .EXAMPLE
   pwsh -File tools/unreal/run_vellum_capture.ps1
@@ -247,7 +225,7 @@ Write-Host "UE (editor/inventory): $Ue"
 Write-Host "UE (game stills): $UeGame"
 Write-Host "Project: $ProjectUe"
 Write-Host "MaxSystems=$MaxSystems Width=$Width Height=$Height MapPath=$MapPath"
-Write-Host "Runner version: game-mode-wait-png (2026-07-13)"
+Write-Host "Runner version: editor-scenecapture (2026-07-13)"
 if ($JobId) { Write-Host "JobId=$JobId (progress -> $VellumBase/api/jobs/$JobId/progress)" }
 
 $allErrors = New-Object System.Collections.ArrayList
@@ -303,13 +281,16 @@ if ($pickedSystems.Count -eq 0) {
 }
 
 # ---------------------------------------------------------------------------
-# Phase B: bake + `-game` shot, once per picked system.
+# Phase B: bake map + SceneCapture still in editor (no -game HighResShot).
+# Game-mode window stayed blank on this box; HighResShot wrote zero PNGs.
 # ---------------------------------------------------------------------------
 $slotIndex = 0
 foreach ($sys in $pickedSystems) {
   $systemName = [string]$sys.asset_name
   $objectPath = [string]$sys.object_path
-  Write-Host "Phase B [$slotIndex] baking $objectPath"
+  $safeHint = Safe-Name $systemName
+  $stillDest = Join-Path $StillsDir "$AssetId-$safeHint.png"
+  Write-Host "Phase B [$slotIndex] bake+SceneCapture $objectPath"
 
   $job = @{
     asset_id            = $AssetId
@@ -319,6 +300,7 @@ foreach ($sys in $pickedSystems) {
     slot_index          = $slotIndex
     width               = $Width
     height              = $Height
+    still_path          = (ConvertTo-UePath $stillDest)
   }
   $JobPath = Join-Path $OutDir "job.json"
   ($job | ConvertTo-Json) | Set-Content -Path $JobPath -Encoding utf8
@@ -330,11 +312,13 @@ foreach ($sys in $pickedSystems) {
   if (Test-Path $BakeLog) { Remove-Item -Force $BakeLog }
   $BakeExecFlag = "-ExecutePythonScript=" + (ConvertTo-UePath $StagedBakePy)
 
+  # SceneCapture is offscreen — Cmd -unattended is fine and avoids GUI
+  # stdout-redirect hangs with UnrealEditor.exe.
   $bakeExit = 0
   try {
     $bakeExit = Invoke-UeLogged -Exe $Ue -ArgumentList @(
         $ProjectUe, "-stdout", "-FullStdOutLogOutput", "-unattended", "-nop4", $BakeExecFlag
-      ) -LogPath $BakeLog -Phase "Phase B[$slotIndex] bake $systemName"
+      ) -LogPath $BakeLog -Phase "Phase B[$slotIndex] bake+capture $systemName"
   } catch {
     $bakeExit = 1
     $_ | Out-File -FilePath $BakeLog -Append
@@ -343,171 +327,52 @@ foreach ($sys in $pickedSystems) {
 
   $BakeResultPath = Join-Path $OutDir "bake-result.json"
   $bakeOk = $false
+  $bakeStill = ""
+  $bakeNotes = @()
   if (Test-Path $BakeResultPath) {
     $bakeResult = Get-Content $BakeResultPath -Raw | ConvertFrom-Json
     $bakeOk = [bool]$bakeResult.ok
+    $bakeStill = [string]($bakeResult.still_path)
+    if ($bakeResult.notes) { $bakeNotes = @($bakeResult.notes) }
     if ($bakeResult.errors) { foreach ($e in @($bakeResult.errors)) { [void]$allErrors.Add("bake:$systemName`:$e") } }
   } else {
     $logTail = Get-LogPythonSnippet (Get-Content $BakeLog -Raw -ErrorAction SilentlyContinue)
     [void]$allErrors.Add("bake_no_result:$systemName`:exit=$bakeExit`:$logTail")
   }
 
-  if (-not $bakeOk) {
-    Write-Host "Phase B [$slotIndex] bake failed for $systemName, skipping shot"
-    Send-VellumProgress -Message "Phase B[$slotIndex] bake FAILED $systemName" -LogPath $BakeLog
-    $slotIndex++
-    continue
+  $stillFile = $null
+  if ($bakeStill -and (Test-Path $bakeStill)) {
+    $stillFile = Get-Item -Path $bakeStill
+  } elseif (Test-Path $stillDest) {
+    $stillFile = Get-Item -Path $stillDest
   }
 
-  # Game stills: GUI UnrealEditor.exe (not Cmd), NO -unattended (that flag
-  # often skips presenting a viewport so HighResShot never writes a file).
-  # Do NOT put quit in the same ExecCmds as HighResShot (async flush race).
-  $shotStart = Get-Date
-  $GameLog = Join-Path $OutDir "ue-game-$slotIndex.log"
-  if (Test-Path $GameLog) { Remove-Item -Force $GameLog }
-
-  $safeHint = Safe-Name $systemName
-  $stillLeaf = "VellumCapture/stills/$AssetId-$safeHint"
-  # Fire HighResShot after a short console delay via multiple commands is
-  # unreliable; WarmupTime on the component covers particle readiness.
-  # Also issue plain `Shot` as a second chance (writes under Screenshots/).
-  $ExecCmds = "r.MotionBlurQuality 0,HighResShot ${Width}x${Height} filename=$stillLeaf,Shot"
-
-  $gameArgs = @(
-    $ProjectUe,
-    $MapPath,
-    "-game",
-    "-windowed",
-    "-ResX=$Width",
-    "-ResY=$Height",
-    "-nosplash",
-    "-nop4",
-    "-nosound",
-    "-ExecCmds=$ExecCmds"
-  )
-  Write-Host "Phase B [$slotIndex] GAME still via $UeGame (windowed, no -unattended)"
-  Send-VellumProgress -Message "Phase B[$slotIndex] GAME still starting $systemName"
-
-  $gameProc = $null
-  $gameExit = 0
-  # Early-exit ONLY when a PNG appears. Do NOT key off "HighResShot" in the log —
-  # that string is echoed in the command line within seconds and caused a false
-  # "ready" kill during plugin load (job-20260713-060633).
-  $maxWaitSeconds = if ($env:VELLUM_GAME_WAIT) { [int]$env:VELLUM_GAME_WAIT } else { 120 }
-  $sentBackupShot = $false
-  try {
-    $gameProc = Start-Process -FilePath $UeGame -ArgumentList $gameArgs -PassThru -WindowStyle Normal
-    $waited = 0
-    $engineLogs = Join-Path $ProjectDir "Saved\Logs"
-    while (-not $gameProc.HasExited -and $waited -lt $maxWaitSeconds) {
-      Start-Sleep -Seconds 5
-      $waited += 5
-      if (Test-Path $engineLogs) {
-        $newestLog = Get-ChildItem $engineLogs -Filter "*.log" |
-          Sort-Object LastWriteTime -Descending |
-          Select-Object -First 1
-        if ($newestLog) { Copy-Item -Force $newestLog.FullName $GameLog }
-      }
-      $early = Find-RecentImages -Roots @(
-          $StillsDir,
-          (Join-Path $ProjectDir "Saved\Screenshots"),
-          (Join-Path $ProjectDir "Saved\VellumCapture")
-        ) -Since $shotStart -NameHint $safeHint
-      if ($early -and $early.Count -gt 0) {
-        Send-VellumProgress -Message "Phase B[$slotIndex] GAME PNG appeared at ${waited}s" -LogPath $GameLog
-        Start-Sleep -Seconds 2
-        break
-      }
-      # After the editor is likely past initial load, poke the console once.
-      # Startup -ExecCmds HighResShot often races before a presentable viewport.
-      if (-not $sentBackupShot -and $waited -ge 45) {
-        $mapReady = $false
-        if (Test-Path $GameLog) {
-          $mapReady = $null -ne (
-            Select-String -Path $GameLog -Pattern "Bringing up level for play|Bringing World .+ up for play|LogLoad: Took " -ErrorAction SilentlyContinue |
-              Select-Object -First 1
-          )
-        }
-        if ($mapReady -or $waited -ge 60) {
-          $sentBackupShot = $true
-          try {
-            Add-Type -AssemblyName System.Windows.Forms -ErrorAction SilentlyContinue
-            $shell = New-Object -ComObject WScript.Shell
-            $activated = $shell.AppActivate($gameProc.Id)
-            Start-Sleep -Milliseconds 400
-            # Open console (~) and fire HighResShot + Shot, then close.
-            [System.Windows.Forms.SendKeys]::SendWait('~~')
-            Start-Sleep -Milliseconds 200
-            [System.Windows.Forms.SendKeys]::SendWait("HighResShot ${Width}x${Height} filename=$stillLeaf{ENTER}")
-            Start-Sleep -Milliseconds 300
-            [System.Windows.Forms.SendKeys]::SendWait("Shot{ENTER}")
-            Send-VellumProgress -Message "Phase B[$slotIndex] GAME backup console shot sent (activate=$activated)" -LogPath $GameLog
-          } catch {
-            Send-VellumProgress -Message "Phase B[$slotIndex] GAME backup shot failed: $_"
-          }
-        }
-      }
-      Send-VellumProgress -Message "Phase B[$slotIndex] GAME wait ${waited}/${maxWaitSeconds}s (png=0 backup=$sentBackupShot)" -LogPath $GameLog
-    }
-    if (-not $gameProc.HasExited) {
-      Write-Host "Phase B [$slotIndex] stopping UE after ${waited}s"
-      try { Stop-Process -Id $gameProc.Id -Force -ErrorAction SilentlyContinue } catch { }
-      try { $gameProc.WaitForExit(20000) | Out-Null } catch { }
-    }
-    try { $gameExit = $gameProc.ExitCode } catch { $gameExit = 0 }
-    if ($null -eq $gameExit) { $gameExit = 0 }
-    if (Test-Path $engineLogs) {
-      $newestLog = Get-ChildItem $engineLogs -Filter "*.log" |
-        Sort-Object LastWriteTime -Descending |
-        Select-Object -First 1
-      if ($newestLog) { Copy-Item -Force $newestLog.FullName $GameLog }
-    }
-  } catch {
-    $gameExit = 1
-    $_ | Out-File -FilePath $GameLog -Append
-  }
-  Write-Host "Phase B [$slotIndex] -game exit code: $gameExit"
-  Send-VellumProgress -Message "Phase B[$slotIndex] GAME exited code=$gameExit" -LogPath $GameLog
-
-  $searchRoots = @(
-    $StillsDir,
-    (Join-Path $ProjectDir "Saved\VellumCapture\stills"),
-    (Join-Path $ProjectDir "Saved\Screenshots"),
-    (Join-Path $ProjectDir "Saved")
-  )
-  $recent = Find-RecentImages -Roots $searchRoots -Since $shotStart -NameHint $safeHint
-  $newPng = $recent | Select-Object -First 1
-
-  if (-not $newPng) {
-    $tree = Get-SavedTreeSnippet -SavedRoot (Join-Path $ProjectDir "Saved")
-    $shotLog = Get-LogShotSnippet -LogPath $GameLog
-    [void]$allErrors.Add("no_png:$systemName`:exit=$gameExit")
-    [void]$allErrors.Add("saved_images:`n$tree")
-    [void]$allErrors.Add("shot_log:`n$shotLog")
-    Write-Host "Phase B [$slotIndex] FAIL: no PNG after game still. Recent Saved/ images:"
-    Write-Host $tree
-    Write-Host "---- shot log snippet ----"
-    Write-Host $shotLog
-    Send-VellumProgress -Message "FAIL no_png $systemName" -LogPath $GameLog
+  if (-not $bakeOk -or -not $stillFile -or $stillFile.Length -lt 64) {
+    Write-Host "Phase B [$slotIndex] FAIL bake/capture $systemName exit=$bakeExit notes=$($bakeNotes -join ',')"
+    Send-VellumProgress -Message "FAIL bake/capture $systemName" -LogPath $BakeLog
     Write-Host "Failing fast — not baking remaining systems until one still works."
+    if (-not $bakeOk) { [void]$allErrors.Add("bake_failed:$systemName`:exit=$bakeExit") }
+    if (-not $stillFile) { [void]$allErrors.Add("no_still_file:$systemName") }
+    elseif ($stillFile.Length -lt 64) { [void]$allErrors.Add("still_too_small:$systemName`:$($stillFile.Length)") }
     break
   }
 
   $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
   $dest = Join-Path $StillsDir "$AssetId-$safeHint-$stamp.png"
-  if ($newPng.FullName -ne $dest) {
-    Copy-Item -Force -Path $newPng.FullName -Destination $dest
+  if ($stillFile.FullName -ne $dest) {
+    Copy-Item -Force -Path $stillFile.FullName -Destination $dest
   }
   [void]$stills.Add(@{
       path        = $dest
       kind        = "niagara-render"
       system      = $systemName
       object_path = $objectPath
-      method      = "game-mode-gui-highresshot"
-      source      = $newPng.FullName
+      method      = "editor-scenecapture-export"
+      source      = $stillFile.FullName
+      bytes       = $stillFile.Length
     })
-  Write-Host "Phase B [$slotIndex] captured still $dest (from $($newPng.FullName))"
-  Send-VellumProgress -Message "Captured still $systemName -> $dest"
+  Write-Host "Phase B [$slotIndex] captured still $dest ($($stillFile.Length) bytes)"
+  Send-VellumProgress -Message "Captured still $systemName ($($stillFile.Length) bytes) -> $dest"
 
   $slotIndex++
 }
@@ -519,7 +384,7 @@ $Manifest = Join-Path $OutDir "manifest.json"
 $man = @{
   schema_version        = 1
   tool                  = "vellum_capture"
-  mode                  = "game-mode-capture-map"
+  mode                  = "editor-scenecapture"
   asset_id              = $AssetId
   content_root          = $ContentRoot
   niagara_systems_found = [int]$inv.niagara_systems_found
@@ -532,7 +397,7 @@ $man = @{
 ($man | ConvertTo-Json -Depth 8) | Set-Content -Path $Manifest -Encoding utf8
 
 $errJoin = (@($allErrors) -join "; ")
-$notes = "auto-capture(game-mode) systems=$($inv.niagara_systems_found) stills=$($stills.Count) errors=$errJoin"
+$notes = "auto-capture(scenecapture) systems=$($inv.niagara_systems_found) stills=$($stills.Count) errors=$errJoin"
 Write-Host "Manifest mode=$($man.mode) stills=$($stills.Count) ok=$($man.ok)"
 if ($errJoin) { Write-Host "Manifest errors: $errJoin" }
 Send-VellumProgress -Message "Done stills=$($stills.Count) ok=$($man.ok)"
