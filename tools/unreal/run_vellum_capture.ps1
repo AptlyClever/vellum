@@ -278,7 +278,9 @@ function Ingest-CapturedSystem {
 function Get-LookdevOutputs {
   param([string]$VellumBase, [string]$AssetId)
   try {
-    $r = Invoke-RestMethod -Method Get -Uri "$VellumBase/api/lookdev/outputs?asset_id=$AssetId" -TimeoutSec 45
+    # Pull enough rows to cover a full pack (API default 50 is too small).
+    $r = Invoke-RestMethod -Method Get `
+      -Uri "$VellumBase/api/lookdev/outputs?asset_id=$AssetId&limit=200" -TimeoutSec 45
     if ($r.outputs) { return @($r.outputs) }
   } catch {
     Write-Host "WARNING: lookdev outputs fetch failed: $($_.Exception.Message)"
@@ -286,43 +288,43 @@ function Get-LookdevOutputs {
   return @()
 }
 
-function Test-VaultHasSystemLookdev {
+function Get-VaultCoveredSystemSet {
+  # Fast set of system names that already have niagara-render on every required lane.
   param(
     [object[]]$Outputs,
-    [string]$SystemName,
     [string[]]$Lanes
   )
-  foreach ($laneName in $Lanes) {
-    $hits = @($Outputs | Where-Object {
-        $_.kind -eq "niagara-render" -and
-        [string]$_.lane -eq $laneName -and (
-          ([string]$_.path -like "*$SystemName*") -or
-          ([string]$_.note -like "*$SystemName*")
-        )
-      })
-    if ($hits.Count -eq 0) { return $false }
+  $bySystem = @{}
+  foreach ($o in @($Outputs)) {
+    if ([string]$o.kind -ne "niagara-render") { continue }
+    $lane = [string]$o.lane
+    if ($Lanes -notcontains $lane) { continue }
+    $blob = ("{0} {1} {2}" -f [string]$o.path, [string]$o.note, [string]$o.system_name)
+    $names = [regex]::Matches($blob, 'NS_[A-Za-z0-9_]+') | ForEach-Object { $_.Value }
+    foreach ($name in $names) {
+      if (-not $bySystem.ContainsKey($name)) {
+        $bySystem[$name] = New-Object 'System.Collections.Generic.HashSet[string]'
+      }
+      [void]$bySystem[$name].Add($lane)
+    }
   }
-  return $true
+  $covered = New-Object 'System.Collections.Generic.HashSet[string]'
+  $need = $Lanes.Count
+  foreach ($kv in $bySystem.GetEnumerator()) {
+    if ($kv.Value.Count -ge $need) {
+      [void]$covered.Add([string]$kv.Key)
+    }
+  }
+  return $covered
 }
 
-function Test-LocalMrqLookdevReady {
+function Test-VaultHasSystemLookdev {
   param(
-    [string]$SeqDir,
-    [string]$PickHeroesPy,
-    [string]$JsonOut,
-    [int]$MinRgb = 8,
-    [int]$MinFrames = 30
+    [System.Collections.Generic.HashSet[string]]$Covered,
+    [string]$SystemName
   )
-  if (-not (Test-Path $SeqDir)) { return $false }
-  $pngs = @(Get-ChildItem -Path $SeqDir -Recurse -File -Filter "*.png" -ErrorAction SilentlyContinue)
-  if ($pngs.Count -lt $MinFrames) { return $false }
-  $py = Get-Command python -ErrorAction SilentlyContinue
-  if (-not $py) { $py = Get-Command py -ErrorAction SilentlyContinue }
-  if (-not $py) { return $false }
-  & $py.Source $PickHeroesPy $SeqDir --min-rgb $MinRgb --json-out $JsonOut *> $null
-  if ($LASTEXITCODE -ne 0 -or -not (Test-Path $JsonOut)) { return $false }
-  $doc = Get-Content $JsonOut -Raw | ConvertFrom-Json
-  return [bool]$doc.ok
+  if (-not $Covered) { return $false }
+  return $Covered.Contains($SystemName)
 }
 
 $RepoRoot = Resolve-Path (Join-Path $PSScriptRoot "..\..")
@@ -337,7 +339,6 @@ if (-not $Project) {
 }
 if (-not (Test-Path $Project)) { throw "Project not found: $Project" }
 
-$Ue = Find-UeCmdFromHost -HostProfile $UeHost -Hint $UeCmd
 $ProjectDir = Split-Path $Project -Parent
 $OutDir = Join-Path $ProjectDir "Saved\VellumCapture"
 $StillsDir = Join-Path $OutDir "stills"
@@ -358,11 +359,18 @@ $OutDirUe = ConvertTo-UePath $OutDir
 $FrameCount = 120
 $FrameRate = 30
 $IngestLanes = @("slots", "hail-overlay")
+$Ue = $null
 
-Write-Host "UE (Cmd): $Ue"
+function Ensure-UeCmd {
+  if ($script:Ue) { return $script:Ue }
+  $script:Ue = Find-UeCmdFromHost -HostProfile $UeHost -Hint $UeCmd
+  Write-Host "UE (Cmd): $script:Ue"
+  return $script:Ue
+}
+
 Write-Host "Project: $ProjectUe"
 Write-Host "MaxSystems=$MaxSystems (0=entire pack) Width=$Width Height=$Height MapPath=$MapPath"
-Write-Host "Runner version: mrq-pack-resilient (2026-07-13)"
+Write-Host "Runner version: mrq-fast-skip (2026-07-13)"
 Write-Host "UE host: $($UeHost.id) ($($UeHost.label))"
 Write-Host "Ingest lanes: $($IngestLanes -join ', ')"
 Write-Host "ForceCapture=$ForceCapture"
@@ -433,6 +441,7 @@ if (-not $ForceCapture) {
 }
 
 if (-not $inv) {
+  $Ue = Ensure-UeCmd
   $env:VELLUM_ASSET_ID = $AssetId
   $env:VELLUM_CONTENT_ROOT = $ContentRoot
   $env:VELLUM_OUT_DIR = $OutDirUe
@@ -495,16 +504,18 @@ if ($pickedSystems.Count -eq 0) {
 }
 
 # ---------------------------------------------------------------------------
-# Skip systems already covered in vault (lanes) or ready locally (ingest-only).
+# Skip systems already covered in vault (fast HashSet — no local PNG scans).
 # ForceCapture / VELLUM_FORCE_CAPTURE re-renders everything.
 # ---------------------------------------------------------------------------
 $skippedVault = New-Object System.Collections.ArrayList
-$ingestOnlySystems = New-Object System.Collections.ArrayList
 $toRenderSystems = New-Object System.Collections.ArrayList
-$vaultOutputs = @()
+$vaultCovered = New-Object 'System.Collections.Generic.HashSet[string]'
+$skipSw = [System.Diagnostics.Stopwatch]::StartNew()
 if (-not $ForceCapture -and $pickedSystems.Count -gt 0) {
+  Send-VellumProgress -Message "Skip check: fetching vault lookdev…"
   $vaultOutputs = Get-LookdevOutputs -VellumBase $VellumBase -AssetId $AssetId
-  Write-Host "Skip check: vault lookdev outputs=$(@($vaultOutputs).Count) force=$ForceCapture"
+  $vaultCovered = Get-VaultCoveredSystemSet -Outputs $vaultOutputs -Lanes $IngestLanes
+  Write-Host "Skip check: vault outputs=$(@($vaultOutputs).Count) covered=$($vaultCovered.Count) force=$ForceCapture"
 }
 foreach ($sys in $pickedSystems) {
   $systemName = [string]$sys.asset_name
@@ -521,63 +532,21 @@ foreach ($sys in $pickedSystems) {
     [void]$toRenderSystems.Add($sys)
     continue
   }
-  if (Test-VaultHasSystemLookdev -Outputs $vaultOutputs -SystemName $systemName -Lanes $IngestLanes) {
+  if (Test-VaultHasSystemLookdev -Covered $vaultCovered -SystemName $systemName) {
     $skipEntry.reason = "vault_covered"
     [void]$skippedVault.Add($skipEntry)
-    Write-Host "SKIP render $systemName (vault already has lookdev on $($IngestLanes -join '+'))"
-    continue
-  }
-  $HeroProbe = Join-Path $OutDir "heroes-skip-$safeHint.json"
-  if (Test-LocalMrqLookdevReady -SeqDir $seqOutDir -PickHeroesPy $StagedPickHeroesPy -JsonOut $HeroProbe) {
-    $skipEntry.reason = "local_mrq_ready"
-    $skipEntry.heroes_json = $HeroProbe
-    [void]$ingestOnlySystems.Add($skipEntry)
-    Write-Host "SKIP render $systemName (local MRQ lookdev-ready; ingest only)"
     continue
   }
   [void]$toRenderSystems.Add($sys)
 }
-Send-VellumProgress -Message ("Skip plan: render={0} ingest_only={1} vault_skip={2} force={3} cache={4}" -f `
-  $toRenderSystems.Count, $ingestOnlySystems.Count, $skippedVault.Count, [bool]$ForceCapture, [bool]$inventoryFromCache)
+$skipSw.Stop()
+Send-VellumProgress -Message ("Skip plan: render={0} vault_skip={1} force={2} cache={3} ({4}ms)" -f `
+  $toRenderSystems.Count, $skippedVault.Count, [bool]$ForceCapture, [bool]$inventoryFromCache, $skipSw.ElapsedMilliseconds)
+Write-Host ("Skip plan done in {0}ms render={1} vault_skip={2}" -f `
+  $skipSw.ElapsedMilliseconds, $toRenderSystems.Count, $skippedVault.Count)
 
-if ($toRenderSystems.Count -eq 0 -and $ingestOnlySystems.Count -eq 0) {
+if ($toRenderSystems.Count -eq 0) {
   Send-VellumProgress -Message "No Unreal author/MRQ needed (vault already covered or nothing picked)"
-}
-
-foreach ($entry in @($ingestOnlySystems)) {
-  $systemName = [string]$entry.asset_name
-  $objectPath = [string]$entry.object_path
-  $safeHint = [string]$entry.safe_name
-  $seqOutDir = [string]$entry.seq_dir
-  $HeroJson = [string]$entry.heroes_json
-  $heroDoc = Get-Content $HeroJson -Raw | ConvertFrom-Json
-  foreach ($h in @($heroDoc.heroes)) {
-    $src = [string]$h.path
-    if (-not (Test-Path $src)) { continue }
-    $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
-    $dest = Join-Path $StillsDir "$AssetId-$safeHint-$($h.role)-$stamp.png"
-    Copy-Item -Force -Path $src -Destination $dest
-    [void]$stills.Add(@{
-        path        = $dest
-        kind        = "niagara-render"
-        system      = $systemName
-        object_path = $objectPath
-        method      = "local-reuse"
-        role        = [string]$h.role
-        max_rgb     = [int]$h.max_rgb
-        bytes       = (Get-Item $dest).Length
-      })
-  }
-  [void]$sequences.Add(@{
-      system = $systemName
-      path   = $seqOutDir
-      frames = [int]$heroDoc.frame_count
-    })
-  $sysHeroes = @($stills | Where-Object { $_.system -eq $systemName })
-  $nUp = Ingest-CapturedSystem -AssetId $AssetId -SystemName $systemName `
-    -HeroStills $sysHeroes -SeqDir $seqOutDir -OutDir $OutDir `
-    -VellumBase $VellumBase -Lanes $IngestLanes -Errors $allErrors
-  Send-VellumProgress -Message "Ingest-only $systemName heroes=$(@($heroDoc.heroes).Count) ingested=$nUp"
 }
 
 # ---------------------------------------------------------------------------
@@ -593,6 +562,7 @@ foreach ($sys in $toRenderSystems) {
   $safeHint = Safe-Name $systemName
   $seqOutDir = Join-Path $MrqRoot $safeHint
   New-Item -ItemType Directory -Force -Path $seqOutDir | Out-Null
+  # Only wipe output dir for systems we are about to re-render (not vault skips).
   Get-ChildItem -Path $seqOutDir -File -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
   Get-ChildItem -Path $seqOutDir -Recurse -File -Filter "*.png" -ErrorAction SilentlyContinue |
     Remove-Item -Force -ErrorAction SilentlyContinue
@@ -605,6 +575,7 @@ foreach ($sys in $toRenderSystems) {
 }
 
 if ($batchSystems.Count -gt 0) {
+  $Ue = Ensure-UeCmd
   Write-Host "Phase B batch author systems=$($batchSystems.Count)"
   $job = @{
     asset_id         = $AssetId
@@ -817,7 +788,7 @@ if ($batchSystems.Count -gt 0) {
 # Manifest + scratch (per-system ingest already completed above)
 # ---------------------------------------------------------------------------
 $vaultSkipOk = ($pickedSystems.Count -gt 0 -and $toRenderSystems.Count -eq 0 -and
-  $ingestOnlySystems.Count -eq 0 -and $skippedVault.Count -gt 0)
+  $skippedVault.Count -gt 0)
 $partialOk = ($stills.Count -gt 0)
 $Manifest = Join-Path $OutDir "manifest.json"
 $man = @{
@@ -831,22 +802,21 @@ $man = @{
   stills                = @($stills)
   sequences             = @($sequences)
   skipped_vault         = @($skippedVault)
-  ingest_only           = @($ingestOnlySystems | ForEach-Object { $_.asset_name })
   render_systems        = @($toRenderSystems | ForEach-Object { $_.asset_name })
   force_capture         = [bool]$ForceCapture
   inventory_from_cache  = [bool]$inventoryFromCache
   errors                = @($allErrors)
-  stills_attempted      = ($toRenderSystems.Count -gt 0 -or $ingestOnlySystems.Count -gt 0)
+  stills_attempted      = ($toRenderSystems.Count -gt 0)
   ok                    = ($partialOk -or $vaultSkipOk)
   ingest_policy         = "per_system"
-  skip_policy           = "vault_or_local_mrq"
+  skip_policy           = "vault_hashset"
 }
 ($man | ConvertTo-Json -Depth 8) | Set-Content -Path $Manifest -Encoding utf8
 
 $errJoin = (@($allErrors) -join "; ")
-$notes = ("auto-capture(mrq-sequencer) systems={0} stills={1} sequences={2} vault_skip={3} ingest_only={4} render={5} errors={6}" -f `
+$notes = ("auto-capture(mrq-sequencer) systems={0} stills={1} sequences={2} vault_skip={3} render={4} errors={5}" -f `
   $inv.niagara_systems_found, $stills.Count, $sequences.Count, $skippedVault.Count, `
-  $ingestOnlySystems.Count, $toRenderSystems.Count, $errJoin)
+  $toRenderSystems.Count, $errJoin)
 Write-Host "Manifest mode=$($man.mode) stills=$($stills.Count) ok=$($man.ok)"
 if ($errJoin) { Write-Host "Manifest errors: $errJoin" }
 Send-VellumProgress -Message "Done stills=$($stills.Count) ok=$($man.ok)"
