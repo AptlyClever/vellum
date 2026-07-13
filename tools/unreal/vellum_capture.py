@@ -20,16 +20,24 @@ from pathlib import Path
 
 
 def _args() -> dict[str, str]:
+    """Parse ``--key value`` and ``--key=value`` (Unreal-safe; avoid nested quotes)."""
     raw = sys.argv[1:]
     out: dict[str, str] = {}
     i = 0
     while i < len(raw):
         tok = raw[i]
-        if tok.startswith("--") and i + 1 < len(raw):
-            out[tok[2:]] = raw[i + 1]
-            i += 2
-        else:
-            i += 1
+        if tok.startswith("--"):
+            body = tok[2:]
+            if "=" in body:
+                key, val = body.split("=", 1)
+                out[key] = val
+                i += 1
+                continue
+            if i + 1 < len(raw) and not raw[i + 1].startswith("--"):
+                out[body] = raw[i + 1]
+                i += 2
+                continue
+        i += 1
     return out
 
 

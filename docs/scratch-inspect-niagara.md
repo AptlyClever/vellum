@@ -34,6 +34,8 @@ Humble → Epic redeem / first Add to Project only.
 - `POST /api/jobs/{id}/report` — agent reports result
 - `POST /api/lookdev/ingest-render` — still upload (agent/runner)
 
-## Fallback
+## Troubleshooting
 
-If the agent is down, upload remains available under Lookdev. Prefer fixing the agent.
+If the agent fails with missing `manifest.json` and the UE log shows a path like
+`C:/dev/vellum       ools/...`, that was `\t` in `\tools` being treated as a tab.
+Fixed scripts use forward slashes — `git pull` on `C:\dev\vellum` and restart the agent.

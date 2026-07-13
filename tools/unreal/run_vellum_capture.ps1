@@ -65,14 +65,33 @@ Write-Host "UE: $Ue"
 Write-Host "Project: $Project"
 Write-Host "Script: $CapturePy"
 
-$pyArgs = "$CapturePy -- asset-id $AssetId -- content-root $ContentRoot -- out-dir `"$OutDir`""
-& $Ue $Project "-stdout" "-FullStdOutLogOutput" "-unattended" "-ExecutePythonScript=$pyArgs"
+# Unreal/Python treats `\t` in Windows paths as a TAB. Always pass forward slashes.
+# Also use --key=value so we never nest quotes around out-dir.
+function ConvertTo-UePath([string]$Path) {
+  return (($Path -replace '\\', '/').TrimEnd('/'))
+}
+
+$CapturePyUe = ConvertTo-UePath $CapturePy
+$OutDirUe = ConvertTo-UePath $OutDir
+$ProjectUe = ConvertTo-UePath $Project
+
+# Single quoted ExecutePythonScript payload — no nested double quotes.
+$ExecPy = "${CapturePyUe} --asset-id=${AssetId} --content-root=${ContentRoot} --out-dir=${OutDirUe}"
+Write-Host "ExecutePythonScript: $ExecPy"
+
+& $Ue $ProjectUe "-stdout" "-FullStdOutLogOutput" "-unattended" "-nop4" "-ExecutePythonScript=$ExecPy"
 $ueExit = $LASTEXITCODE
 Write-Host "Unreal exit code: $ueExit"
 
 $Manifest = Join-Path $OutDir "manifest.json"
 if (-not (Test-Path $Manifest)) {
-  throw "Capture did not write manifest.json under $OutDir (enable Python plugin / check UE log)."
+  throw @"
+Capture did not write manifest.json under $OutDir.
+
+Likely cause previously: path '\tools' was parsed as TAB+ools by Unreal.
+Re-pull/copy fixed scripts, then retry Capture from Unreal.
+Also check Saved/Logs for LogPython errors.
+"@
 }
 
 $man = Get-Content $Manifest -Raw | ConvertFrom-Json
