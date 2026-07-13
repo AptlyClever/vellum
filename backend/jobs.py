@@ -215,6 +215,54 @@ def claim_next_job(*, kinds: frozenset[str] | None = None) -> dict[str, Any] | N
     return get_job(job_id)
 
 
+def progress_log_path(job_id: str) -> Path:
+    path = jobs_db_path().parent / "job-progress"
+    path.mkdir(parents=True, exist_ok=True)
+    safe = "".join(c if c.isalnum() or c in "-_" else "_" for c in job_id)
+    return path / f"{safe}.log"
+
+
+def append_job_progress(job_id: str, *, message: str, log_tail: str | None = None) -> dict[str, Any]:
+    """Append a heartbeat line for a running job (Windows agent / runner)."""
+    job = get_job(job_id)
+    if not job:
+        raise KeyError("job_not_found")
+    now = _now()
+    line = f"{now} | {message.strip()}\n"
+    if log_tail and log_tail.strip():
+        for raw in log_tail.strip().splitlines()[-20:]:
+            line += f"  | {raw.rstrip()}\n"
+    path = progress_log_path(job_id)
+    with path.open("a", encoding="utf-8") as fh:
+        fh.write(line)
+        fh.write("---\n")
+    with _conn() as conn:
+        conn.execute(
+            "UPDATE jobs SET updated_at = ? WHERE job_id = ?",
+            (now, job_id),
+        )
+    return {"job_id": job_id, "path": str(path), "updated_at": now}
+
+
+def read_job_progress(job_id: str, *, max_bytes: int = 32_000) -> dict[str, Any]:
+    job = get_job(job_id)
+    if not job:
+        raise KeyError("job_not_found")
+    path = progress_log_path(job_id)
+    text = ""
+    if path.is_file():
+        data = path.read_bytes()
+        if len(data) > max_bytes:
+            data = data[-max_bytes:]
+        text = data.decode("utf-8", errors="replace")
+    return {
+        "job_id": job_id,
+        "status": job.get("status"),
+        "updated_at": job.get("updated_at"),
+        "log": text,
+    }
+
+
 def complete_job(
     job_id: str,
     *,

@@ -46,7 +46,8 @@ param(
   [int]$MaxSystems = $(if ($env:VELLUM_MAX_SYSTEMS) { [int]$env:VELLUM_MAX_SYSTEMS } else { 3 }),
   [int]$Width = $(if ($env:VELLUM_WIDTH) { [int]$env:VELLUM_WIDTH } else { 1920 }),
   [int]$Height = $(if ($env:VELLUM_HEIGHT) { [int]$env:VELLUM_HEIGHT } else { 1080 }),
-  [string]$MapPath = "/Game/Vellum/Maps/VellumNiagaraCapture"
+  [string]$MapPath = "/Game/Vellum/Maps/VellumNiagaraCapture",
+  [string]$JobId = $(if ($env:VELLUM_JOB_ID) { $env:VELLUM_JOB_ID } else { "" })
 )
 
 $ErrorActionPreference = "Stop"
@@ -86,14 +87,15 @@ function Find-UeEditor {
 function Get-ImageFiles {
   # Windows PowerShell: -Include without a trailing \* often returns NOTHING.
   # Prefer -Filter (one extension per call) + -File.
+  # Use ArrayList — List[object].Add(FileInfo) throws "Argument types do not match" on PS 5.1.
   param([string]$Root, [string[]]$Extensions = @("*.png", "*.jpg", "*.jpeg", "*.bmp"))
   if (-not (Test-Path $Root)) { return @() }
-  $found = New-Object System.Collections.Generic.List[object]
+  $found = New-Object System.Collections.ArrayList
   foreach ($ext in $Extensions) {
     Get-ChildItem -Path $Root -Recurse -File -Filter $ext -ErrorAction SilentlyContinue |
-      ForEach-Object { $found.Add($_) }
+      ForEach-Object { [void]$found.Add($_) }
   }
-  return @($found)
+  return @($found.ToArray())
 }
 
 function Find-RecentImages {
@@ -102,7 +104,7 @@ function Find-RecentImages {
     [datetime]$Since,
     [string]$NameHint = ""
   )
-  $found = New-Object System.Collections.Generic.List[object]
+  $found = New-Object System.Collections.ArrayList
   foreach ($root in $Roots) {
     foreach ($img in (Get-ImageFiles -Root $root)) {
       if ($img.LastWriteTime -lt $Since.AddSeconds(-5)) { continue }
@@ -112,10 +114,71 @@ function Find-RecentImages {
           $img.DirectoryName -notlike "*Screenshots*") {
         continue
       }
-      $found.Add($img)
+      [void]$found.Add($img)
     }
   }
-  return @($found | Sort-Object LastWriteTime -Descending)
+  return @($found.ToArray() | Sort-Object LastWriteTime -Descending)
+}
+
+function Send-VellumProgress {
+  param(
+    [string]$Message,
+    [string]$LogPath = ""
+  )
+  Write-Host $Message
+  if (-not $JobId -or -not $VellumBase) { return }
+  $tail = ""
+  if ($LogPath -and (Test-Path $LogPath)) {
+    try {
+      $tail = ((Get-Content -Path $LogPath -Tail 12 -ErrorAction SilentlyContinue) -join "`n")
+    } catch { $tail = "" }
+  }
+  $body = @{ message = $Message; log_tail = $tail } | ConvertTo-Json -Compress
+  try {
+    Invoke-RestMethod -Method Post -Uri "$VellumBase/api/jobs/$JobId/progress" `
+      -ContentType "application/json; charset=utf-8" -Body $body -TimeoutSec 5 | Out-Null
+  } catch {
+    # Progress is best-effort; never fail the capture on heartbeat errors.
+  }
+}
+
+function Invoke-UeLogged {
+  # Start UE, stream stdout/stderr to a log, heartbeat progress until exit.
+  param(
+    [string]$Exe,
+    [string[]]$ArgumentList,
+    [string]$LogPath,
+    [string]$Phase,
+    [int]$HeartbeatSeconds = 15
+  )
+  if (Test-Path $LogPath) { Remove-Item -Force $LogPath }
+  $errPath = "$LogPath.stderr"
+  if (Test-Path $errPath) { Remove-Item -Force $errPath }
+  Send-VellumProgress -Message "$Phase starting" -LogPath $LogPath
+  $proc = Start-Process -FilePath $Exe -ArgumentList $ArgumentList `
+    -PassThru -NoNewWindow `
+    -RedirectStandardOutput $LogPath `
+    -RedirectStandardError $errPath
+  $started = Get-Date
+  while (-not $proc.HasExited) {
+    Start-Sleep -Seconds $HeartbeatSeconds
+    if ($proc.HasExited) { break }
+    $elapsed = [int]((Get-Date) - $started).TotalSeconds
+    # Merge stderr into main log so Select-String / Tee readers see everything.
+    if (Test-Path $errPath) {
+      Get-Content $errPath -ErrorAction SilentlyContinue | Add-Content -Path $LogPath -ErrorAction SilentlyContinue
+      Clear-Content $errPath -ErrorAction SilentlyContinue
+    }
+    Send-VellumProgress -Message "$Phase still running (${elapsed}s)" -LogPath $LogPath
+  }
+  if (Test-Path $errPath) {
+    Get-Content $errPath -ErrorAction SilentlyContinue | Add-Content -Path $LogPath -ErrorAction SilentlyContinue
+  }
+  $code = 0
+  try { $code = $proc.ExitCode } catch { $code = 0 }
+  if ($null -eq $code) { $code = 0 }
+  Send-VellumProgress -Message "$Phase exited code=$code" -LogPath $LogPath
+  return $code
 }
 
 function Get-SavedTreeSnippet {
@@ -183,10 +246,11 @@ Write-Host "UE (editor/inventory): $Ue"
 Write-Host "UE (game stills): $UeGame"
 Write-Host "Project: $ProjectUe"
 Write-Host "MaxSystems=$MaxSystems Width=$Width Height=$Height MapPath=$MapPath"
-Write-Host "Runner version: game-mode-gui-failfast-filterfix (2026-07-13)"
+Write-Host "Runner version: game-mode-progress-heartbeat (2026-07-13)"
+if ($JobId) { Write-Host "JobId=$JobId (progress -> $VellumBase/api/jobs/$JobId/progress)" }
 
-$allErrors = New-Object System.Collections.Generic.List[string]
-$stills = New-Object System.Collections.Generic.List[object]
+$allErrors = New-Object System.Collections.ArrayList
+$stills = New-Object System.Collections.ArrayList
 
 # ---------------------------------------------------------------------------
 # Phase A: inventory only (editor Python; existing proven path).
@@ -203,12 +267,13 @@ Write-Host "Phase A (inventory): $InventoryExecFlag"
 
 $ueExit = 0
 try {
-  & $Ue $ProjectUe "-stdout" "-FullStdOutLogOutput" "-unattended" "-nop4" $InventoryExecFlag 2>&1 |
-    Tee-Object -FilePath $InventoryLog
-  $ueExit = $LASTEXITCODE
+  $ueExit = Invoke-UeLogged -Exe $Ue -ArgumentList @(
+      $ProjectUe, "-stdout", "-FullStdOutLogOutput", "-unattended", "-nop4", $InventoryExecFlag
+    ) -LogPath $InventoryLog -Phase "Phase A inventory"
 } catch {
   $ueExit = 1
   $_ | Out-File -FilePath $InventoryLog -Append
+  Send-VellumProgress -Message "Phase A inventory crashed: $_" -LogPath $InventoryLog
 }
 Write-Host "Inventory phase exit code: $ueExit"
 
@@ -228,11 +293,12 @@ $logTail
 }
 
 $inv = Get-Content $InventoryManifestPath -Raw | ConvertFrom-Json
-if ($inv.errors) { foreach ($e in @($inv.errors)) { $allErrors.Add("inventory:$e") } }
+if ($inv.errors) { foreach ($e in @($inv.errors)) { [void]$allErrors.Add("inventory:$e") } }
 $pickedSystems = @($inv.niagara_systems)
 Write-Host "Inventory systems_found=$($inv.niagara_systems_found) picked=$($pickedSystems.Count)"
+Send-VellumProgress -Message "Inventory done: found=$($inv.niagara_systems_found) picked=$($pickedSystems.Count)"
 if ($pickedSystems.Count -eq 0) {
-  $allErrors.Add("no_systems_to_bake")
+  [void]$allErrors.Add("no_systems_to_bake")
 }
 
 # ---------------------------------------------------------------------------
@@ -265,12 +331,13 @@ foreach ($sys in $pickedSystems) {
 
   $bakeExit = 0
   try {
-    & $Ue $ProjectUe "-stdout" "-FullStdOutLogOutput" "-unattended" "-nop4" $BakeExecFlag 2>&1 |
-      Tee-Object -FilePath $BakeLog
-    $bakeExit = $LASTEXITCODE
+    $bakeExit = Invoke-UeLogged -Exe $Ue -ArgumentList @(
+        $ProjectUe, "-stdout", "-FullStdOutLogOutput", "-unattended", "-nop4", $BakeExecFlag
+      ) -LogPath $BakeLog -Phase "Phase B[$slotIndex] bake $systemName"
   } catch {
     $bakeExit = 1
     $_ | Out-File -FilePath $BakeLog -Append
+    Send-VellumProgress -Message "Phase B[$slotIndex] bake crashed: $_" -LogPath $BakeLog
   }
 
   $BakeResultPath = Join-Path $OutDir "bake-result.json"
@@ -278,14 +345,15 @@ foreach ($sys in $pickedSystems) {
   if (Test-Path $BakeResultPath) {
     $bakeResult = Get-Content $BakeResultPath -Raw | ConvertFrom-Json
     $bakeOk = [bool]$bakeResult.ok
-    if ($bakeResult.errors) { foreach ($e in @($bakeResult.errors)) { $allErrors.Add("bake:$systemName`:$e") } }
+    if ($bakeResult.errors) { foreach ($e in @($bakeResult.errors)) { [void]$allErrors.Add("bake:$systemName`:$e") } }
   } else {
     $logTail = Get-LogPythonSnippet (Get-Content $BakeLog -Raw -ErrorAction SilentlyContinue)
-    $allErrors.Add("bake_no_result:$systemName`:exit=$bakeExit`:$logTail")
+    [void]$allErrors.Add("bake_no_result:$systemName`:exit=$bakeExit`:$logTail")
   }
 
   if (-not $bakeOk) {
     Write-Host "Phase B [$slotIndex] bake failed for $systemName, skipping shot"
+    Send-VellumProgress -Message "Phase B[$slotIndex] bake FAILED $systemName" -LogPath $BakeLog
     $slotIndex++
     continue
   }
@@ -316,13 +384,20 @@ foreach ($sys in $pickedSystems) {
     "-ExecCmds=$ExecCmds"
   )
   Write-Host "Phase B [$slotIndex] GAME still via $UeGame (windowed, no -unattended)"
+  Send-VellumProgress -Message "Phase B[$slotIndex] GAME still starting $systemName"
 
   $gameProc = $null
   $gameExit = 0
   try {
     $gameProc = Start-Process -FilePath $UeGame -ArgumentList $gameArgs -PassThru -WindowStyle Normal
     $settleSeconds = 10
-    if (-not $gameProc.WaitForExit($settleSeconds * 1000)) {
+    $waited = 0
+    while (-not $gameProc.HasExited -and $waited -lt $settleSeconds) {
+      Start-Sleep -Seconds 2
+      $waited += 2
+      Send-VellumProgress -Message "Phase B[$slotIndex] GAME settle ${waited}/${settleSeconds}s"
+    }
+    if (-not $gameProc.HasExited) {
       Write-Host "Phase B [$slotIndex] settle ${settleSeconds}s — stopping UE"
       try { Stop-Process -Id $gameProc.Id -Force -ErrorAction SilentlyContinue } catch { }
       try { $gameProc.WaitForExit(20000) | Out-Null } catch { }
@@ -341,6 +416,7 @@ foreach ($sys in $pickedSystems) {
     $_ | Out-File -FilePath $GameLog -Append
   }
   Write-Host "Phase B [$slotIndex] -game exit code: $gameExit"
+  Send-VellumProgress -Message "Phase B[$slotIndex] GAME exited code=$gameExit" -LogPath $GameLog
 
   $searchRoots = @(
     $StillsDir,
@@ -354,13 +430,14 @@ foreach ($sys in $pickedSystems) {
   if (-not $newPng) {
     $tree = Get-SavedTreeSnippet -SavedRoot (Join-Path $ProjectDir "Saved")
     $shotLog = Get-LogShotSnippet -LogPath $GameLog
-    $allErrors.Add("no_png:$systemName`:exit=$gameExit")
-    $allErrors.Add("saved_images:`n$tree")
-    $allErrors.Add("shot_log:`n$shotLog")
+    [void]$allErrors.Add("no_png:$systemName`:exit=$gameExit")
+    [void]$allErrors.Add("saved_images:`n$tree")
+    [void]$allErrors.Add("shot_log:`n$shotLog")
     Write-Host "Phase B [$slotIndex] FAIL: no PNG after game still. Recent Saved/ images:"
     Write-Host $tree
     Write-Host "---- shot log snippet ----"
     Write-Host $shotLog
+    Send-VellumProgress -Message "FAIL no_png $systemName" -LogPath $GameLog
     Write-Host "Failing fast — not baking remaining systems until one still works."
     break
   }
@@ -370,7 +447,7 @@ foreach ($sys in $pickedSystems) {
   if ($newPng.FullName -ne $dest) {
     Copy-Item -Force -Path $newPng.FullName -Destination $dest
   }
-  $stills.Add(@{
+  [void]$stills.Add(@{
       path        = $dest
       kind        = "niagara-render"
       system      = $systemName
@@ -379,6 +456,7 @@ foreach ($sys in $pickedSystems) {
       source      = $newPng.FullName
     })
   Write-Host "Phase B [$slotIndex] captured still $dest (from $($newPng.FullName))"
+  Send-VellumProgress -Message "Captured still $systemName -> $dest"
 
   $slotIndex++
 }
@@ -395,17 +473,18 @@ $man = @{
   content_root          = $ContentRoot
   niagara_systems_found = [int]$inv.niagara_systems_found
   niagara_systems       = $inv.niagara_systems
-  stills                = $stills
-  errors                = $allErrors
+  stills                = @($stills)
+  errors                = @($allErrors)
   stills_attempted      = $true
   ok                    = ($stills.Count -gt 0)
 }
 ($man | ConvertTo-Json -Depth 8) | Set-Content -Path $Manifest -Encoding utf8
 
-$errJoin = ($allErrors -join "; ")
+$errJoin = (@($allErrors) -join "; ")
 $notes = "auto-capture(game-mode) systems=$($inv.niagara_systems_found) stills=$($stills.Count) errors=$errJoin"
 Write-Host "Manifest mode=$($man.mode) stills=$($stills.Count) ok=$($man.ok)"
 if ($errJoin) { Write-Host "Manifest errors: $errJoin" }
+Send-VellumProgress -Message "Done stills=$($stills.Count) ok=$($man.ok)"
 
 $scratchBody = @{
   asset_id             = $AssetId

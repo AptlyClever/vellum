@@ -90,6 +90,11 @@ class JobReportRequest(BaseModel):
     engine_version: str | None = Field(default=None, max_length=64)
 
 
+class JobProgressRequest(BaseModel):
+    message: str = Field(min_length=1, max_length=2000)
+    log_tail: str | None = Field(default=None, max_length=12000)
+
+
 class ScratchRecordRequest(BaseModel):
     asset_id: str = Field(min_length=1, max_length=200)
     scratch_project_path: str = Field(min_length=1, max_length=1000)
@@ -305,6 +310,27 @@ def api_jobs_report(job_id: str, body: JobReportRequest) -> dict[str, Any]:
         job_id, result=result if not body.error else None, error=body.error
     )
     return {"schema_version": 1, "job": completed}
+
+
+@app.post("/api/jobs/{job_id}/progress")
+def api_jobs_progress(job_id: str, body: JobProgressRequest) -> dict[str, Any]:
+    """Heartbeat from Windows runner — live phase + UE log tail while job runs."""
+    try:
+        meta = jobs_mod.append_job_progress(
+            job_id, message=body.message, log_tail=body.log_tail
+        )
+    except KeyError:
+        raise HTTPException(status_code=404, detail="job_not_found") from None
+    return {"schema_version": 1, **meta}
+
+
+@app.get("/api/jobs/{job_id}/progress")
+def api_jobs_progress_get(job_id: str) -> dict[str, Any]:
+    try:
+        payload = jobs_mod.read_job_progress(job_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="job_not_found") from None
+    return {"schema_version": 1, **payload}
 
 
 @app.post("/api/ue/capture")

@@ -82,3 +82,37 @@ def test_jobs_api(tmp_path: Path, monkeypatch) -> None:
     assert listed.json()["count"] >= 3
     assert all(j["status"] == "succeeded" for j in listed.json()["jobs"][:3])
     assert list_jobs(status="queued") == []
+
+
+def test_job_progress_api(tmp_path: Path, monkeypatch) -> None:
+    reg = tmp_path / "register.yaml"
+    runs = tmp_path / "intake.yaml"
+    db = tmp_path / "jobs.sqlite3"
+    vault = tmp_path / "vault"
+    monkeypatch.setenv("VELLUM_REGISTER_PATH", str(reg))
+    monkeypatch.setenv("VELLUM_INTAKE_RUNS_PATH", str(runs))
+    monkeypatch.setenv("VELLUM_JOBS_DB_PATH", str(db))
+    monkeypatch.setenv("VELLUM_VAULT_ROOT", str(vault))
+
+    from backend import jobs as jobs_mod
+    from backend.main import app
+    from backend.register import ensure_register
+
+    ensure_register(force_reseed=True)
+    job = jobs_mod.enqueue_job(kind="ue_capture", asset_id="hangar-x", payload={})
+    claimed = jobs_mod.claim_next_job(kinds=frozenset({"ue_capture"}))
+    assert claimed is not None
+    assert claimed["job_id"] == job["job_id"]
+
+    client = TestClient(app)
+    post = client.post(
+        f"/api/jobs/{job['job_id']}/progress",
+        json={"message": "Phase A inventory still running (30s)", "log_tail": "LogPython: ok\n"},
+    )
+    assert post.status_code == 200
+    got = client.get(f"/api/jobs/{job['job_id']}/progress")
+    assert got.status_code == 200
+    body = got.json()
+    assert body["status"] == "running"
+    assert "Phase A inventory" in body["log"]
+    assert "LogPython: ok" in body["log"]

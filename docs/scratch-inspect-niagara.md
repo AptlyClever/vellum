@@ -63,8 +63,11 @@ Humble → Epic redeem / first Add to Project only.
 2. **`no_png:...:exit=0`** — check `Saved/VellumCapture/ue-game-<n>.log` and
    whether PNGs already exist under `Saved/` (Windows PowerShell `-Include`
    without `\*` often returns empty — runners before
-   `game-mode-gui-failfast-filterfix` could miss real screenshots). Current
-   fingerprint: `game-mode-gui-failfast-filterfix`.
+   `game-mode-gui-failfast-filterfix` could miss real screenshots). Live
+   heartbeats: `GET /api/jobs/{job_id}/progress`. Current fingerprint:
+   `game-mode-progress-heartbeat`.
 3. **`bake_failed` / `bake_no_result`** — see `ue-bake-<n>.log`.
 4. Restart the agent after every `git pull`.
 5. Chromium `Software\Chromium` result 5 is noise from UE's embedded browser.
+6. **`Argument types do not match`** — fixed by switching PNG search off
+   `List[object].Add` (PS 5.1) to `ArrayList`.
