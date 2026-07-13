@@ -1,11 +1,12 @@
 # Unreal lookdev capture (MRQ) — capability spec
 
-**Status:** implemented (scripted batch) / Aurora proof via recover ingest  
+**Status:** implemented (scripted batch) / Aurora clean Capture proof (Chrys + pack harden 2026-07-13)  
 **Pilot asset:** `fireworks-vol-1-niagara`  
 **Primary host:** Aurora (`config/ue-hosts.json` → `active: aurora`)  
 **Related:** host runbook `docs/scratch-inspect-niagara.md`, lookdev API `docs/api-lookdev.md`, **hosting SoT** [`docs/ue-lookdev-worker.md`](./ue-lookdev-worker.md)  
 **Decisions:** §12 locked 2026-07-13 (B / C / C / C / B)  
-**Runner fingerprint:** `lookdev-worker` (primary); legacy `mrq-adaptive-frames` via `-LegacyCmdRunner` only
+**Runner fingerprint:** legacy `mrq-artifact-gate` via interactive agent (`-LegacyCmdRunner`); Lookdev Worker opt-in only  
+**Pack harden:** Epic Queue asset via `-MoviePipelineConfig` (multi-job); empty-abort waits; ingest-only resume; `system_name` on renders; curl `-f` + timeouts; job `ok` = full target coverage (not 1/N)
 
 This is **new Vellum functionality**: turn a purchased Unreal Niagara pack into
 **full-fidelity lookdev renders** in the vault, driven from the Vellum UI, without

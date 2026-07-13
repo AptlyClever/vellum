@@ -138,7 +138,7 @@ def list_outputs(
     if lane:
         outputs = [o for o in outputs if o.get("lane") == lane]
     outputs.sort(key=lambda o: str(o.get("created_at") or ""), reverse=True)
-    return outputs[: max(1, min(limit, 500))]
+    return outputs[: max(1, min(limit, 1000))]
 
 
 def get_output(output_id: str) -> dict[str, Any] | None:
@@ -286,6 +286,7 @@ def ingest_niagara_render(
     note: str | None = None,
     original_name: str | None = None,
     kind: str = "niagara-render",
+    system_name: str | None = None,
 ) -> dict[str, Any]:
     """Register a Niagara lookdev still under 05-derived-renders (not pack textures)."""
     asset = register_mod.get_asset(asset_id)
@@ -326,6 +327,8 @@ def ingest_niagara_render(
         "note": note
         or "Niagara MRQ lookdev still from Unreal capture.",
     }
+    if system_name:
+        row["system_name"] = system_name
     catalog = load_catalog()
     outputs = list(catalog.get("outputs") or [])
     outputs.append(row)

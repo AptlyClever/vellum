@@ -510,7 +510,7 @@ async function openDetail(id) {
   forceLabel.className = "force-check";
   const forceInput = document.createElement("input");
   forceInput.type = "checkbox";
-  forceLabel.append(forceInput, document.createTextNode(" Force re-render"));
+  forceLabel.append(forceInput, document.createTextNode(" Force re-render (wipes + re-renders all systems)"));
   actions.appendChild(forceLabel);
   captureSec.appendChild(actions);
 

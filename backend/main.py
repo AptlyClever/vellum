@@ -439,7 +439,7 @@ def api_lookdev_lanes() -> dict[str, Any]:
 def api_lookdev_outputs(
     asset_id: str | None = Query(default=None),
     lane: str | None = Query(default=None),
-    limit: int = Query(default=50, ge=1, le=200),
+    limit: int = Query(default=50, ge=1, le=1000),
 ) -> dict[str, Any]:
     outputs = lookdev_mod.list_outputs(asset_id=asset_id, lane=lane, limit=limit)
     return {"schema_version": 1, "count": len(outputs), "outputs": outputs}
@@ -490,6 +490,7 @@ async def api_lookdev_ingest_render(
     asset_id: str = Form(...),
     lane: str = Form(...),
     note: str | None = Form(default=None),
+    system_name: str | None = Form(default=None),
     file: UploadFile = File(...),
 ) -> dict[str, Any]:
     """Upload a Niagara MRQ hero still into vault derived-renders."""
@@ -513,6 +514,7 @@ async def api_lookdev_ingest_render(
             source_file=tmp_path,
             note=note,
             original_name=file.filename,
+            system_name=system_name,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e

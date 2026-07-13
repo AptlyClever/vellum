@@ -168,9 +168,21 @@ foreach ($dir in $dirs) {
   }
 
   $HeroJson = Join-Path $OutDir "heroes-recover-$systemName.json"
-  # Quiet stdout - pick_heroes JSON dump looked like a hard failure mid-run.
-  & $py.Source $PickHeroesPy $dir.FullName --min-rgb $MinRgb --json-out $HeroJson *> $null
-  if ($LASTEXITCODE -ne 0 -or -not (Test-Path $HeroJson)) {
+  if (Test-Path $HeroJson) { Remove-Item -Force $HeroJson -ErrorAction SilentlyContinue }
+  # Never *>$null on native python - hangs after exit (runner lesson).
+  $pickArgs = @($PickHeroesPy, $dir.FullName, "--min-rgb", "$MinRgb", "--json-out", $HeroJson)
+  $pickProc = Start-Process -FilePath $py.Source -ArgumentList $pickArgs -PassThru -WindowStyle Hidden
+  $pickPid = [int]$pickProc.Id
+  $pickProc = $null
+  $deadline = (Get-Date).AddMinutes(5)
+  while ($null -ne (Get-Process -Id $pickPid -ErrorAction SilentlyContinue)) {
+    if ((Get-Date) -gt $deadline) {
+      try { Stop-Process -Id $pickPid -Force -ErrorAction SilentlyContinue } catch { }
+      break
+    }
+    Start-Sleep -Seconds 2
+  }
+  if (-not (Test-Path $HeroJson)) {
     $entry.skip = "hero_pick_failed"
     [void]$report.skipped.Add($entry)
     Write-Host "SKIP $systemName hero_pick_failed"
@@ -206,14 +218,16 @@ foreach ($dir in $dirs) {
 
   foreach ($hp in $heroPaths) {
     foreach ($laneName in @("slots", "hail-overlay")) {
-      $out = & curl.exe -sS -X POST "$VellumBase/api/lookdev/ingest-render" `
+      $out = & curl.exe -sfS --connect-timeout 20 --max-time 180 -X POST "$VellumBase/api/lookdev/ingest-render" `
         -F "asset_id=$AssetId" `
         -F "lane=$laneName" `
+        -F "system_name=$systemName" `
         -F "note=recover MRQ $($hp.role) $systemName via mrq-sequencer" `
         -F "file=@$($hp.path)"
       if ($LASTEXITCODE -ne 0) {
         [void]$report.errors.Add("ingest_render_failed:$systemName`:$laneName")
-        throw "ingest-render failed system=$systemName lane=$laneName"
+        Write-Host "WARNING ingest-render failed system=$systemName lane=$laneName"
+        continue
       }
       [void]$report.ingested.Add(@{ kind = "render"; system = $systemName; lane = $laneName; role = $hp.role; response = $out })
       Write-Host "Ingested hero $($hp.role) -> $laneName"
@@ -224,7 +238,7 @@ foreach ($dir in $dirs) {
   if (Test-Path $zipPath) { Remove-Item -Force $zipPath }
   Compress-Archive -Path (Join-Path $dir.FullName "*") -DestinationPath $zipPath -Force
   foreach ($laneName in @("slots", "hail-overlay")) {
-    $out = & curl.exe -sS -X POST "$VellumBase/api/lookdev/ingest-sequence" `
+    $out = & curl.exe -sfS --connect-timeout 20 --max-time 900 -X POST "$VellumBase/api/lookdev/ingest-sequence" `
       -F "asset_id=$AssetId" `
       -F "lane=$laneName" `
       -F "system_name=$systemName" `
@@ -232,7 +246,8 @@ foreach ($dir in $dirs) {
       -F "archive=@$zipPath"
     if ($LASTEXITCODE -ne 0) {
       [void]$report.errors.Add("ingest_sequence_failed:$systemName`:$laneName")
-      throw "ingest-sequence failed system=$systemName lane=$laneName"
+      Write-Host "WARNING ingest-sequence failed system=$systemName lane=$laneName"
+      continue
     }
     [void]$report.ingested.Add(@{ kind = "sequence"; system = $systemName; lane = $laneName; response = $out })
     Write-Host "Ingested sequence $systemName -> $laneName"

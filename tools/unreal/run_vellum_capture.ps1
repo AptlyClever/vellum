@@ -82,18 +82,23 @@ function Get-ImageFiles {
 
 function Wait-MrqOutputFrames {
   <#
-    Artifact gate: UnrealEditor -game often exits (or HasExited flaps) while MRQ
-    is still writing PNGs. Done = stable frame count on disk, not process exit.
+    Artifact gate: UnrealEditor -game often exits while MRQ is still writing PNGs.
+    Done = stable count >= ExpectFrames.
+    After a batch process has already exited: AcceptPartialStable accepts any
+    stable n>0; EmptyAbortSec returns early when still 0 (avoid 900s x N).
   #>
   param(
     [string]$SeqOutDir,
     [int]$ExpectFrames = 1,
     [int]$TimeoutSec = 1800,
     [int]$StableSeconds = 8,
+    [int]$EmptyAbortSec = 0,
+    [switch]$AcceptPartialStable,
     [string]$Phase = "MRQ frames"
   )
   if ($ExpectFrames -lt 1) { $ExpectFrames = 1 }
   $deadline = (Get-Date).AddSeconds($TimeoutSec)
+  $started = Get-Date
   $lastCount = -1
   $stableSince = $null
   while ((Get-Date) -lt $deadline) {
@@ -102,15 +107,21 @@ function Wait-MrqOutputFrames {
       $lastCount = $n
       $stableSince = Get-Date
       Send-VellumProgress -Message "$Phase frames=$n (want>=$ExpectFrames)"
-    } elseif ($n -ge $ExpectFrames -and $null -ne $stableSince) {
+    } elseif ($null -ne $stableSince) {
       $stableFor = ((Get-Date) - $stableSince).TotalSeconds
-      if ($stableFor -ge $StableSeconds) {
+      if ($n -ge $ExpectFrames -and $stableFor -ge $StableSeconds) {
         Send-VellumProgress -Message "$Phase ready frames=$n"
         return $n
       }
+      if ($AcceptPartialStable -and $n -gt 0 -and $stableFor -ge $StableSeconds) {
+        Send-VellumProgress -Message "$Phase stable-partial frames=$n (batch done)"
+        return $n
+      }
+      if ($EmptyAbortSec -gt 0 -and $n -eq 0 -and $stableFor -ge $EmptyAbortSec) {
+        Send-VellumProgress -Message "$Phase empty-abort frames=0 after ${EmptyAbortSec}s"
+        return 0
+      }
     }
-    # Also treat MoviePipeline log "Finished rendering" + any frames as success
-    # when ExpectFrames is approximate (warm-up frames etc.).
     Start-Sleep -Seconds 3
   }
   Send-VellumProgress -Message "$Phase timeout frames=$lastCount want>=$ExpectFrames"
@@ -188,13 +199,14 @@ function Send-VellumProgress {
 function Invoke-UeLogged {
   # Never RedirectStandardOutput/Error on UE - after Unreal exits, Process.Dispose
   # and ExitCode on redirected handles hang PowerShell forever (observed Aurora).
-  # Liveness = Get-Process -Id only. Logs via -AbsLog=.
+  # Liveness = Get-Process -Id only. Logs via -AbsLog=. TimeoutSec kills hung UE.
   param(
     [string]$Exe,
     [string[]]$ArgumentList,
     [string]$LogPath,
     [string]$Phase,
     [int]$HeartbeatSeconds = 15,
+    [int]$TimeoutSec = 0,
     [switch]$NoRedirect  # retained for callers; always no-redirect now
   )
   if (Test-Path $LogPath) { Remove-Item -Force $LogPath -ErrorAction SilentlyContinue }
@@ -215,6 +227,16 @@ function Invoke-UeLogged {
     Start-Sleep -Seconds $HeartbeatSeconds
     if ($null -eq (Get-Process -Id $uePid -ErrorAction SilentlyContinue)) { break }
     $elapsed = [int]((Get-Date) - $started).TotalSeconds
+    if ($TimeoutSec -gt 0 -and $elapsed -ge $TimeoutSec) {
+      Send-VellumProgress -Message "$Phase TIMEOUT ${elapsed}s - killing pid=$uePid"
+      try { Stop-Process -Id $uePid -Force -ErrorAction SilentlyContinue } catch { }
+      Start-Sleep -Seconds 2
+      try {
+        Get-Process -Name "UnrealEditor","UnrealEditor-Cmd" -ErrorAction SilentlyContinue |
+          Where-Object { $_.Id -eq $uePid } | Stop-Process -Force -ErrorAction SilentlyContinue
+      } catch { }
+      break
+    }
     Send-VellumProgress -Message "$Phase still running (${elapsed}s)" -LogPath $LogPath
   }
   Send-VellumProgress -Message "$Phase process gone" -LogPath $LogPath
@@ -295,10 +317,12 @@ function Ingest-CapturedSystem {
     $path = [string]$still.path
     if (-not (Test-Path $path)) { continue }
     foreach ($laneName in $Lanes) {
-      $null = & curl.exe -sS -X POST "$VellumBase/api/lookdev/ingest-render" `
+      Send-VellumProgress -Message "Ingest render $SystemName $($still.role) -> $laneName"
+      $null = & curl.exe -sfS --connect-timeout 20 --max-time 180 -X POST "$VellumBase/api/lookdev/ingest-render" `
         -F "asset_id=$AssetId" `
         -F "lane=$laneName" `
-        -F "note=auto Niagara MRQ $($still.role) via mrq-batch" `
+        -F "system_name=$SystemName" `
+        -F "note=auto Niagara MRQ $($still.role) $SystemName via mrq-batch" `
         -F "file=@$path"
       if ($LASTEXITCODE -ne 0) {
         if ($Errors) {
@@ -314,13 +338,15 @@ function Ingest-CapturedSystem {
   if ((Test-Path $SeqDir)) {
     $zipPath = Join-Path $OutDir ("seq-" + (Safe-Name $SystemName) + ".zip")
     if (Test-Path $zipPath) { Remove-Item -Force $zipPath }
+    Send-VellumProgress -Message "Zip sequence $SystemName"
     Compress-Archive -Path (Join-Path $SeqDir "*") -DestinationPath $zipPath -Force
     foreach ($laneName in $Lanes) {
-      $null = & curl.exe -sS -X POST "$VellumBase/api/lookdev/ingest-sequence" `
+      Send-VellumProgress -Message "Ingest sequence $SystemName -> $laneName"
+      $null = & curl.exe -sfS --connect-timeout 20 --max-time 900 -X POST "$VellumBase/api/lookdev/ingest-sequence" `
         -F "asset_id=$AssetId" `
         -F "lane=$laneName" `
         -F "system_name=$SystemName" `
-        -F "note=auto Niagara MRQ sequence via mrq-batch" `
+        -F "note=auto Niagara MRQ sequence $SystemName via mrq-batch" `
         -F "archive=@$zipPath"
       if ($LASTEXITCODE -ne 0) {
         if ($Errors) {
@@ -336,14 +362,16 @@ function Ingest-CapturedSystem {
 }
 
 function Get-LookdevOutputs {
-  param([string]$VellumBase, [string]$AssetId)
+  param([string]$VellumBase, [string]$AssetId, [switch]$Required)
   try {
-    # Pull enough rows to cover a full pack (API default 50 is too small).
+    # Pack scale: heroes x lanes x systems can exceed 200; API allows up to 1000.
     $r = Invoke-RestMethod -Method Get `
-      -Uri "$VellumBase/api/lookdev/outputs?asset_id=$AssetId&limit=200" -TimeoutSec 45
+      -Uri "$VellumBase/api/lookdev/outputs?asset_id=$AssetId&limit=1000" -TimeoutSec 60
     if ($r.outputs) { return @($r.outputs) }
+    return @()
   } catch {
     Write-Host "WARNING: lookdev outputs fetch failed: $($_.Exception.Message)"
+    if ($Required) { throw "lookdev_outputs_fetch_failed:$($_.Exception.Message)" }
   }
   return @()
 }
@@ -359,8 +387,13 @@ function Get-VaultCoveredSystemSet {
     if ([string]$o.kind -ne "niagara-render") { continue }
     $lane = [string]$o.lane
     if ($Lanes -notcontains $lane) { continue }
-    $blob = ("{0} {1} {2}" -f [string]$o.path, [string]$o.note, [string]$o.system_name)
-    $names = [regex]::Matches($blob, 'NS_[A-Za-z0-9_]+') | ForEach-Object { $_.Value }
+    $exact = [string]$o.system_name
+    if ($exact -and $exact.StartsWith("NS_")) {
+      $names = @($exact)
+    } else {
+      $blob = ("{0} {1} {2}" -f [string]$o.path, [string]$o.note, [string]$o.system_name)
+      $names = @([regex]::Matches($blob, 'NS_[A-Za-z0-9_]+') | ForEach-Object { $_.Value })
+    }
     foreach ($name in $names) {
       if (-not $bySystem.ContainsKey($name)) {
         $bySystem[$name] = New-Object 'System.Collections.Generic.HashSet[string]'
@@ -434,7 +467,7 @@ function Ensure-UeCmd {
 
 Write-Host "Project: $ProjectUe"
 Write-Host "MaxSystems=$MaxSystems (0=entire pack) Width=$Width Height=$Height MapPath=$MapPath"
-Write-Host "Runner version: mrq-artifact-gate (2026-07-13)"
+Write-Host "Runner version: mrq-pack-harden (2026-07-13)"
 Write-Host "UE host: $($UeHost.id) ($($UeHost.label))"
 Write-Host "Ingest lanes: $($IngestLanes -join ', ')"
 Write-Host "ForceCapture=$ForceCapture ForceStudio=$ForceStudio MaxFrameCount=$FrameCount (per-system estimate may be shorter)"
@@ -542,6 +575,10 @@ function Write-InventoryCache {
 # ---------------------------------------------------------------------------
 $inv = $null
 $inventoryFromCache = $false
+if ($ForceCapture -and (Test-Path $InventoryCachePath)) {
+  Remove-Item -Force $InventoryCachePath -ErrorAction SilentlyContinue
+  Write-Host "ForceCapture: cleared inventory cache"
+}
 if (-not $ForceCapture) {
   $inv = Read-InventoryCache -Path $InventoryCachePath -ExpectedRoot $ContentRoot `
     -MaxAgeHours $InventoryCacheMaxAgeHours -MaxSystems $MaxSystems
@@ -618,14 +655,16 @@ if ($pickedSystems.Count -eq 0) {
 # ---------------------------------------------------------------------------
 # Skip systems already covered in vault (fast HashSet - no local PNG scans).
 # ForceCapture / VELLUM_FORCE_CAPTURE re-renders everything.
+# Local MRQ dirs with enough frames -> ingest_only (no wipe / no re-author).
 # ---------------------------------------------------------------------------
 $skippedVault = New-Object System.Collections.ArrayList
 $toRenderSystems = New-Object System.Collections.ArrayList
+$toIngestOnly = New-Object System.Collections.ArrayList
 $vaultCovered = New-Object 'System.Collections.Generic.HashSet[string]'
 $skipSw = [System.Diagnostics.Stopwatch]::StartNew()
 if (-not $ForceCapture -and $pickedSystems.Count -gt 0) {
   Send-VellumProgress -Message "Skip check: fetching vault lookdev..."
-  $vaultOutputs = Get-LookdevOutputs -VellumBase $VellumBase -AssetId $AssetId
+  $vaultOutputs = Get-LookdevOutputs -VellumBase $VellumBase -AssetId $AssetId -Required
   $vaultCovered = Get-VaultCoveredSystemSet -Outputs $vaultOutputs -Lanes $IngestLanes
   Write-Host "Skip check: vault outputs=$(@($vaultOutputs).Count) covered=$($vaultCovered.Count) force=$ForceCapture"
 }
@@ -649,16 +688,25 @@ foreach ($sys in $pickedSystems) {
     [void]$skippedVault.Add($skipEntry)
     continue
   }
+  $localFrames = @(Get-ImageFiles -Root $seqOutDir).Count
+  if ($localFrames -ge 30) {
+    $skipEntry.reason = "ingest_only_local_frames:$localFrames"
+    $skipEntry.sys = $sys
+    [void]$toIngestOnly.Add($skipEntry)
+    continue
+  }
   [void]$toRenderSystems.Add($sys)
 }
 $skipSw.Stop()
-Send-VellumProgress -Message ("Skip plan: render={0} vault_skip={1} force={2} cache={3} ({4}ms)" -f `
-  $toRenderSystems.Count, $skippedVault.Count, [bool]$ForceCapture, [bool]$inventoryFromCache, $skipSw.ElapsedMilliseconds)
-Write-Host ("Skip plan done in {0}ms render={1} vault_skip={2}" -f `
-  $skipSw.ElapsedMilliseconds, $toRenderSystems.Count, $skippedVault.Count)
+Send-VellumProgress -Message ("Skip plan: render={0} ingest_only={1} vault_skip={2} force={3} cache={4} ({5}ms)" -f `
+  $toRenderSystems.Count, $toIngestOnly.Count, $skippedVault.Count, [bool]$ForceCapture, [bool]$inventoryFromCache, $skipSw.ElapsedMilliseconds)
+Write-Host ("Skip plan done in {0}ms render={1} ingest_only={2} vault_skip={3}" -f `
+  $skipSw.ElapsedMilliseconds, $toRenderSystems.Count, $toIngestOnly.Count, $skippedVault.Count)
 
-if ($toRenderSystems.Count -eq 0) {
+if ($toRenderSystems.Count -eq 0 -and $toIngestOnly.Count -eq 0) {
   Send-VellumProgress -Message "No Unreal author/MRQ needed (vault already covered or nothing picked)"
+} elseif ($toRenderSystems.Count -eq 0 -and $toIngestOnly.Count -gt 0) {
+  Send-VellumProgress -Message "Ingest-only: $($toIngestOnly.Count) local MRQ dirs (no UE author/MRQ)"
 }
 
 # ---------------------------------------------------------------------------
@@ -741,6 +789,10 @@ if ($batchSystems.Count -gt 0) {
       $mapSoft = ConvertTo-UeSoftPath $(if ($author.map_path) { [string]$author.map_path } else { $MapPath })
       $queueSoft = $null
       if ($author.queue_path) { $queueSoft = ConvertTo-UeSoftPath ([string]$author.queue_path) }
+      if (-not $queueSoft -and $authoredJobs.Count -gt 1) {
+        [void]$allErrors.Add("author_queue_missing:jobs=$($authoredJobs.Count)")
+        Send-VellumProgress -Message "FAIL author ok but no queue_path for multi-job pack"
+      }
 
       Send-VellumProgress -Message "Phase B author ok - entering Phase C"
       $UeMrq = Find-UeEditor -CmdPath $Ue
@@ -762,12 +814,16 @@ if ($batchSystems.Count -gt 0) {
           "-nosplash",
           "-nop4",
           "-log",
+          "-Unattended",
           "-MoviePipelineConfig=$queueSoft"
         )
         $mrqExit = 0
+        # Epic: -MoviePipelineConfig may be a Queue asset (renders all jobs).
+        # Timeout scales with job count so a hung editor cannot pin the pack forever.
+        $batchTimeout = 300 + (60 * [Math]::Max(1, $authoredJobs.Count))
         try {
           $mrqExit = Invoke-UeLogged -Exe $UeMrq -ArgumentList $mrqArgs -LogPath $MrqLog `
-            -Phase "Phase C batch MRQ" -HeartbeatSeconds 20 -NoRedirect
+            -Phase "Phase C batch MRQ" -HeartbeatSeconds 20 -TimeoutSec $batchTimeout -NoRedirect
         } catch {
           $mrqExit = 1
           $_ | Out-File -FilePath $MrqLog -Append
@@ -794,9 +850,15 @@ if ($batchSystems.Count -gt 0) {
         if ($null -ne $ajob.frame_count -and [int]$ajob.frame_count -gt 0) {
           $expect = [int]$ajob.frame_count
         }
-        # Parent -game process may already have exited; poll disk until stable.
-        $frameCount = Wait-MrqOutputFrames -SeqOutDir $seqOutDir -ExpectFrames $expect `
-          -Phase "Phase C[$slotIndex] $systemName" -TimeoutSec 900
+        # After batch exit: short empty-abort + partial-stable (avoid 900s x N pack hang).
+        if ($queueSoft) {
+          $frameCount = Wait-MrqOutputFrames -SeqOutDir $seqOutDir -ExpectFrames $expect `
+            -Phase "Phase C[$slotIndex] $systemName" -TimeoutSec 120 `
+            -EmptyAbortSec 25 -AcceptPartialStable `
+            -StableSeconds 6
+        } else {
+          $frameCount = 0
+        }
         $frameFiles = @(Get-ImageFiles -Root $seqOutDir)
 
         if ($frameFiles.Count -eq 0 -or -not $queueSoft) {
@@ -815,20 +877,20 @@ if ($batchSystems.Count -gt 0) {
             "-nosplash",
             "-nop4",
             "-log",
-            "-stdout",
-            "-FullStdOutLogOutput",
-            "-allowStdOutLogVerbosity",
+            "-Unattended",
             "-LevelSequence=$seqSoft",
             "-MoviePipelineConfig=$cfgSoft"
           )
           try {
             [void](Invoke-UeLogged -Exe $UeMrq -ArgumentList $mrqArgs -LogPath $MrqLog `
-              -Phase "Phase C[$slotIndex] MRQ $systemName" -HeartbeatSeconds 20)
+              -Phase "Phase C[$slotIndex] MRQ $systemName" -HeartbeatSeconds 20 `
+              -TimeoutSec 420 -NoRedirect)
           } catch {
             $_ | Out-File -FilePath $MrqLog -Append
           }
           [void](Wait-MrqOutputFrames -SeqOutDir $seqOutDir -ExpectFrames $expect `
-            -Phase "Phase C[$slotIndex] $systemName retry" -TimeoutSec 900)
+            -Phase "Phase C[$slotIndex] $systemName retry" -TimeoutSec 180 `
+            -EmptyAbortSec 30 -AcceptPartialStable -StableSeconds 6)
           $frameFiles = @(Get-ImageFiles -Root $seqOutDir)
         }
         if ($frameFiles.Count -eq 0) {
@@ -927,11 +989,98 @@ if ($batchSystems.Count -gt 0) {
 }
 
 # ---------------------------------------------------------------------------
+# Ingest-only: local MRQ already on disk (interrupted pack resume). No wipe.
+# ---------------------------------------------------------------------------
+if ($toIngestOnly.Count -gt 0) {
+  $py = Get-Command python -ErrorAction SilentlyContinue
+  if (-not $py) { $py = Get-Command py -ErrorAction SilentlyContinue }
+  if (-not $py) { throw "python/py not found on PATH for pick_heroes.py" }
+  $slotIndex = 1000
+  foreach ($io in $toIngestOnly) {
+    $systemName = [string]$io.asset_name
+    $objectPath = [string]$io.object_path
+    $safeHint = [string]$io.safe_name
+    $seqOutDir = [string]$io.seq_dir
+    $frameFiles = @(Get-ImageFiles -Root $seqOutDir)
+    Send-VellumProgress -Message "Ingest-only[$slotIndex] $systemName frames=$($frameFiles.Count)"
+    if ($frameFiles.Count -lt 30) {
+      [void]$allErrors.Add("ingest_only_too_few:$systemName")
+      $slotIndex++
+      continue
+    }
+    $HeroJson = Join-Path $OutDir "heroes-ingest-$safeHint.json"
+    if (Test-Path $HeroJson) { Remove-Item -Force $HeroJson -ErrorAction SilentlyContinue }
+    $pickArgs = @($StagedPickHeroesPy, $seqOutDir, "--json-out", $HeroJson)
+    $pickProc = Start-Process -FilePath $py.Source -ArgumentList $pickArgs -PassThru -WindowStyle Hidden
+    $pickPid = [int]$pickProc.Id
+    $pickProc = $null
+    $pickDeadline = (Get-Date).AddMinutes(5)
+    while ($null -ne (Get-Process -Id $pickPid -ErrorAction SilentlyContinue)) {
+      if ((Get-Date) -gt $pickDeadline) {
+        try { Stop-Process -Id $pickPid -Force -ErrorAction SilentlyContinue } catch { }
+        break
+      }
+      Start-Sleep -Seconds 2
+    }
+    if (-not (Test-Path $HeroJson)) {
+      [void]$allErrors.Add("ingest_only_hero_pick_failed:$systemName")
+      $slotIndex++
+      continue
+    }
+    $heroDoc = Get-Content $HeroJson -Raw | ConvertFrom-Json
+    if (-not [bool]$heroDoc.ok) {
+      [void]$allErrors.Add("ingest_only_hero_rejected:$systemName`:$($heroDoc.error)")
+      $slotIndex++
+      continue
+    }
+    foreach ($h in @($heroDoc.heroes)) {
+      $src = [string]$h.path
+      if (-not (Test-Path $src)) { continue }
+      $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
+      $dest = Join-Path $StillsDir "$AssetId-$safeHint-$($h.role)-$stamp.png"
+      Copy-Item -Force -Path $src -Destination $dest
+      [void]$stills.Add(@{
+          path        = $dest
+          kind        = "niagara-render"
+          system      = $systemName
+          object_path = $objectPath
+          method      = "ingest-only"
+          role        = [string]$h.role
+          max_rgb     = [int]$h.max_rgb
+          bytes       = (Get-Item $dest).Length
+        })
+    }
+    [void]$sequences.Add(@{
+        system = $systemName
+        path   = $seqOutDir
+        frames = [int]$heroDoc.frame_count
+      })
+    $sysHeroes = @($stills | Where-Object { $_.system -eq $systemName })
+    Send-VellumProgress -Message "Ingest-only[$slotIndex] ingest $systemName"
+    $nUp = Ingest-CapturedSystem -AssetId $AssetId -SystemName $systemName `
+      -HeroStills $sysHeroes -SeqDir $seqOutDir -OutDir $OutDir `
+      -VellumBase $VellumBase -Lanes $IngestLanes -Errors $allErrors
+    if ($nUp -lt 1) {
+      [void]$allErrors.Add("ingest_only_zero:$systemName")
+    } else {
+      Send-VellumProgress -Message "Ingest-only captured $systemName heroes=$($heroDoc.heroes.Count) ingested=$nUp"
+    }
+    $slotIndex++
+  }
+}
+
+# ---------------------------------------------------------------------------
 # Manifest + scratch (per-system ingest already completed above)
 # ---------------------------------------------------------------------------
 $vaultSkipOk = ($pickedSystems.Count -gt 0 -and $toRenderSystems.Count -eq 0 -and
-  $skippedVault.Count -gt 0)
-$partialOk = ($stills.Count -gt 0)
+  $toIngestOnly.Count -eq 0 -and $skippedVault.Count -gt 0)
+$targetNames = New-Object System.Collections.Generic.HashSet[string]
+foreach ($sys in $toRenderSystems) { [void]$targetNames.Add([string]$sys.asset_name) }
+foreach ($io in $toIngestOnly) { [void]$targetNames.Add([string]$io.asset_name) }
+$gotNames = New-Object System.Collections.Generic.HashSet[string]
+foreach ($s in $stills) { if ($s.system) { [void]$gotNames.Add([string]$s.system) } }
+$missing = @($targetNames | Where-Object { -not $gotNames.Contains($_) })
+$coverageOk = ($targetNames.Count -eq 0) -or ($missing.Count -eq 0)
 $Manifest = Join-Path $OutDir "manifest.json"
 $man = @{
   schema_version        = 1
@@ -944,14 +1093,17 @@ $man = @{
   stills                = @($stills)
   sequences             = @($sequences)
   skipped_vault         = @($skippedVault)
+  ingest_only           = @($toIngestOnly | ForEach-Object { $_.asset_name })
   render_systems        = @($toRenderSystems | ForEach-Object { $_.asset_name })
+  missing_systems       = @($missing)
   force_capture         = [bool]$ForceCapture
   inventory_from_cache  = [bool]$inventoryFromCache
   errors                = @($allErrors)
-  stills_attempted      = ($toRenderSystems.Count -gt 0)
-  ok                    = ($partialOk -or $vaultSkipOk)
+  stills_attempted      = ($toRenderSystems.Count -gt 0 -or $toIngestOnly.Count -gt 0)
+  ok                    = (($coverageOk -and $allErrors.Count -eq 0) -or $vaultSkipOk)
+  partial               = ((-not $coverageOk) -and ($gotNames.Count -gt 0))
   ingest_policy         = "per_system"
-  skip_policy           = "vault_hashset"
+  skip_policy           = "vault_hashset+ingest_only"
 }
 ($man | ConvertTo-Json -Depth 8) | Set-Content -Path $Manifest -Encoding utf8
 
