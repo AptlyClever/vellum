@@ -20,7 +20,8 @@ param(
   [int]$PollSeconds = 5,
   [string]$HostName = "",
   [string]$DefaultProject = $(if ($env:VELLUM_UE_PROJECT) { $env:VELLUM_UE_PROJECT } else { "" }),
-  [string]$UeCmd = $env:VELLUM_UE_CMD
+  [string]$UeCmd = $env:VELLUM_UE_CMD,
+  [switch]$RecoverOnly
 )
 
 $ErrorActionPreference = "Stop"
@@ -149,6 +150,14 @@ try {
   Write-Host "Resolved project (preflight): $(Resolve-UprojectFromHost -HostProfile $UeHost -FallbackUproject $DefaultProject)"
 } catch {
   Write-Host "WARNING: $($_.Exception.Message)"
+}
+
+if ($RecoverOnly) {
+  $Recover = Join-Path $PSScriptRoot "recover_vellum_capture.ps1"
+  if (-not (Test-Path $Recover)) { throw "recover_vellum_capture.ps1 missing" }
+  Write-Host "RecoverOnly: ingesting finished MRQ dirs under Saved/VellumCapture/mrq (no UE launch, no job claim)"
+  & $Recover -VellumBase $VellumBase -HostName $UeHost.id -AssetId "fireworks-vol-1-niagara"
+  exit $LASTEXITCODE
 }
 
 while ($true) {
