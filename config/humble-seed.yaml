@@ -1,0 +1,492 @@
+version: 1
+project: vellum
+brand_family: control-alt-games
+vault_root: /mnt/data/vault/vellum
+source: docs/humble-asset-vault-inventory.md
+assets:
+- id: japanese-old-shopping-mall-interior-environment
+  list_index: 1
+  display_name: Japanese Old Shopping Mall Interior Environment
+  store_lane: epic-games-store
+  store_label: Epic Games Store
+  package_type: Unreal Engine environment
+  engine: unreal
+  redemption_deadline: '2027-07-06T11:00:00-07:00'
+  redemption_status: not_recorded
+  project_fit: Threshold Affairs evidence stills; liminal commercial corridor; Hail
+    scene cards.
+  source_bundle: humble-all-in-one-unreal-unity-gamedev
+  raw_location: null
+  tags: []
+- id: motel-room-interior-environment
+  list_index: 2
+  display_name: Motel Room Interior Environment
+  store_lane: epic-games-store
+  store_label: Epic Games Store
+  package_type: Unreal Engine environment
+  engine: unreal
+  redemption_deadline: '2027-07-06T11:00:00-07:00'
+  redemption_status: not_recorded
+  project_fit: Threshold Affairs interiors; motel anomaly scenes; Hail incident stills.
+  source_bundle: humble-all-in-one-unreal-unity-gamedev
+  raw_location: null
+  tags: []
+- id: dungeon-ruins
+  list_index: 3
+  display_name: Dungeon Ruins
+  store_lane: epic-games-store
+  store_label: Epic Games Store
+  package_type: Unreal Engine environment
+  engine: unreal
+  redemption_deadline: '2027-07-06T11:00:00-07:00'
+  redemption_status: not_recorded
+  project_fit: Field Command lookdev; threshold ruins; underground anomaly scenes.
+  source_bundle: humble-all-in-one-unreal-unity-gamedev
+  raw_location: null
+  tags: []
+- id: mega-marble-material-4k
+  list_index: 4
+  display_name: Mega Marble Material 4K
+  store_lane: epic-games-store
+  store_label: Epic Games Store
+  package_type: Unreal Engine material pack
+  engine: unreal
+  redemption_deadline: '2027-07-06T11:00:00-07:00'
+  redemption_status: not_recorded
+  project_fit: Institute interiors, formal spaces, LCARD/Hail scene polish.
+  source_bundle: humble-all-in-one-unreal-unity-gamedev
+  raw_location: null
+  tags: []
+- id: magic-projectiles-vol-3-niagara
+  list_index: 5
+  display_name: Magic Projectiles Vol.3 - Niagara
+  store_lane: epic-games-store
+  store_label: Epic Games Store
+  package_type: Unreal Engine Niagara VFX
+  engine: unreal
+  redemption_deadline: '2027-07-06T11:00:00-07:00'
+  redemption_status: not_recorded
+  project_fit: Field Command attacks/abilities; Hail combat effects.
+  source_bundle: humble-all-in-one-unreal-unity-gamedev
+  raw_location: null
+  tags: []
+- id: stylized-vfx-water
+  list_index: 6
+  display_name: Stylized VFX - Water
+  store_lane: epic-games-store
+  store_label: Epic Games Store
+  package_type: Unreal Engine VFX
+  engine: unreal
+  redemption_deadline: '2027-07-06T11:00:00-07:00'
+  redemption_status: not_recorded
+  project_fit: Threshold instability, portal ambience, Hail visual loops.
+  source_bundle: humble-all-in-one-unreal-unity-gamedev
+  raw_location: null
+  tags: []
+- id: cappadocia-anatolian-cave-hotel-environment
+  list_index: 7
+  display_name: Cappadocia Anatolian Cave Hotel Environment
+  store_lane: epic-games-store
+  store_label: Epic Games Store
+  package_type: Unreal Engine environment
+  engine: unreal
+  redemption_deadline: '2027-07-06T11:00:00-07:00'
+  redemption_status: not_recorded
+  project_fit: Case-file location variety; unusual threshold architecture.
+  source_bundle: humble-all-in-one-unreal-unity-gamedev
+  raw_location: null
+  tags: []
+- id: motel-reception-interior-environment
+  list_index: 8
+  display_name: Motel Reception Interior Environment
+  store_lane: epic-games-store
+  store_label: Epic Games Store
+  package_type: Unreal Engine environment
+  engine: unreal
+  redemption_deadline: '2027-07-06T11:00:00-07:00'
+  redemption_status: not_recorded
+  project_fit: Case hub interiors; reception-desk anomaly scenes.
+  source_bundle: humble-all-in-one-unreal-unity-gamedev
+  raw_location: null
+  tags: []
+- id: cyberpunk-hospital-cyberpunk-clinic-modular-cyberpunk-environment
+  list_index: 9
+  display_name: Cyberpunk Hospital - Cyberpunk Clinic - Modular Cyberpunk Environment
+  store_lane: epic-games-store
+  store_label: Epic Games Store
+  package_type: Unreal Engine modular environment
+  engine: unreal
+  redemption_deadline: '2027-07-06T11:00:00-07:00'
+  redemption_status: not_recorded
+  project_fit: Threshold Affairs institutional weirdness; Hail; LCARD visual punctuation.
+  source_bundle: humble-all-in-one-unreal-unity-gamedev
+  raw_location: null
+  tags: []
+- id: arabic-fortress
+  list_index: 10
+  display_name: Arabic Fortress
+  store_lane: epic-games-store
+  store_label: Epic Games Store
+  package_type: Unreal Engine environment
+  engine: unreal
+  redemption_deadline: '2027-07-06T11:00:00-07:00'
+  redemption_status: not_recorded
+  project_fit: Field Command map lookdev; fortress/defense visuals.
+  source_bundle: humble-all-in-one-unreal-unity-gamedev
+  raw_location: null
+  tags: []
+- id: ice-fortress
+  list_index: 11
+  display_name: Ice Fortress
+  store_lane: epic-games-store
+  store_label: Epic Games Store
+  package_type: Unreal Engine environment
+  engine: unreal
+  redemption_deadline: '2027-07-06T11:00:00-07:00'
+  redemption_status: not_recorded
+  project_fit: Field Command region variation; stylized mission cards.
+  source_bundle: humble-all-in-one-unreal-unity-gamedev
+  raw_location: null
+  tags: []
+- id: the-lords-mansion
+  list_index: 12
+  display_name: The Lords' Mansion
+  store_lane: epic-games-store
+  store_label: Epic Games Store
+  package_type: Unreal Engine environment
+  engine: unreal
+  redemption_deadline: '2027-07-06T11:00:00-07:00'
+  redemption_status: not_recorded
+  project_fit: Threshold Affairs elite/interior scenes; Dobsonian executive weirdness.
+  source_bundle: humble-all-in-one-unreal-unity-gamedev
+  raw_location: null
+  tags: []
+- id: arabic-dock
+  list_index: 13
+  display_name: Arabic Dock
+  store_lane: epic-games-store
+  store_label: Epic Games Store
+  package_type: Unreal Engine environment
+  engine: unreal
+  redemption_deadline: '2027-07-06T11:00:00-07:00'
+  redemption_status: not_recorded
+  project_fit: Hail location card; waterfront Field Command/threshold scene.
+  source_bundle: humble-all-in-one-unreal-unity-gamedev
+  raw_location: null
+  tags: []
+- id: vertical-warehouse
+  list_index: 14
+  display_name: Vertical Warehouse
+  store_lane: epic-games-store
+  store_label: Epic Games Store
+  package_type: Unreal Engine environment
+  engine: unreal
+  redemption_deadline: '2027-07-06T11:00:00-07:00'
+  redemption_status: not_recorded
+  project_fit: Strong Field Command lane/battlefield candidate; industrial evidence
+    stills.
+  source_bundle: humble-all-in-one-unreal-unity-gamedev
+  raw_location: null
+  tags: []
+- id: dark-village
+  list_index: 15
+  display_name: Dark Village
+  store_lane: epic-games-store
+  store_label: Epic Games Store
+  package_type: Unreal Engine environment
+  engine: unreal
+  redemption_deadline: '2027-07-06T11:00:00-07:00'
+  redemption_status: not_recorded
+  project_fit: Dobsonian/Field Command atmosphere; anomaly village.
+  source_bundle: humble-all-in-one-unreal-unity-gamedev
+  raw_location: null
+  tags: []
+- id: the-count-s-church
+  list_index: 16
+  display_name: The Count's Church
+  store_lane: epic-games-store
+  store_label: Epic Games Store
+  package_type: Unreal Engine environment
+  engine: unreal
+  redemption_deadline: '2027-07-06T11:00:00-07:00'
+  redemption_status: not_recorded
+  project_fit: Threshold/ritual/official setting; Anchor-zone study.
+  source_bundle: humble-all-in-one-unreal-unity-gamedev
+  raw_location: null
+  tags: []
+- id: abandoned-cabin
+  list_index: 17
+  display_name: Abandoned Cabin
+  store_lane: epic-games-store
+  store_label: Epic Games Store
+  package_type: Unreal Engine environment
+  engine: unreal
+  redemption_deadline: '2027-07-06T11:00:00-07:00'
+  redemption_status: not_recorded
+  project_fit: Small atmospheric case location; threshold misalignment scene.
+  source_bundle: humble-all-in-one-unreal-unity-gamedev
+  raw_location: null
+  tags: []
+- id: oil-rig-liope
+  list_index: 18
+  display_name: Oil Rig Liope
+  store_lane: epic-games-store
+  store_label: Epic Games Store
+  package_type: Unreal Engine environment
+  engine: unreal
+  redemption_deadline: '2027-07-06T11:00:00-07:00'
+  redemption_status: not_recorded
+  project_fit: Industrial mission field; Hail incident visuals; offshore Field Command
+    map.
+  source_bundle: humble-all-in-one-unreal-unity-gamedev
+  raw_location: null
+  tags: []
+- id: middle-eastern-town
+  list_index: 19
+  display_name: Middle Eastern Town
+  store_lane: epic-games-store
+  store_label: Epic Games Store
+  package_type: Unreal Engine environment
+  engine: unreal
+  redemption_deadline: '2027-07-06T11:00:00-07:00'
+  redemption_status: not_recorded
+  project_fit: Exterior location variety; Field Command region study.
+  source_bundle: humble-all-in-one-unreal-unity-gamedev
+  raw_location: null
+  tags: []
+- id: hangar-x
+  list_index: 20
+  display_name: HANGAR-X
+  store_lane: epic-games-store
+  store_label: Epic Games Store
+  package_type: Unreal Engine environment
+  engine: unreal
+  redemption_deadline: '2027-07-06T11:00:00-07:00'
+  redemption_status: not_recorded
+  project_fit: Excellent Field Command/Hail/LCARD sci-fi industrial setting.
+  source_bundle: humble-all-in-one-unreal-unity-gamedev
+  raw_location: null
+  tags: []
+- id: industrial-warehouse-night-environment-garage
+  list_index: 21
+  display_name: Industrial Warehouse Night Environment - GARAGE
+  store_lane: epic-games-store
+  store_label: Epic Games Store
+  package_type: Unreal Engine environment
+  engine: unreal
+  redemption_deadline: '2027-07-06T11:00:00-07:00'
+  redemption_status: not_recorded
+  project_fit: Threshold Affairs evidence stills; Hail cards; Field Command test arena.
+  source_bundle: humble-all-in-one-unreal-unity-gamedev
+  raw_location: null
+  tags: []
+- id: container-city
+  list_index: 22
+  display_name: Container City
+  store_lane: epic-games-store
+  store_label: Epic Games Store
+  package_type: Unreal Engine environment
+  engine: unreal
+  redemption_deadline: '2027-07-06T11:00:00-07:00'
+  redemption_status: not_recorded
+  project_fit: Urban/tactical Field Command map; future game spark.
+  source_bundle: humble-all-in-one-unreal-unity-gamedev
+  raw_location: null
+  tags: []
+- id: master-mega-dirty-wall-pack-material-4k
+  list_index: 23
+  display_name: Master Mega Dirty Wall Pack Material 4K
+  store_lane: epic-games-store
+  store_label: Epic Games Store
+  package_type: Unreal Engine material pack
+  engine: unreal
+  redemption_deadline: '2027-07-06T11:00:00-07:00'
+  redemption_status: not_recorded
+  project_fit: Liminal/abandoned set dressing; gritty Field Command/case visuals.
+  source_bundle: humble-all-in-one-unreal-unity-gamedev
+  raw_location: null
+  tags: []
+- id: fabric-bundle-material
+  list_index: 24
+  display_name: Fabric Bundle Material
+  store_lane: epic-games-store
+  store_label: Epic Games Store
+  package_type: Unreal Engine material pack
+  engine: unreal
+  redemption_deadline: '2027-07-06T11:00:00-07:00'
+  redemption_status: not_recorded
+  project_fit: Scene polish; interiors; props.
+  source_bundle: humble-all-in-one-unreal-unity-gamedev
+  raw_location: null
+  tags: []
+- id: glass-bundle-material
+  list_index: 25
+  display_name: Glass Bundle Material
+  store_lane: epic-games-store
+  store_label: Epic Games Store
+  package_type: Unreal Engine material pack
+  engine: unreal
+  redemption_deadline: '2027-07-06T11:00:00-07:00'
+  redemption_status: not_recorded
+  project_fit: Office/institutional interiors; threshold containment visuals.
+  source_bundle: humble-all-in-one-unreal-unity-gamedev
+  raw_location: null
+  tags: []
+- id: fireworks-vol-1-niagara
+  list_index: 26
+  display_name: Fireworks Vol. 1 - Niagara
+  store_lane: epic-games-store
+  store_label: Epic Games Store
+  package_type: Unreal Engine Niagara VFX
+  engine: unreal
+  redemption_deadline: '2027-07-06T11:00:00-07:00'
+  redemption_status: not_recorded
+  project_fit: Slots wins, Hail stingers, Arcade celebrations.
+  source_bundle: humble-all-in-one-unreal-unity-gamedev
+  raw_location: null
+  tags: []
+- id: toon-abilities-vol-1-niagara
+  list_index: 27
+  display_name: Toon Abilities Vol.1 - Niagara
+  store_lane: epic-games-store
+  store_label: Epic Games Store
+  package_type: Unreal Engine Niagara VFX
+  engine: unreal
+  redemption_deadline: '2027-07-06T11:00:00-07:00'
+  redemption_status: not_recorded
+  project_fit: Stylized Field Command abilities; playful Hail/Slots moments.
+  source_bundle: humble-all-in-one-unreal-unity-gamedev
+  raw_location: null
+  tags: []
+- id: loot-drops-vol-2-niagara
+  list_index: 28
+  display_name: Loot Drops Vol.2 - Niagara
+  store_lane: epic-games-store
+  store_label: Epic Games Store
+  package_type: Unreal Engine Niagara VFX
+  engine: unreal
+  redemption_deadline: '2027-07-06T11:00:00-07:00'
+  redemption_status: not_recorded
+  project_fit: Slots reward visuals; Arcade/Hail reward stingers.
+  source_bundle: humble-all-in-one-unreal-unity-gamedev
+  raw_location: null
+  tags: []
+- id: magic-abilities-vol-3-niagara
+  list_index: 29
+  display_name: Magic Abilities Vol. 3 Niagara
+  store_lane: epic-games-store
+  store_label: Epic Games Store
+  package_type: Unreal Engine Niagara VFX
+  engine: unreal
+  redemption_deadline: '2027-07-06T11:00:00-07:00'
+  redemption_status: not_recorded
+  project_fit: Field Command abilities; Anchor and threshold stabilization effects.
+  source_bundle: humble-all-in-one-unreal-unity-gamedev
+  raw_location: null
+  tags: []
+- id: niagara-mega-pack-vol-3
+  list_index: 30
+  display_name: Niagara Mega Pack Vol. 3
+  store_lane: epic-games-store
+  store_label: Epic Games Store
+  package_type: Unreal Engine Niagara VFX
+  engine: unreal
+  redemption_deadline: '2027-07-06T11:00:00-07:00'
+  redemption_status: not_recorded
+  project_fit: General VFX library for Hail, Field Command, Slots, thresholds.
+  source_bundle: humble-all-in-one-unreal-unity-gamedev
+  raw_location: null
+  tags: []
+- id: the-all-in-one-unreal-unity-gamedev-bundle-tier-30
+  list_index: 31
+  display_name: The All-in-One Unreal & Unity GameDev Bundle - Tier $30
+  store_lane: humble-unity-tier
+  store_label: Humble / Unity tier
+  package_type: Unity bundle/tier redemption
+  engine: unity
+  redemption_deadline: '2027-06-30T11:00:00-07:00'
+  redemption_status: not_recorded
+  project_fit: Unity-side access bucket; exact contents need post-redemption reconciliation.
+  source_bundle: humble-all-in-one-unreal-unity-gamedev
+  raw_location: null
+  tags: []
+- id: portal-vfx-enhanced
+  list_index: 32
+  display_name: Portal VFX Enhanced
+  store_lane: epic-games-store
+  store_label: Epic Games Store
+  package_type: Unreal Engine VFX
+  engine: unreal
+  redemption_deadline: '2027-07-06T11:00:00-07:00'
+  redemption_status: not_recorded
+  project_fit: Prime Dobsonian threshold asset; Hail portal events; Field Command
+    Anchor effects.
+  source_bundle: humble-all-in-one-unreal-unity-gamedev
+  raw_location: null
+  tags: []
+- id: magic-cast-vfx
+  list_index: 33
+  display_name: Magic Cast VFX
+  store_lane: epic-games-store
+  store_label: Epic Games Store
+  package_type: Unreal Engine VFX
+  engine: unreal
+  redemption_deadline: '2027-07-06T11:00:00-07:00'
+  redemption_status: not_recorded
+  project_fit: Field Command unit actions; threshold ritual/containment visuals.
+  source_bundle: humble-all-in-one-unreal-unity-gamedev
+  raw_location: null
+  tags: []
+- id: gas-explosion-vfx
+  list_index: 34
+  display_name: Gas Explosion VFX
+  store_lane: epic-games-store
+  store_label: Epic Games Store
+  package_type: Unreal Engine VFX
+  engine: unreal
+  redemption_deadline: '2027-07-06T11:00:00-07:00'
+  redemption_status: not_recorded
+  project_fit: Incident escalation; Field Command hazards; Hail alerts.
+  source_bundle: humble-all-in-one-unreal-unity-gamedev
+  raw_location: null
+  tags: []
+- id: explosion-vfx-2
+  list_index: 35
+  display_name: Explosion VFX 2
+  store_lane: epic-games-store
+  store_label: Epic Games Store
+  package_type: Unreal Engine VFX
+  engine: unreal
+  redemption_deadline: '2027-07-06T11:00:00-07:00'
+  redemption_status: not_recorded
+  project_fit: Field Command impact events; Hail escalation cards.
+  source_bundle: humble-all-in-one-unreal-unity-gamedev
+  raw_location: null
+  tags: []
+- id: ground-explosion-vfx
+  list_index: 36
+  display_name: Ground Explosion VFX
+  store_lane: epic-games-store
+  store_label: Epic Games Store
+  package_type: Unreal Engine VFX
+  engine: unreal
+  redemption_deadline: '2027-07-06T11:00:00-07:00'
+  redemption_status: not_recorded
+  project_fit: Tactical impacts; hostile breach/instability effects.
+  source_bundle: humble-all-in-one-unreal-unity-gamedev
+  raw_location: null
+  tags: []
+- id: steampunk-zeppelin-station-victorian-airship-terminal-modular-environment
+  list_index: 37
+  display_name: Steampunk Zeppelin Station - Victorian Airship Terminal Modular Environment
+  store_lane: epic-games-store
+  store_label: Epic Games Store
+  package_type: Unreal Engine modular environment
+  engine: unreal
+  redemption_deadline: '2027-07-06T11:00:00-07:00'
+  redemption_status: not_recorded
+  project_fit: Strong new spark asset; Slots theme, Hail attract mode, Dobsonian machinery/transport
+    weirdness.
+  source_bundle: humble-all-in-one-unreal-unity-gamedev
+  raw_location: null
+  tags: []

@@ -1,0 +1,39 @@
+name: vellum
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: vellum-app
+    restart: unless-stopped
+    ports:
+      - "0.0.0.0:8770:8770"
+    environment:
+      VELLUM_REGISTER_PATH: /app/data/asset-register.yaml
+      VELLUM_SEED_PATH: /app/config/humble-seed.yaml
+      VELLUM_VAULT_REGISTER_PATH: /vault/02-index/asset-register.yaml
+    volumes:
+      - ./data:/app/data
+      - /mnt/data/vault/vellum:/vault
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8770/api/health', timeout=5)\"",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 10s
+
+  test:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    profiles: ["test"]
+    entrypoint: ["pytest", "-q"]
+    environment:
+      PYTHONPATH: /app
+      VELLUM_REGISTER_PATH: /tmp/vellum-test-register.yaml
+      VELLUM_SEED_PATH: /app/config/humble-seed.yaml

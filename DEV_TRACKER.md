@@ -1,33 +1,34 @@
 # Development Tracker: Vellum
 
-> **Current Active Issue:** Slice A — Register + browse (37 Humble items, redeem-by lights)
+> **Current Active Issue:** Slice B — Intake propose (IntakeRun step plans)
 > **Governing CFD:** `cfd-inspiration-20260713-015950-vellum-control-alt-games-asset-vault-register-in`
-> **Next Immediate Step:** Implement register + browse web surface against vault/register model (plan task `task-vellum-slice-a-register-browse`)
+> **Next Immediate Step:** Implement IntakeRun propose API + UI against existing register (plan task `task-vellum-slice-b-intake-propose`)
 
 ---
 
 ## 1. Quick Runbook
 *Keep your commands here so you never have to search for them.*
 
+* **UI:** http://192.168.68.93:8770/
+* **Health:** `curl -sS http://192.168.68.93:8770/api/health`
+* **Compose:** `docker compose up -d --build` (port **8770**)
+* **Tests:** `PYTHONPATH=. pytest -q`
 * **Governing CFD (Axiom):** `#/axiom/praxis-tracker?inspiration=cfd-inspiration-20260713-015950-vellum-control-alt-games-asset-vault-register-in`
 * **CFD mirror:** `docs/cfd/README.md`
-* **Architecture research:** `docs/cfd/architecture-research.md`
-* **Project root:** `/mnt/temp/config/vellum`
 * **Vault:** `/mnt/data/vault/vellum`
 * **GitHub:** https://github.com/AptlyClever/vellum
-* **Axiom registry id:** `vellum` (base URL empty until HTTP service exists)
-* **Handoff catalog:** `ctrl-alt-handoff/registry/projects.yaml` id `vellum`
+* **Axiom registry id:** `vellum`
 
 ---
 
 ## 2. The Active Issue (Do Not Add Steps Here!)
 
-* **What success looks like:** Operators (human + agents) can browse a register of the 37 Humble inventory items without keys; redeem-by dates show green before expiry and red after, without invalidating already-staged assets; catalog identity is stable even if folders move.
+* **What success looks like:** Human or agent can request an intake plan for a register asset; Vellum writes an IntakeRun with ordered steps and honest statuses (pending / blocked / needs-human), without pretending Epic/Unity downloads are fully automated yet.
 * **Sub-Tasks:**
-  - [ ] Persist register model (seed from inventory doc / vault stub)
-  - [ ] Browse/search UI
-  - [ ] Redeem-by green/red indicator
-  - [ ] Health endpoint + compose packaging (prep for Slice D)
+  - [ ] IntakeRun model + persistence
+  - [ ] Propose endpoint (from asset id / humble source)
+  - [ ] Minimal UI to view proposed steps
+  - [ ] Agent-usable JSON shape documented
 
 ---
 
@@ -35,8 +36,8 @@
 *Ideas deferred until the active issue completes.*
 
 * Unity tier contents unresolved until redemption / library inspection.
-* Slice B–F per governing CFD plan (intake propose, workers, Axiom Read nav, drive imports, lookdev derive).
-* Optional deeper AI fit-tagging after register browse exists.
+* Slice C–F per governing CFD plan (workers, Axiom Read nav, drive imports, lookdev derive).
+* Optional deeper AI fit-tagging after intake propose exists.
 
 ---
 
@@ -47,3 +48,4 @@
 * **2026-07-12** — Architecture research completed (DAM layers, free lessons, Bandit+Conduit sibling pattern, slices A–F). Canvas + `docs/cfd/architecture-research.md`.
 * **2026-07-13** — Governing CFD Inspiration created and plan approved in Axiom: `cfd-inspiration-20260713-015950-vellum-control-alt-games-asset-vault-register-in`. Discovery + canon evidence attached. Active issue set to Slice A.
 * **2026-07-13** — Added `vellum` to handoff `registry/projects.yaml` so Axiom workbench/tracker/bind-cfd can resolve the project.
+* **2026-07-13** — **Slice A shipped:** `config/humble-seed.yaml` (37 items, no keys), FastAPI register API, browse UI with redeem-by green/red, Compose on `:8770`, tests green, vault register mirror. Active issue → Slice B.

@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Vellum — Asset Register</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=IBM+Plex+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <div class="page">
+      <header class="hero">
+        <p class="eyebrow">Control Alt Games</p>
+        <h1>Vellum</h1>
+        <p class="lede">
+          Private asset register for purchased Unreal &amp; Unity packs. Browse what we own;
+          redeem-by lights are indicators only.
+        </p>
+        <div class="stats" id="stats" aria-live="polite"></div>
+      </header>
+
+      <section class="toolbar" aria-label="Filters">
+        <label class="field grow">
+          <span>Search</span>
+          <input id="q" type="search" placeholder="Name, fit, type…" autocomplete="off" />
+        </label>
+        <label class="field">
+          <span>Engine</span>
+          <select id="engine">
+            <option value="">All</option>
+            <option value="unreal">Unreal</option>
+            <option value="unity">Unity</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Redeem window</span>
+          <select id="redeem">
+            <option value="">All</option>
+            <option value="open">Open (green)</option>
+            <option value="expired">Expired (red)</option>
+          </select>
+        </label>
+      </section>
+
+      <p class="count" id="count"></p>
+      <div class="table-wrap">
+        <table class="assets">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Asset</th>
+              <th>Engine</th>
+              <th>Type</th>
+              <th>Redeem by</th>
+              <th>Fit</th>
+            </tr>
+          </thead>
+          <tbody id="rows"></tbody>
+        </table>
+      </div>
+
+      <aside class="detail" id="detail" hidden>
+        <button type="button" class="close" id="detail-close" aria-label="Close detail">×</button>
+        <div id="detail-body"></div>
+      </aside>
+    </div>
+    <script src="/static/app.js"></script>
+  </body>
+</html>
