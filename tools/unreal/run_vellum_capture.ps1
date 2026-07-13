@@ -162,46 +162,44 @@ function Send-VellumProgress {
 }
 
 function Invoke-UeLogged {
-  # Start UE, stream stdout/stderr to a log, heartbeat progress until exit.
-  # Liveness = Get-Process -Id (not HasExited/WaitForExit with redirected IO -
-  # that combo hangs on Windows after UnrealEditor-Cmd has already exited).
+  # Start UE; live while Get-Process -Id sees it. Never read ExitCode after redirect.
   param(
     [string]$Exe,
     [string[]]$ArgumentList,
     [string]$LogPath,
     [string]$Phase,
-    [int]$HeartbeatSeconds = 15
+    [int]$HeartbeatSeconds = 15,
+    [switch]$NoRedirect
   )
-  if (Test-Path $LogPath) { Remove-Item -Force $LogPath }
+  if (Test-Path $LogPath) { Remove-Item -Force $LogPath -ErrorAction SilentlyContinue }
   $errPath = "$LogPath.stderr"
-  if (Test-Path $errPath) { Remove-Item -Force $errPath }
-  Send-VellumProgress -Message "$Phase starting" -LogPath $LogPath
-  $proc = Start-Process -FilePath $Exe -ArgumentList $ArgumentList `
-    -PassThru -NoNewWindow `
-    -RedirectStandardOutput $LogPath `
-    -RedirectStandardError $errPath
+  if (Test-Path $errPath) { Remove-Item -Force $errPath -ErrorAction SilentlyContinue }
+  Send-VellumProgress -Message "$Phase starting exe=$Exe"
+  if ($NoRedirect) {
+    $joined = @($ArgumentList) + @("-AbsLog=$LogPath")
+    $proc = Start-Process -FilePath $Exe -ArgumentList $joined -PassThru -WindowStyle Minimized
+  } else {
+    $proc = Start-Process -FilePath $Exe -ArgumentList $ArgumentList `
+      -PassThru -NoNewWindow `
+      -RedirectStandardOutput $LogPath `
+      -RedirectStandardError $errPath
+  }
   $uePid = [int]$proc.Id
+  Send-VellumProgress -Message "$Phase pid=$uePid"
   $started = Get-Date
   while ($null -ne (Get-Process -Id $uePid -ErrorAction SilentlyContinue)) {
     Start-Sleep -Seconds $HeartbeatSeconds
     if ($null -eq (Get-Process -Id $uePid -ErrorAction SilentlyContinue)) { break }
     $elapsed = [int]((Get-Date) - $started).TotalSeconds
-    if (Test-Path $errPath) {
+    if ((-not $NoRedirect) -and (Test-Path $errPath)) {
       Get-Content $errPath -ErrorAction SilentlyContinue | Add-Content -Path $LogPath -ErrorAction SilentlyContinue
       Clear-Content $errPath -ErrorAction SilentlyContinue
     }
     Send-VellumProgress -Message "$Phase still running (${elapsed}s)" -LogPath $LogPath
   }
-  if (Test-Path $errPath) {
-    Get-Content $errPath -ErrorAction SilentlyContinue | Add-Content -Path $LogPath -ErrorAction SilentlyContinue
-  }
-  $code = 0
-  try {
-    $proc.Refresh()
-    if ($null -ne $proc.ExitCode) { $code = [int]$proc.ExitCode }
-  } catch { $code = 0 }
-  Send-VellumProgress -Message "$Phase exited code=$code" -LogPath $LogPath
-  return $code
+  try { $proc.Dispose() } catch { }
+  Send-VellumProgress -Message "$Phase process gone" -LogPath $LogPath
+  return 0
 }
 
 function Get-SavedTreeSnippet {
@@ -725,13 +723,16 @@ if ($batchSystems.Count -gt 0) {
       $queueSoft = $null
       if ($author.queue_path) { $queueSoft = ConvertTo-UeSoftPath ([string]$author.queue_path) }
 
+      Send-VellumProgress -Message "Phase B author ok - entering Phase C"
       $UeMrq = Find-UeEditor -CmdPath $Ue
+      Send-VellumProgress -Message "Phase C UE binary: $UeMrq"
       Write-Host "Phase C UE binary: $UeMrq"
 
       if ($queueSoft) {
         Write-Host "Phase C queue MRQ queue=$queueSoft map=$mapSoft jobs=$($authoredJobs.Count)"
+        Send-VellumProgress -Message "Phase C queue=$queueSoft jobs=$($authoredJobs.Count)"
         $MrqLog = Join-Path $OutDir "ue-mrq-batch.log"
-        if (Test-Path $MrqLog) { Remove-Item -Force $MrqLog }
+        if (Test-Path $MrqLog) { Remove-Item -Force $MrqLog -ErrorAction SilentlyContinue }
         $mrqArgs = @(
           $ProjectUe,
           $mapSoft,
@@ -742,21 +743,18 @@ if ($batchSystems.Count -gt 0) {
           "-nosplash",
           "-nop4",
           "-log",
-          "-stdout",
-          "-FullStdOutLogOutput",
-          "-allowStdOutLogVerbosity",
           "-MoviePipelineConfig=$queueSoft"
         )
         $mrqExit = 0
         try {
           $mrqExit = Invoke-UeLogged -Exe $UeMrq -ArgumentList $mrqArgs -LogPath $MrqLog `
-            -Phase "Phase C batch MRQ" -HeartbeatSeconds 20
+            -Phase "Phase C batch MRQ" -HeartbeatSeconds 20 -NoRedirect
         } catch {
           $mrqExit = 1
           $_ | Out-File -FilePath $MrqLog -Append
+          Send-VellumProgress -Message "Phase C Start-Process failed: $_"
         }
         Write-Host "Phase C batch MRQ process exit=$mrqExit (artifacts are the gate)"
-        # Do NOT trust exit code - wait for frames for each authored system next.
         $renderedOk = $true
       } else {
         Write-Host "Phase C: no queue_path from author - falling back to per-system MRQ"
