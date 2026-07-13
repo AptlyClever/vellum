@@ -163,6 +163,8 @@ function Send-VellumProgress {
 
 function Invoke-UeLogged {
   # Start UE, stream stdout/stderr to a log, heartbeat progress until exit.
+  # Liveness = Get-Process -Id (not HasExited/WaitForExit with redirected IO -
+  # that combo hangs on Windows after UnrealEditor-Cmd has already exited).
   param(
     [string]$Exe,
     [string[]]$ArgumentList,
@@ -178,20 +180,11 @@ function Invoke-UeLogged {
     -PassThru -NoNewWindow `
     -RedirectStandardOutput $LogPath `
     -RedirectStandardError $errPath
+  $uePid = [int]$proc.Id
   $started = Get-Date
-  while ($true) {
-    # Process.HasExited is stale until Refresh - without this the runner
-    # can sit forever after Unreal exits (nothing visible on the host).
-    try { $proc.Refresh() } catch { }
-    if ($proc.HasExited) { break }
-    $exited = $false
-    try {
-      $exited = $proc.WaitForExit([Math]::Max(1000, $HeartbeatSeconds * 1000))
-    } catch {
-      Start-Sleep -Seconds $HeartbeatSeconds
-    }
-    try { $proc.Refresh() } catch { }
-    if ($exited -or $proc.HasExited) { break }
+  while ($null -ne (Get-Process -Id $uePid -ErrorAction SilentlyContinue)) {
+    Start-Sleep -Seconds $HeartbeatSeconds
+    if ($null -eq (Get-Process -Id $uePid -ErrorAction SilentlyContinue)) { break }
     $elapsed = [int]((Get-Date) - $started).TotalSeconds
     if (Test-Path $errPath) {
       Get-Content $errPath -ErrorAction SilentlyContinue | Add-Content -Path $LogPath -ErrorAction SilentlyContinue
@@ -205,9 +198,8 @@ function Invoke-UeLogged {
   $code = 0
   try {
     $proc.Refresh()
-    $code = $proc.ExitCode
+    if ($null -ne $proc.ExitCode) { $code = [int]$proc.ExitCode }
   } catch { $code = 0 }
-  if ($null -eq $code) { $code = 0 }
   Send-VellumProgress -Message "$Phase exited code=$code" -LogPath $LogPath
   return $code
 }
