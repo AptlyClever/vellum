@@ -291,7 +291,7 @@ Write-Host "Repo root: $RepoRoot"
 Write-Host "Agent fingerprint: legacy-cmd-default (2026-07-13)"
 Write-Host "Capture mode: $(if ($UseLookdevWorker -and -not $LegacyCmdRunner) { "Lookdev Worker $WorkerUrl" } else { 'legacy Cmd-per-phase (default)' })"
 $runnerVersionLine = (Get-Content $Runner | Where-Object { $_ -match "Runner version:" } | Select-Object -First 1)
-if (-not $runnerVersionLine) { $runnerVersionLine = "(no 'Runner version:' line found — old pull?)" }
+if (-not $runnerVersionLine) { $runnerVersionLine = "(no Runner version line found - old pull?)" }
 Write-Host "Legacy runner fingerprint: $($runnerVersionLine.Trim())"
 
 # Startup: always git-pull + restart service if SHA moved (never kill Unreal for worker).
