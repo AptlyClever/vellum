@@ -251,7 +251,7 @@ $IngestLanes = @("slots", "hail-overlay")
 Write-Host "UE (Cmd): $Ue"
 Write-Host "Project: $ProjectUe"
 Write-Host "MaxSystems=$MaxSystems Width=$Width Height=$Height MapPath=$MapPath"
-Write-Host "Runner version: mrq-sequencer-frames (2026-07-13)"
+Write-Host "Runner version: mrq-niagara-lifecycle (2026-07-13)"
 Write-Host "UE host: $($UeHost.id) ($($UeHost.label))"
 Write-Host "Ingest lanes: $($IngestLanes -join ', ')"
 if ($JobId) { Write-Host "JobId=$JobId (progress -> $VellumBase/api/jobs/$JobId/progress)" }
@@ -386,7 +386,7 @@ foreach ($sys in $pickedSystems) {
   $cfgSoft = ConvertTo-UeSoftPath $(if ($author.config_path) { [string]$author.config_path } else { [string]$author.config_asset })
   $mapSoft = ConvertTo-UeSoftPath $(if ($author.map_path) { [string]$author.map_path } else { $MapPath })
   if ($author.notes) {
-    Write-Host "Author notes: $((@($author.notes) | Select-Object -First 16) -join ' | ')"
+    Write-Host "Author notes: $((@($author.notes) | Select-Object -First 28) -join ' | ')"
   }
   Write-Host "Phase C [$slotIndex] cmdline MRQ seq=$seqSoft cfg=$cfgSoft map=$mapSoft"
 
@@ -395,11 +395,12 @@ foreach ($sys in $pickedSystems) {
   # Prefer GUI Editor binary for -game MRQ (Cmd is fine for inventory/author).
   $UeMrq = Find-UeEditor -CmdPath $Ue
   Write-Host "Phase C UE binary: $UeMrq"
+  # No -RenderOffscreen: under RDP that path has produced pure-black GPU frames.
+  # Soft paths + visible windowed -game is Epic's documented MRQ cmdline shape.
   $mrqArgs = @(
     $ProjectUe,
     $mapSoft,
     "-game",
-    "-RenderOffscreen",
     "-windowed",
     "-ResX=$Width",
     "-ResY=$Height",

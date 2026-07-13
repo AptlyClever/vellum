@@ -206,6 +206,11 @@ def _pick_systems(assets: list, max_n: int) -> list:
         score = sum(3 for k in keywords if k in low)
         if low.startswith("ns_") or low.startswith("fx_"):
             score += 1
+        # Prefer one-shot shells over loops for a readable burst arc in ≤4s.
+        if low.endswith("_single") or "_single" in low:
+            score += 4
+        if low.endswith("_loop") or "_loop" in low:
+            score -= 1
         if "test" in low or "tmp" in low:
             score -= 5
         scored.append((score, low, a))
