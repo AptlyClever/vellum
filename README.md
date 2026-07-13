@@ -9,6 +9,7 @@ It owns ingest, catalog, and reuse of purchased Unreal/Unity game-dev assets (st
 | Canonical home | **Control Alt Games** (creative label under Control Alt) |
 | Project root | `/mnt/temp/config/vellum` |
 | Private vault (data) | `/mnt/data/vault/vellum` |
+| GitHub | [`AptlyClever/vellum`](https://github.com/AptlyClever/vellum) (public) |
 | Axiom registry id | `vellum` |
 | Not | Control Alt core (that family includes Axiom, Praxis, Eidolon, …) |
 
