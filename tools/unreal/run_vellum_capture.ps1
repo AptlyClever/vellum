@@ -194,10 +194,11 @@ function Get-SavedTreeSnippet {
 
 function Get-LogShotSnippet([string]$LogPath) {
   if (-not (Test-Path $LogPath)) { return "(no game log)" }
-  $lines = Select-String -Path $LogPath -Pattern "HighResShot|Screenshot|Shot |Writing|filename=|Error:|Fatal|LogViewport|LogRenderer" -ErrorAction SilentlyContinue |
+  $lines = Select-String -Path $LogPath -Pattern "Screenshot taken|Wrote screenshot|HighResScreenshot|Taking high res screenshot|Bringing up level for play|LogLoad: Took |Error:|Fatal" -ErrorAction SilentlyContinue |
+    Where-Object { $_.Line -notmatch "commandline=|Command Line:|-ExecCmds=" } |
     Select-Object -Last 40 |
     ForEach-Object { $_.Line }
-  if (-not $lines) { return "(no HighResShot/Screenshot lines in log)" }
+  if (-not $lines) { return "(no screenshot/map-ready lines in log — cmdline HighResShot echo ignored)" }
   return ($lines -join "`n")
 }
 
@@ -246,7 +247,7 @@ Write-Host "UE (editor/inventory): $Ue"
 Write-Host "UE (game stills): $UeGame"
 Write-Host "Project: $ProjectUe"
 Write-Host "MaxSystems=$MaxSystems Width=$Width Height=$Height MapPath=$MapPath"
-Write-Host "Runner version: game-mode-wait-ready (2026-07-13)"
+Write-Host "Runner version: game-mode-wait-png (2026-07-13)"
 if ($JobId) { Write-Host "JobId=$JobId (progress -> $VellumBase/api/jobs/$JobId/progress)" }
 
 $allErrors = New-Object System.Collections.ArrayList
@@ -389,25 +390,24 @@ foreach ($sys in $pickedSystems) {
 
   $gameProc = $null
   $gameExit = 0
-  # Prior runs killed at 10s during Turnkey/shader init — HighResShot never ran.
-  # Wait for map-ready (or a PNG to appear), then allow flush time before kill.
+  # Early-exit ONLY when a PNG appears. Do NOT key off "HighResShot" in the log —
+  # that string is echoed in the command line within seconds and caused a false
+  # "ready" kill during plugin load (job-20260713-060633).
   $maxWaitSeconds = if ($env:VELLUM_GAME_WAIT) { [int]$env:VELLUM_GAME_WAIT } else { 120 }
-  $flushSeconds = 8
+  $sentBackupShot = $false
   try {
     $gameProc = Start-Process -FilePath $UeGame -ArgumentList $gameArgs -PassThru -WindowStyle Normal
     $waited = 0
-    $readyAt = $null
     $engineLogs = Join-Path $ProjectDir "Saved\Logs"
     while (-not $gameProc.HasExited -and $waited -lt $maxWaitSeconds) {
-      Start-Sleep -Seconds 3
-      $waited += 3
+      Start-Sleep -Seconds 5
+      $waited += 5
       if (Test-Path $engineLogs) {
         $newestLog = Get-ChildItem $engineLogs -Filter "*.log" |
           Sort-Object LastWriteTime -Descending |
           Select-Object -First 1
         if ($newestLog) { Copy-Item -Force $newestLog.FullName $GameLog }
       }
-      # Early success: PNG already on disk.
       $early = Find-RecentImages -Roots @(
           $StillsDir,
           (Join-Path $ProjectDir "Saved\Screenshots"),
@@ -415,25 +415,39 @@ foreach ($sys in $pickedSystems) {
         ) -Since $shotStart -NameHint $safeHint
       if ($early -and $early.Count -gt 0) {
         Send-VellumProgress -Message "Phase B[$slotIndex] GAME PNG appeared at ${waited}s" -LogPath $GameLog
+        Start-Sleep -Seconds 2
         break
       }
-      $readyHit = $false
-      if (Test-Path $GameLog) {
-        $readyHit = $null -ne (
-          Select-String -Path $GameLog -Pattern "HighResShot|Screenshot taken|Wrote screenshot|LoadMap: .*took|Bringing up level for play|Game Engine Initialized" -SimpleMatch:$false -ErrorAction SilentlyContinue |
-            Select-Object -First 1
-        )
+      # After the editor is likely past initial load, poke the console once.
+      # Startup -ExecCmds HighResShot often races before a presentable viewport.
+      if (-not $sentBackupShot -and $waited -ge 45) {
+        $mapReady = $false
+        if (Test-Path $GameLog) {
+          $mapReady = $null -ne (
+            Select-String -Path $GameLog -Pattern "Bringing up level for play|Bringing World .+ up for play|LogLoad: Took " -ErrorAction SilentlyContinue |
+              Select-Object -First 1
+          )
+        }
+        if ($mapReady -or $waited -ge 60) {
+          $sentBackupShot = $true
+          try {
+            Add-Type -AssemblyName System.Windows.Forms -ErrorAction SilentlyContinue
+            $shell = New-Object -ComObject WScript.Shell
+            $activated = $shell.AppActivate($gameProc.Id)
+            Start-Sleep -Milliseconds 400
+            # Open console (~) and fire HighResShot + Shot, then close.
+            [System.Windows.Forms.SendKeys]::SendWait('~~')
+            Start-Sleep -Milliseconds 200
+            [System.Windows.Forms.SendKeys]::SendWait("HighResShot ${Width}x${Height} filename=$stillLeaf{ENTER}")
+            Start-Sleep -Milliseconds 300
+            [System.Windows.Forms.SendKeys]::SendWait("Shot{ENTER}")
+            Send-VellumProgress -Message "Phase B[$slotIndex] GAME backup console shot sent (activate=$activated)" -LogPath $GameLog
+          } catch {
+            Send-VellumProgress -Message "Phase B[$slotIndex] GAME backup shot failed: $_"
+          }
+        }
       }
-      if ($readyHit -and -not $readyAt) {
-        $readyAt = $waited
-        Send-VellumProgress -Message "Phase B[$slotIndex] GAME ready signal at ${waited}s; flushing ${flushSeconds}s" -LogPath $GameLog
-      }
-      if ($readyAt -and (($waited - $readyAt) -ge $flushSeconds)) {
-        Send-VellumProgress -Message "Phase B[$slotIndex] GAME flush done at ${waited}s" -LogPath $GameLog
-        break
-      }
-      $phase = if ($readyAt) { "flush" } else { "boot" }
-      Send-VellumProgress -Message "Phase B[$slotIndex] GAME ${phase} ${waited}/${maxWaitSeconds}s" -LogPath $GameLog
+      Send-VellumProgress -Message "Phase B[$slotIndex] GAME wait ${waited}/${maxWaitSeconds}s (png=0 backup=$sentBackupShot)" -LogPath $GameLog
     }
     if (-not $gameProc.HasExited) {
       Write-Host "Phase B [$slotIndex] stopping UE after ${waited}s"
