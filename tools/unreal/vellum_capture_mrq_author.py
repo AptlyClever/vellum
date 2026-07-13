@@ -158,17 +158,65 @@ def _set_prop(obj, names: tuple[str, ...], value) -> bool:
     return False
 
 
+def _spawn(unreal_mod, actor_sub, actor_class=None, obj=None, loc=None, rot=None, label: str = "", notes: list[str] | None = None):
+    """Spawn a *persistent* level actor. The 4th arg to spawn_* is transient — never True."""
+    if loc is None:
+        loc = unreal_mod.Vector(0.0, 0.0, 0.0)
+    if rot is None:
+        rot = unreal_mod.Rotator(0.0, 0.0, 0.0)
+    actor = None
+    if obj is not None:
+        actor = actor_sub.spawn_actor_from_object(obj, loc, rot, False)
+    elif actor_class is not None:
+        actor = actor_sub.spawn_actor_from_class(actor_class, loc, rot, False)
+    if actor is None:
+        return None
+    if label:
+        try:
+            actor.set_actor_label(label)
+        except Exception:  # noqa: BLE001
+            pass
+    # Ensure it participates in level save (transient was the black-frame root cause).
+    try:
+        if bool(actor.is_editor_only_actor()):
+            if notes is not None:
+                notes.append(f"warn_editor_only:{label or actor.get_name()}")
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        actor.set_is_temporarily_hidden_in_editor(False)
+    except Exception:  # noqa: BLE001
+        pass
+    return actor
+
+
+def _count_vellum_actors(actor_sub) -> int:
+    n = 0
+    try:
+        for actor in actor_sub.get_all_level_actors():
+            try:
+                if actor.get_actor_label().startswith(ACTOR_PREFIX):
+                    n += 1
+            except Exception:  # noqa: BLE001
+                continue
+    except Exception:  # noqa: BLE001
+        return n
+    return n
+
+
 def _spawn_lights(unreal_mod, actor_sub, notes: list[str]) -> None:
     # Fireworks are mostly emissive; lights keep non-emissive fill from pure black void.
     try:
-        light = actor_sub.spawn_actor_from_class(
-            unreal_mod.DirectionalLight,
-            unreal_mod.Vector(0.0, 0.0, 1200.0),
-            unreal_mod.Rotator(-55.0, 35.0, 0.0),
-            True,
+        light = _spawn(
+            unreal_mod,
+            actor_sub,
+            actor_class=unreal_mod.DirectionalLight,
+            loc=unreal_mod.Vector(0.0, 0.0, 1200.0),
+            rot=unreal_mod.Rotator(-55.0, 35.0, 0.0),
+            label=f"{ACTOR_PREFIX}Light",
+            notes=notes,
         )
         if light:
-            light.set_actor_label(f"{ACTOR_PREFIX}Light")
             comp = light.get_component_by_class(unreal_mod.DirectionalLightComponent)
             if comp is not None:
                 _set_prop(comp, ("intensity",), 8.0)
@@ -177,14 +225,15 @@ def _spawn_lights(unreal_mod, actor_sub, notes: list[str]) -> None:
     except Exception as exc:  # noqa: BLE001
         notes.append(f"light_failed:{exc}")
     try:
-        sky = actor_sub.spawn_actor_from_class(
-            unreal_mod.SkyLight,
-            unreal_mod.Vector(0.0, 0.0, 500.0),
-            unreal_mod.Rotator(0, 0, 0),
-            True,
+        sky = _spawn(
+            unreal_mod,
+            actor_sub,
+            actor_class=unreal_mod.SkyLight,
+            loc=unreal_mod.Vector(0.0, 0.0, 500.0),
+            label=f"{ACTOR_PREFIX}Sky",
+            notes=notes,
         )
         if sky:
-            sky.set_actor_label(f"{ACTOR_PREFIX}Sky")
             comp = sky.get_component_by_class(unreal_mod.SkyLightComponent)
             if comp is not None:
                 _set_prop(comp, ("intensity",), 1.5)
@@ -208,13 +257,25 @@ def _spawn_niagara(unreal_mod, actor_sub, system_asset, notes: list[str]):
     loc = unreal_mod.Vector(0.0, 0.0, 0.0)
     actor = None
     try:
-        actor = actor_sub.spawn_actor_from_object(system_asset, loc, unreal_mod.Rotator(0, 0, 0), True)
+        actor = _spawn(
+            unreal_mod,
+            actor_sub,
+            obj=system_asset,
+            loc=loc,
+            label=f"{ACTOR_PREFIX}System",
+            notes=notes,
+        )
     except Exception as exc:  # noqa: BLE001
         notes.append(f"spawn_from_object_failed:{exc}")
     if actor is None:
         try:
-            actor = actor_sub.spawn_actor_from_class(
-                unreal_mod.NiagaraActor, loc, unreal_mod.Rotator(0, 0, 0), True
+            actor = _spawn(
+                unreal_mod,
+                actor_sub,
+                actor_class=unreal_mod.NiagaraActor,
+                loc=loc,
+                label=f"{ACTOR_PREFIX}System",
+                notes=notes,
             )
             comp = _niagara_component(unreal_mod, actor) if actor else None
             if comp is not None:
@@ -227,11 +288,6 @@ def _spawn_niagara(unreal_mod, actor_sub, system_asset, notes: list[str]):
             return None
     if actor is None:
         return None
-
-    try:
-        actor.set_actor_label(f"{ACTOR_PREFIX}System")
-    except Exception:  # noqa: BLE001
-        pass
 
     comp = _niagara_component(unreal_mod, actor)
     if comp is None:
@@ -246,7 +302,6 @@ def _spawn_niagara(unreal_mod, actor_sub, system_asset, notes: list[str]):
     except Exception:  # noqa: BLE001
         pass
     try:
-        # Prefetch particle state so bounds/camera aren't empty-editor leftovers.
         if hasattr(comp, "set_age_update_mode"):
             mode = getattr(unreal_mod, "NiagaraAgeUpdateMode", None)
             desired = getattr(mode, "DESIRED_AGE", None) if mode else None
@@ -453,6 +508,27 @@ def _add_niagara_lifecycle(unreal_mod, binding, frame_count: int, notes: list[st
     notes.append("niagara_lifecycle_track")
 
 
+def _add_spawnable(unreal_mod, sequence, actor, notes: list[str], tag: str):
+    """Prefer spawnables so MRQ owns the actors even if level reload drops possessables."""
+    errors: list[str] = []
+    for adder, name in (
+        (lambda: sequence.add_spawnable_from_instance(actor), "add_spawnable_from_instance"),
+        (
+            lambda: unreal_mod.MovieSceneSequenceExtensions.add_spawnable_from_instance(sequence, actor),
+            "ext.add_spawnable_from_instance",
+        ),
+    ):
+        try:
+            binding = adder()
+            if binding is not None:
+                notes.append(f"{tag}_spawnable:{name}")
+                return binding
+        except Exception as exc:  # noqa: BLE001
+            errors.append(f"{name}:{exc}")
+    notes.append(f"{tag}_spawnable_failed:{';'.join(errors[-2:])}")
+    return _add_possessable(unreal_mod, sequence, actor, notes, tag)
+
+
 def _configure_sequence(
     unreal_mod,
     sequence,
@@ -476,7 +552,6 @@ def _configure_sequence(
     except Exception as exc:  # noqa: BLE001
         notes.append(f"display_rate_failed:{exc}")
     try:
-        # Work area includes warm-up head so camera-cut warm-up can evaluate Niagara.
         unreal_mod.MovieSceneSequenceExtensions.set_work_range_start(sequence, float(-warmup) / float(fps))
         unreal_mod.MovieSceneSequenceExtensions.set_work_range_end(sequence, float(frame_count) / float(fps))
     except Exception:  # noqa: BLE001
@@ -488,7 +563,6 @@ def _configure_sequence(
             removed += 1
     notes.append(f"cleared_root_tracks:{removed}")
 
-    # Drop stale bindings by recreating sequence contents is hard; clear possessables if API exists.
     try:
         for binding in list(sequence.get_bindings()):
             try:
@@ -502,14 +576,14 @@ def _configure_sequence(
     except Exception as exc:  # noqa: BLE001
         notes.append(f"clear_possessables_skipped:{exc}")
 
-    cam_binding = _add_possessable(unreal_mod, sequence, camera_actor, notes, "camera")
-    niagara_binding = _add_possessable(unreal_mod, sequence, niagara_actor, notes, "niagara")
+    # Spawnables: sequence recreates camera + Niagara during MRQ (-game) regardless of map.
+    cam_binding = _add_spawnable(unreal_mod, sequence, camera_actor, notes, "camera")
+    niagara_binding = _add_spawnable(unreal_mod, sequence, niagara_actor, notes, "niagara")
     _add_niagara_lifecycle(unreal_mod, niagara_binding, frame_count, notes)
 
     cut_track, add_tag = _add_root_track(unreal_mod, sequence, unreal_mod.MovieSceneCameraCutTrack)
     notes.append(f"camera_cut_track:{add_tag}")
     section = cut_track.add_section()
-    # Warm-up head: cut starts before playback so UseCameraCutForWarmUp ticks Niagara.
     _set_section_range(section, -warmup, int(frame_count), notes, "camera_cut")
     _bind_camera_cut(unreal_mod, sequence, section, cam_binding, notes)
 
@@ -586,20 +660,27 @@ def _configure_mrq_config(unreal_mod, config, output_dir: str, width: int, heigh
             pass
 
 
-def _force_save_map(unreal_mod, map_path: str, notes: list[str], errors: list[str]) -> None:
-    saved = False
+def _force_save_map(unreal_mod, map_path: str, notes: list[str], errors: list[str], expect_actors: int) -> None:
+    try:
+        unreal_mod.EditorLevelLibrary.set_current_level_by_name(
+            unreal_mod.EditorLevelLibrary.get_editor_world().get_name()
+        )
+    except Exception:  # noqa: BLE001
+        pass
     try:
         world = unreal_mod.EditorLevelLibrary.get_editor_world()
+        # Mark dirty so save_map is not a no-op.
+        try:
+            unreal_mod.EditorAssetLibrary.save_loaded_asset(world, only_if_is_dirty=False)
+        except Exception:  # noqa: BLE001
+            pass
         unreal_mod.EditorLoadingAndSavingUtils.save_map(world, map_path)
         notes.append("saved_map")
-        saved = True
     except Exception as exc:  # noqa: BLE001
         notes.append(f"save_map_failed:{exc}")
-    if not saved:
         try:
             unreal_mod.EditorLevelLibrary.save_current_level()
             notes.append("save_current_level")
-            saved = True
         except Exception as exc2:  # noqa: BLE001
             errors.append(f"save_level_failed:{exc2}")
     try:
@@ -611,6 +692,8 @@ def _force_save_map(unreal_mod, map_path: str, notes: list[str], errors: list[st
         errors.append(f"map_missing_after_save:{map_path}")
         raise RuntimeError(f"map_not_saved:{map_path}")
     notes.append("map_exists_after_save")
+    if expect_actors > 0:
+        notes.append(f"expect_level_actors:{expect_actors}")
 
 
 def main() -> None:
@@ -671,14 +754,34 @@ def main() -> None:
             raise RuntimeError("spawn_niagara_failed")
 
         cam_loc, cam_rot = _fireworks_camera_pose(unreal)
-        camera = actor_sub.spawn_actor_from_class(unreal.CineCameraActor, cam_loc, cam_rot, True)
+        camera = _spawn(
+            unreal,
+            actor_sub,
+            actor_class=unreal.CineCameraActor,
+            loc=cam_loc,
+            rot=cam_rot,
+            label=f"{ACTOR_PREFIX}Camera",
+            notes=notes,
+        )
         if camera is None:
-            camera = actor_sub.spawn_actor_from_class(unreal.CameraActor, cam_loc, cam_rot, True)
+            camera = _spawn(
+                unreal,
+                actor_sub,
+                actor_class=unreal.CameraActor,
+                loc=cam_loc,
+                rot=cam_rot,
+                label=f"{ACTOR_PREFIX}Camera",
+                notes=notes,
+            )
         if camera is None:
             raise RuntimeError("spawn_camera_failed")
-        camera.set_actor_label(f"{ACTOR_PREFIX}Camera")
         _configure_cine_camera(unreal, camera, notes)
         notes.append("camera_spawned")
+
+        live_count = _count_vellum_actors(actor_sub)
+        notes.append(f"level_actors_after_spawn:{live_count}")
+        if live_count < 3:
+            raise RuntimeError(f"too_few_level_actors:{live_count}")
 
         sequence = _load_or_create_level_sequence(unreal, seq_pkg, seq_name)
         if sequence is None:
@@ -701,7 +804,7 @@ def main() -> None:
             notes.append(f"save_config_failed:{exc}")
             errors.append(f"save_config_failed:{exc}")
 
-        _force_save_map(unreal, map_path, notes, errors)
+        _force_save_map(unreal, map_path, notes, errors, expect_actors=live_count)
         if errors:
             raise RuntimeError(";".join(errors[:4]))
 
