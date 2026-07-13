@@ -7,6 +7,8 @@
       "label": "Aurora",
       "role": "primary",
       "repo": "E:\\Dev\\vellum",
+      "ssh_user": "jaked",
+      "ssh_host": "192.168.68.100",
       "ue_editor": "F:\\Games\\UE_5.8\\Engine\\Binaries\\Win64\\UnrealEditor.exe",
       "ue_cmd": "F:\\Games\\UE_5.8\\Engine\\Binaries\\Win64\\UnrealEditor-Cmd.exe",
       "project": "F:\\Games\\AuroraVellum\\AuroraVellum.uproject",

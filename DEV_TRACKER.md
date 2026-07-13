@@ -3,7 +3,7 @@
 > **Current Active Issue:** Fireworks pack — **full automated lookdev** (all effects), then next purchased packs
 > **Governing CFD:** `cfd-inspiration-20260713-015950-vellum-control-alt-games-asset-vault-register-in` (slices A–F met; this is the post-CFD track)
 > **Capability spec:** `docs/ue-mrq-capture.md` (SoT — full fidelity; SceneCapture/HighResShot retired)
-> **Next Immediate Step:** Agent must run as **interactive user**, not WinSW LocalSystem (Session 0 hangs Cmd). On Aurora: `pwsh -File tools/unreal/host-install/install-agent-interactive.ps1` then Capture in Vellum.
+> **Next Immediate Step:** Hub drives Aurora over **LAN SSH** (`192.168.68.100`, `tools/unreal/ssh-aurora.sh`) — no second Cursor / no Tailscale. Capture agent = interactive Scheduled Task as `jaked`.
 
 ---
 
