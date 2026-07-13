@@ -1,0 +1,126 @@
+#Requires -Version 5.1
+<#
+.SYNOPSIS
+  Background Windows agent: claim Vellum ue_capture jobs and run Unreal capture.
+
+.DESCRIPTION
+  Keep this running on the UE workstation. Operator uses the Vellum UI button
+  "Capture from Unreal" — this agent does the Unreal work and reports back.
+
+  One-time:
+  - Enable Python Editor Script Plugin in the scratch project
+  - Optional: set VELLUM_UE_CMD
+
+.EXAMPLE
+  pwsh -File tools/unreal/vellum_ue_agent.ps1
+#>
+param(
+  [string]$VellumBase = "http://192.168.68.93:8770",
+  [int]$PollSeconds = 5,
+  [string]$DefaultProject = "C:\epic\VellumImport\VellumImport.uproject",
+  [string]$UeCmd = $env:VELLUM_UE_CMD
+)
+
+$ErrorActionPreference = "Stop"
+$RepoRoot = Resolve-Path (Join-Path $PSScriptRoot "..\..")
+$CapturePy = Join-Path $RepoRoot "tools\unreal\vellum_capture.py"
+$Runner = Join-Path $PSScriptRoot "run_vellum_capture.ps1"
+
+function Find-UeCmd {
+  param([string]$Hint)
+  if ($Hint -and (Test-Path $Hint)) { return (Resolve-Path $Hint).Path }
+  foreach ($c in @(
+      "C:\Program Files\Epic Games\UE_5.8\Engine\Binaries\Win64\UnrealEditor-Cmd.exe",
+      "C:\Program Files\Epic Games\UE_5.7\Engine\Binaries\Win64\UnrealEditor-Cmd.exe",
+      "C:\Program Files\Epic Games\UE_5.6\Engine\Binaries\Win64\UnrealEditor-Cmd.exe"
+    )) {
+    if (Test-Path $c) { return $c }
+  }
+  throw "UnrealEditor-Cmd.exe not found. Set VELLUM_UE_CMD."
+}
+
+function Invoke-CaptureJob {
+  param($Job)
+  $payload = $Job.payload
+  if (-not $payload) { $payload = @{} }
+  $assetId = [string]$Job.asset_id
+  $lane = if ($payload.lane) { [string]$payload.lane } else { "slots" }
+  $projectPath = if ($payload.project_path) { [string]$payload.project_path } else { Split-Path $DefaultProject -Parent }
+  $uproject = if (Test-Path (Join-Path $projectPath "VellumImport.uproject")) {
+    Join-Path $projectPath "VellumImport.uproject"
+  } else {
+    $DefaultProject
+  }
+  $contentRoot = if ($payload.content_root) { [string]$payload.content_root } else { "/Game/FireworksV1" }
+  $engineVersion = if ($payload.engine_version) { [string]$payload.engine_version } else { "5.8" }
+  $intakeRunId = [string]$Job.intake_run_id
+
+  Write-Host "Running capture for $assetId ($($Job.job_id))"
+  & $Runner `
+    -Project $uproject `
+    -AssetId $assetId `
+    -ContentRoot $contentRoot `
+    -VellumBase $VellumBase `
+    -Lane $lane `
+    -EngineVersion $engineVersion `
+    -IntakeRunId $intakeRunId `
+    -UeCmd (Find-UeCmd -Hint $UeCmd)
+
+  $outDir = Join-Path (Split-Path $uproject -Parent) "Saved\VellumCapture"
+  $manifestPath = Join-Path $outDir "manifest.json"
+  $man = $null
+  if (Test-Path $manifestPath) {
+    $man = Get-Content $manifestPath -Raw | ConvertFrom-Json
+  }
+
+  $result = @{
+    project_path       = (Split-Path $uproject -Parent)
+    engine_version     = $engineVersion
+    notes              = "ue_agent capture"
+    niagara_systems    = if ($man) { $man.niagara_systems_found } else { 0 }
+    stills             = if ($man) { @($man.stills).Count } else { 0 }
+    manifest_ok        = [bool]$man.ok
+  }
+
+  $report = @{
+    result               = $result
+    scratch_project_path = (Split-Path $uproject -Parent)
+    engine_version       = $engineVersion
+  } | ConvertTo-Json -Depth 6
+
+  Invoke-RestMethod -Method Post -Uri "$VellumBase/api/jobs/$($Job.job_id)/report" `
+    -ContentType "application/json" -Body $report | Out-Null
+}
+
+Write-Host "Vellum UE agent polling $VellumBase every ${PollSeconds}s"
+Write-Host "UI trigger: asset detail → Capture from Unreal"
+
+while ($true) {
+  try {
+    $claimBody = @{ kinds = @("ue_capture") } | ConvertTo-Json
+    $claimed = Invoke-RestMethod -Method Post -Uri "$VellumBase/api/jobs/claim" `
+      -ContentType "application/json" -Body $claimBody
+    if ($null -eq $claimed.job) {
+      Start-Sleep -Seconds $PollSeconds
+      continue
+    }
+    $job = $claimed.job
+    try {
+      Invoke-CaptureJob -Job $job
+      Write-Host "Completed $($job.job_id)"
+    } catch {
+      $err = $_.Exception.Message
+      Write-Host "Failed $($job.job_id): $err"
+      $fail = @{ error = $err } | ConvertTo-Json
+      try {
+        Invoke-RestMethod -Method Post -Uri "$VellumBase/api/jobs/$($job.job_id)/report" `
+          -ContentType "application/json" -Body $fail | Out-Null
+      } catch {
+        Write-Host "Could not report failure: $($_.Exception.Message)"
+      }
+    }
+  } catch {
+    Write-Host "Poll error: $($_.Exception.Message)"
+    Start-Sleep -Seconds $PollSeconds
+  }
+}

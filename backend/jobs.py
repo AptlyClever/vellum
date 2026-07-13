@@ -26,6 +26,13 @@ AUTOMATABLE_STEP_IDS = frozenset(
     {"stage_vault", "record_paths", "confirm_project_fit", "derive_lookdev"}
 )
 
+# Handled by vellum-worker (Linux, vault-local).
+LINUX_WORKER_KINDS = frozenset(
+    {"prepare_stage", "record_paths", "confirm_project_fit", "derive_lookdev"}
+)
+# Handled by Windows UE agent (tools/unreal/vellum_ue_agent.ps1).
+UE_AGENT_KINDS = frozenset({"ue_capture"})
+
 
 def jobs_db_path() -> Path:
     configured = os.environ.get("VELLUM_JOBS_DB_PATH", "").strip()
@@ -169,17 +176,29 @@ def list_jobs(
     return [_row_to_job(r) for r in rows]
 
 
-def claim_next_job() -> dict[str, Any] | None:
+def claim_next_job(*, kinds: frozenset[str] | None = None) -> dict[str, Any] | None:
     now = _now()
     with _conn() as conn:
-        row = conn.execute(
-            """
-            SELECT job_id FROM jobs
-            WHERE status = 'queued'
-            ORDER BY created_at ASC
-            LIMIT 1
-            """
-        ).fetchone()
+        if kinds:
+            placeholders = ",".join("?" for _ in kinds)
+            row = conn.execute(
+                f"""
+                SELECT job_id FROM jobs
+                WHERE status = 'queued' AND kind IN ({placeholders})
+                ORDER BY created_at ASC
+                LIMIT 1
+                """,
+                tuple(sorted(kinds)),
+            ).fetchone()
+        else:
+            row = conn.execute(
+                """
+                SELECT job_id FROM jobs
+                WHERE status = 'queued'
+                ORDER BY created_at ASC
+                LIMIT 1
+                """
+            ).fetchone()
         if not row:
             return None
         job_id = row["job_id"]
@@ -347,8 +366,8 @@ def run_job(job: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
-def process_one_job() -> dict[str, Any] | None:
-    job = claim_next_job()
+def process_one_job(*, kinds: frozenset[str] | None = None) -> dict[str, Any] | None:
+    job = claim_next_job(kinds=kinds if kinds is not None else LINUX_WORKER_KINDS)
     if not job:
         return None
     try:
@@ -397,7 +416,7 @@ def enqueue_automatable_for_run(run_id: str) -> list[dict[str, Any]]:
 
 def worker_loop(*, poll_seconds: float = 1.0, once: bool = False) -> None:
     while True:
-        job = process_one_job()
+        job = process_one_job(kinds=LINUX_WORKER_KINDS)
         if once:
             return
         if job is None:

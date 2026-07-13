@@ -337,9 +337,15 @@ async function openDetail(id) {
   }
 
   const scratchHead = document.createElement("h3");
-  scratchHead.textContent = "Scratch inspect";
+  scratchHead.textContent = "Unreal capture";
   scratchHead.style.marginTop = "1.5rem";
   host.appendChild(scratchHead);
+
+  const captureHelp = document.createElement("p");
+  captureHelp.className = "fit";
+  captureHelp.textContent =
+    "Queues a job for the Windows UE agent (no Unreal clicking). Keep vellum_ue_agent.ps1 running on the UE box.";
+  host.appendChild(captureHelp);
 
   const scratchForm = document.createElement("div");
   scratchForm.className = "scratch-form";
@@ -367,13 +373,13 @@ async function openDetail(id) {
   engLabel.appendChild(engInput);
   scratchForm.appendChild(engLabel);
 
-  const scratchBtn = document.createElement("button");
-  scratchBtn.type = "button";
-  scratchBtn.className = "btn";
-  scratchBtn.textContent = "Record scratch inspect";
-  scratchBtn.addEventListener("click", async () => {
-    scratchBtn.disabled = true;
-    scratchBtn.textContent = "Recording…";
+  const captureBtn = document.createElement("button");
+  captureBtn.type = "button";
+  captureBtn.className = "btn";
+  captureBtn.textContent = "Capture from Unreal";
+  captureBtn.addEventListener("click", async () => {
+    captureBtn.disabled = true;
+    captureBtn.textContent = "Queuing…";
     try {
       let intakeRunId = null;
       try {
@@ -384,25 +390,28 @@ async function openDetail(id) {
       } catch {
         /* ignore */
       }
-      const res = await fetch("/api/scratch/record", {
+      const res = await fetch("/api/ue/capture", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           asset_id: a.id,
-          scratch_project_path: pathInput.value.trim(),
+          lane: "slots",
+          project_path: pathInput.value.trim(),
           engine_version: engInput.value.trim(),
-          notes: "Niagara systems opened in Unreal scratch",
           intake_run_id: intakeRunId,
+          content_root: "/Game/FireworksV1",
         }),
       });
-      if (!res.ok) throw new Error(`scratch ${res.status}`);
-      await openDetail(a.id);
+      if (!res.ok) throw new Error(`ue capture ${res.status}`);
+      const body = await res.json();
+      captureBtn.textContent = `Queued ${body.job && body.job.job_id ? body.job.job_id : ""}`;
+      setTimeout(() => openDetail(a.id), 1500);
     } catch (err) {
-      scratchBtn.textContent = "Record failed";
+      captureBtn.textContent = "Queue failed";
       console.error(err);
     }
   });
-  scratchForm.appendChild(scratchBtn);
+  scratchForm.appendChild(captureBtn);
   host.appendChild(scratchForm);
 
   const lookdevHead = document.createElement("h3");

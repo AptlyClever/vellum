@@ -70,6 +70,26 @@ class LookdevDeriveRequest(BaseModel):
     intake_run_id: str | None = Field(default=None, max_length=200)
 
 
+class UeCaptureRequest(BaseModel):
+    asset_id: str = Field(min_length=1, max_length=200)
+    lane: str = Field(default="slots", max_length=64)
+    project_path: str | None = Field(default=None, max_length=1000)
+    content_root: str | None = Field(default=None, max_length=200)
+    engine_version: str | None = Field(default="5.8", max_length=64)
+    intake_run_id: str | None = Field(default=None, max_length=200)
+
+
+class JobClaimRequest(BaseModel):
+    kinds: list[str] = Field(default_factory=lambda: ["ue_capture"])
+
+
+class JobReportRequest(BaseModel):
+    result: dict[str, Any] | None = None
+    error: str | None = Field(default=None, max_length=4000)
+    scratch_project_path: str | None = Field(default=None, max_length=1000)
+    engine_version: str | None = Field(default=None, max_length=64)
+
+
 class ScratchRecordRequest(BaseModel):
     asset_id: str = Field(min_length=1, max_length=200)
     scratch_project_path: str = Field(min_length=1, max_length=1000)
@@ -210,7 +230,13 @@ def api_intake_enqueue_automatable(run_id: str) -> dict[str, Any]:
 
 @app.post("/api/jobs")
 def api_jobs_enqueue(body: JobEnqueueRequest) -> dict[str, Any]:
-    allowed = {"prepare_stage", "record_paths", "confirm_project_fit", "derive_lookdev"}
+    allowed = {
+        "prepare_stage",
+        "record_paths",
+        "confirm_project_fit",
+        "derive_lookdev",
+        "ue_capture",
+    }
     if body.kind not in allowed:
         raise HTTPException(status_code=400, detail=f"kind must be one of {sorted(allowed)}")
     return jobs_mod.enqueue_job(
@@ -238,6 +264,72 @@ def api_jobs_get(job_id: str) -> dict[str, Any]:
     if not job:
         raise HTTPException(status_code=404, detail="job_not_found")
     return job
+
+
+@app.post("/api/jobs/claim")
+def api_jobs_claim(body: JobClaimRequest) -> dict[str, Any]:
+    """Claim next queued job for an external agent (Windows UE agent)."""
+    kinds = frozenset(body.kinds or ["ue_capture"])
+    unknown = kinds - jobs_mod.UE_AGENT_KINDS - jobs_mod.LINUX_WORKER_KINDS
+    if unknown:
+        raise HTTPException(status_code=400, detail=f"unknown kinds: {sorted(unknown)}")
+    job = jobs_mod.claim_next_job(kinds=kinds)
+    return {"schema_version": 1, "job": job}
+
+
+@app.post("/api/jobs/{job_id}/report")
+def api_jobs_report(job_id: str, body: JobReportRequest) -> dict[str, Any]:
+    """External agent reports success/failure for a claimed job."""
+    job = jobs_mod.get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="job_not_found")
+    if job.get("status") not in {"running", "queued"}:
+        raise HTTPException(status_code=409, detail=f"job_status_{job.get('status')}")
+
+    result = dict(body.result or {})
+    if not body.error and job.get("kind") == "ue_capture" and job.get("asset_id"):
+        project = body.scratch_project_path or result.get("project_path") or ""
+        if project:
+            try:
+                scratch_mod.record_scratch_inspect(
+                    str(job["asset_id"]),
+                    scratch_project_path=str(project),
+                    engine_version=body.engine_version or result.get("engine_version"),
+                    notes=str(result.get("notes") or "ue_capture agent"),
+                    intake_run_id=job.get("intake_run_id"),
+                )
+            except Exception as exc:  # noqa: BLE001
+                result["scratch_record_error"] = str(exc)
+
+    completed = jobs_mod.complete_job(
+        job_id, result=result if not body.error else None, error=body.error
+    )
+    return {"schema_version": 1, "job": completed}
+
+
+@app.post("/api/ue/capture")
+def api_ue_capture(body: UeCaptureRequest) -> dict[str, Any]:
+    """Enqueue Unreal capture for the Windows UE agent (triggered from Vellum UI)."""
+    if register_mod.get_asset(body.asset_id) is None:
+        raise HTTPException(status_code=404, detail="asset_not_found")
+    asset = register_mod.get_asset(body.asset_id)
+    assert asset is not None
+    project = (body.project_path or asset.get("scratch_project_path") or r"C:\epic\VellumImport").strip()
+    content_root = (body.content_root or "/Game/FireworksV1").strip()
+    job = jobs_mod.enqueue_job(
+        kind="ue_capture",
+        asset_id=body.asset_id,
+        intake_run_id=body.intake_run_id,
+        step_id="scratch_inspect",
+        payload={
+            "source": "api_ue_capture",
+            "lane": body.lane,
+            "project_path": project,
+            "content_root": content_root,
+            "engine_version": body.engine_version or "5.8",
+        },
+    )
+    return {"schema_version": 1, "job": job}
 
 
 @app.get("/api/lookdev/lanes")

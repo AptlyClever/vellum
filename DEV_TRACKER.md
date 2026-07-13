@@ -1,8 +1,8 @@
 # Development Tracker: Vellum
 
-> **Current Active Issue:** Fireworks — automate Unreal scratch inspect + Niagara stills
+> **Current Active Issue:** Fireworks — Vellum UI → UE agent capture
 > **Governing CFD:** `cfd-inspiration-20260713-015950-vellum-control-alt-games-asset-vault-register-in`
-> **Next Immediate Step:** On Windows UE box, enable Python plugin once, run `tools/unreal/run_vellum_capture.ps1`
+> **Next Immediate Step:** Start `tools/unreal/vellum_ue_agent.ps1` on the Windows UE box; click **Capture from Unreal** in Vellum
 
 ---
 
@@ -22,12 +22,13 @@
 
 ## 2. The Active Issue (Do Not Add Steps Here!)
 
-* **What success looks like:** One PowerShell command on the UE workstation records scratch inspect and ingests ≥1 still without Vellum UI clicks.
+* **What success looks like:** From Vellum UI alone, enqueue Unreal capture; background Windows agent runs UE and stills appear in Lookdev.
 * **Sub-Tasks:**
-  - [x] Scratch record + Niagara upload APIs/UI (fallback)
-  - [x] `tools/unreal/vellum_capture.py` + `run_vellum_capture.ps1`
-  - [ ] Operator one-time: Python plugin + first capture run
-  - [ ] Improve capture framing (spawn specific Niagara systems) once first run works
+  - [x] `POST /api/ue/capture` + claim/report for Windows agent
+  - [x] UI **Capture from Unreal** button
+  - [x] `vellum_ue_agent.ps1` poll loop
+  - [ ] Operator: start agent once on UE box + first Capture click
+  - [ ] Improve Niagara framing in `vellum_capture.py` after first success
 
 ---
 
@@ -50,3 +51,4 @@
 * **2026-07-13** — **Slices A–F shipped** (register → intake → worker → Axiom Read → Epic stage Fireworks → lookdev texture stills).
 * **2026-07-13** — **Next track:** Unreal scratch inspect + Niagara viewport stills for Fireworks; Unity reconcile parked. APIs `/api/scratch/record`, `/api/lookdev/ingest-render`; `docs/scratch-inspect-niagara.md`.
 * **2026-07-13** — Automation-first capture: `tools/unreal/run_vellum_capture.ps1` drives UnrealEditor-Cmd + posts results to Vellum (manual UI is fallback only).
+* **2026-07-13** — UI-first: **Capture from Unreal** enqueues `ue_capture`; Windows `vellum_ue_agent.ps1` polls/claims/runs (operator stays in Vellum).

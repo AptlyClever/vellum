@@ -1,59 +1,39 @@
-# Unreal scratch inspect + Niagara renders (Fireworks) — automation-first
+# Unreal capture via Vellum UI (Fireworks)
 
-Unity tier reconcile is **parked**. Manual UI clicks are the fallback; prefer the Windows capture runner.
+You stay in **Vellum**. Unreal runs unattended on the Windows box.
 
-## What stays human (for now)
+## Operator flow
 
-- Humble → Epic **redeem** / first **Add to Project** (Epic has no download button for UE packs).
-- Enabling the **Python Editor Script Plugin** once in the scratch project.
-
-## Automated path (preferred)
-
-On the Windows machine that has UE 5.8 + `C:\epic\VellumImport`:
+1. On the UE workstation, leave this running in the background (one-time setup below):
 
 ```powershell
-# One-time: clone/sync vellum repo OR copy tools/unreal/* next to the project
-# One-time: enable Edit → Plugins → "Python Editor Script Plugin" in VellumImport
-
-$env:VELLUM_UE_CMD = "C:\Program Files\Epic Games\UE_5.8\Engine\Binaries\Win64\UnrealEditor-Cmd.exe"  # if needed
-
-pwsh -File \\192.168.68.93\…\vellum\tools\unreal\run_vellum_capture.ps1
-# or from a local checkout:
-pwsh -File C:\path\to\vellum\tools\unreal\run_vellum_capture.ps1
+pwsh -File tools\unreal\vellum_ue_agent.ps1
 ```
 
-That script:
+2. In Vellum → Fireworks → **Capture from Unreal**
+3. Watch **Jobs** on the detail page (`ue_capture` → succeeded)
+4. Lookdev grid gains `niagara-render` stills when capture produces files
 
-1. Runs `UnrealEditor-Cmd` with `vellum_capture.py` (unattended)
-2. Inventories Niagara systems under `/Game/FireworksV1`
-3. Attempts a HighResShot still
-4. POSTs ` /api/scratch/record` + `/api/lookdev/ingest-render` to Vellum (`:8770`)
+No navigating Unreal for screenshots. No PowerShell per asset.
 
-No Vellum UI clicking required when it succeeds.
+## One-time Windows setup
 
-### Outputs
+1. Enable **Python Editor Script Plugin** in `C:\epic\VellumImport`
+2. Have this repo (or `tools/unreal/*`) available on that machine
+3. Optional: `$env:VELLUM_UE_CMD = "C:\Program Files\Epic Games\UE_5.8\Engine\Binaries\Win64\UnrealEditor-Cmd.exe"`
+4. Start `vellum_ue_agent.ps1` (Task Scheduler / always-on terminal)
 
-- Manifest: `C:\epic\VellumImport\Saved\VellumCapture\manifest.json`
-- Stills: `…\Saved\VellumCapture\stills\`
-- Register: `scratch_project_status=inspected`
-- DerivedOutput kind: `niagara-render` (when a still file is produced)
+## What stays human
 
-## Fallback (manual)
+Humble → Epic redeem / first Add to Project only.
 
-If Python plugin / HighResShot fails: open the project, capture one still yourself, use **Upload Niagara render** in Vellum — see older checklist below.
+## APIs (UI uses these)
 
-<details>
-<summary>Manual checklist</summary>
+- `POST /api/ue/capture` — enqueue from UI
+- `POST /api/jobs/claim` — agent claims `ue_capture`
+- `POST /api/jobs/{id}/report` — agent reports result
+- `POST /api/lookdev/ingest-render` — still upload (agent/runner)
 
-1. Open `C:\epic\VellumImport`
-2. Confirm Fireworks Niagara systems simulate
-3. Vellum → Record scratch inspect
-4. HighResShot / screenshot → Upload Niagara render
+## Fallback
 
-</details>
-
-## Boundaries
-
-- Does not automate Epic Launcher redeem/download.
-- Does not copy `.uasset` packs into product git repos.
-- Capture quality will improve once we add pack-specific Niagara framing (next iteration).
+If the agent is down, upload remains available under Lookdev. Prefer fixing the agent.
