@@ -1,19 +1,20 @@
 # Development Tracker: Vellum
 
-> **Current Active Issue:** Fireworks — durable Unreal lookdev capture (**MRQ + Sequencer**)
+> **Current Active Issue:** Fireworks — durable Unreal lookdev capture (**MRQ + Sequencer**, batch queue)
 > **Governing CFD:** `cfd-inspiration-20260713-015950-vellum-control-alt-games-asset-vault-register-in` (slices A–F met; this is the post-CFD track)
 > **Capability spec:** `docs/ue-mrq-capture.md` (SoT — full fidelity; SceneCapture/HighResShot retired)
-> **Next Immediate Step:** On Aurora `git pull`, restart agent (fingerprint `mrq-sequencer`), Capture from Vellum. First run may use `VELLUM_MAX_SYSTEMS=1`.
+> **Next Immediate Step:** Pull `mrq-batch-queue` on Aurora; Capture once to prove one-author + queue MRQ + per-system ingest.
 
 ---
 
 ## 1. Quick Runbook
-    *Keep your commands here so you never have to search for them.*
+*Keep your commands here so you never have to search for them.*
 
 * **UI:** http://192.168.68.93:8770/
 * **Axiom Read:** http://192.168.68.93:7895/#/axiom/vellum
 * **Scratch / hosts:** `docs/scratch-inspect-niagara.md`
 * **UE MRQ capture capability (SoT):** `docs/ue-mrq-capture.md`
+* **Recover interrupted MRQ dirs:** `pwsh -File tools/unreal/vellum_ue_agent.ps1 -RecoverOnly`
 * **Record scratch:** `POST /api/scratch/record`
 * **Upload Niagara still:** `POST /api/lookdev/ingest-render` (multipart)
 * **Compose:** `docker compose up -d --build` (port **8770**)
@@ -41,7 +42,8 @@
   - [x] Aurora: Fireworks in `AuroraVellum` at `/Game/FireworksV1` + MRQ/Python plugins
   - [x] Operator will not hand-author Sequencer/MRQ UI — spike/proof is scripted
   - [x] Implement cmdline **MRQ + Sequencer** backend + agent wiring
-  - [ ] Prove slots + hail-overlay lookdev in vault via Vellum Capture only
+  - [x] Prove slots + hail-overlay lookdev in vault (recover ingest 2026-07-13: Chrysanthemum/Peony/Willow Single)
+  - [ ] Batch path: one author + one MoviePipelineQueue MRQ + per-system ingest (`mrq-batch-queue`)
 
 ---
 
@@ -75,3 +77,6 @@
 * **2026-07-13** — §12 locked: outputs **B**, duration/framing **C**, executor **C**, content-root **C**, multi-lane **B** (slots+hail-overlay).
 * **2026-07-13** — Aurora: Fireworks at `/Game/FireworksV1`; MRQ + Python plugins on. Operator declined manual Sequencer/MRQ UI spike — proof path is **fully scripted**; Capture stays Vellum UI + agent only.
 * **2026-07-13** — Implemented scripted **mrq-sequencer** runner: inventory (+ `/Game` fallback), author map/sequence/MRQ config, cmdline MRQ, mid+max-luma heroes, sequence zip ingest to **slots** + **hail-overlay**.
+* **2026-07-13** — Transient-actor bug fixed (`spawn_* …, True` was `transient=True`); persistent actors + spawnables → non-black MRQ frames.
+* **2026-07-13** — Interrupted job recover: 3 systems × slots+hail-overlay heroes/sequences ingested (`Recover done ok=True systems=3 ingested=18`). Validated max_luma peaks 113–198 via lookdev `/file`.
+* **2026-07-13** — Phase B optimization: batch author + MoviePipelineQueue + **per-system ingest** (`mrq-batch-queue`).

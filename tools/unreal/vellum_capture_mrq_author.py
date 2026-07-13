@@ -696,6 +696,198 @@ def _force_save_map(unreal_mod, map_path: str, notes: list[str], errors: list[st
         notes.append(f"expect_level_actors:{expect_actors}")
 
 
+def _destroy_labeled(actor_sub, notes: list[str]) -> None:
+    """Remove camera/niagara level instances after sequence spawnables are authored."""
+    if actor_sub is None:
+        return
+    removed = 0
+    try:
+        for actor in list(actor_sub.get_all_level_actors()):
+            try:
+                label = actor.get_actor_label()
+            except Exception:  # noqa: BLE001
+                continue
+            if label in (f"{ACTOR_PREFIX}Camera", f"{ACTOR_PREFIX}System"):
+                actor_sub.destroy_actor(actor)
+                removed += 1
+    except Exception as exc:  # noqa: BLE001
+        notes.append(f"destroy_cam_niagara_failed:{exc}")
+    notes.append(f"destroyed_cam_niagara:{removed}")
+
+
+def _soft(path: str) -> str:
+    p = path.strip()
+    if not p:
+        return p
+    leaf = p.rsplit("/", 1)[-1]
+    if "." in leaf:
+        return p
+    return f"{p}.{leaf}"
+
+
+def _author_one_system(
+    unreal_mod,
+    actor_sub,
+    *,
+    system_object_path: str,
+    system_name: str,
+    map_path: str,
+    seq_pkg: str,
+    cfg_pkg: str,
+    output_dir: str,
+    width: int,
+    height: int,
+    frame_count: int,
+    frame_rate: int,
+    notes: list[str],
+    errors: list[str],
+    spawn_lights: bool,
+) -> dict:
+    if spawn_lights:
+        _clear_vellum_actors(unreal_mod, actor_sub, notes)
+        _spawn_lights(unreal_mod, actor_sub, notes)
+    else:
+        _destroy_labeled(actor_sub, notes)
+
+    system_asset = unreal_mod.EditorAssetLibrary.load_asset(system_object_path)
+    if system_asset is None:
+        raise RuntimeError(f"load_failed:{system_object_path}")
+
+    niagara = _spawn_niagara(unreal_mod, actor_sub, system_asset, notes)
+    if niagara is None:
+        raise RuntimeError(f"spawn_niagara_failed:{system_name}")
+
+    cam_loc, cam_rot = _fireworks_camera_pose(unreal_mod)
+    camera = _spawn(
+        unreal_mod,
+        actor_sub,
+        actor_class=unreal_mod.CineCameraActor,
+        loc=cam_loc,
+        rot=cam_rot,
+        label=f"{ACTOR_PREFIX}Camera",
+        notes=notes,
+    )
+    if camera is None:
+        camera = _spawn(
+            unreal_mod,
+            actor_sub,
+            actor_class=unreal_mod.CameraActor,
+            loc=cam_loc,
+            rot=cam_rot,
+            label=f"{ACTOR_PREFIX}Camera",
+            notes=notes,
+        )
+    if camera is None:
+        raise RuntimeError(f"spawn_camera_failed:{system_name}")
+    _configure_cine_camera(unreal_mod, camera, notes)
+
+    safe = "".join(c if c.isalnum() or c in "-_" else "_" for c in system_name) or "system"
+    seq_name = f"LS_{safe}"
+    cfg_name = f"MRQ_{safe}"
+
+    sequence = _load_or_create_level_sequence(unreal_mod, seq_pkg, seq_name)
+    if sequence is None:
+        raise RuntimeError(f"sequence_create_failed:{system_name}")
+    _configure_sequence(unreal_mod, sequence, camera, niagara, frame_count, frame_rate, notes)
+
+    # Level keeps lights only; sequences own camera+Niagara as spawnables.
+    try:
+        actor_sub.destroy_actor(camera)
+        actor_sub.destroy_actor(niagara)
+        notes.append(f"level_cleared_after_spawnable:{system_name}")
+    except Exception as exc:  # noqa: BLE001
+        notes.append(f"post_spawnable_destroy_failed:{exc}")
+
+    config = _load_or_create_mrq_config(unreal_mod, cfg_pkg, cfg_name)
+    _configure_mrq_config(unreal_mod, config, output_dir.replace("\\", "/"), width, height, notes)
+
+    try:
+        unreal_mod.EditorAssetLibrary.save_asset(f"{seq_pkg}/{seq_name}")
+        notes.append(f"saved_sequence:{seq_name}")
+    except Exception as exc:  # noqa: BLE001
+        errors.append(f"save_sequence_failed:{system_name}:{exc}")
+    try:
+        unreal_mod.EditorAssetLibrary.save_asset(f"{cfg_pkg}/{cfg_name}")
+        notes.append(f"saved_config:{cfg_name}")
+    except Exception as exc:  # noqa: BLE001
+        errors.append(f"save_config_failed:{system_name}:{exc}")
+
+    return {
+        "system_name": system_name,
+        "system_object_path": system_object_path,
+        "map_path": map_path,
+        "sequence_path": f"{seq_pkg}/{seq_name}.{seq_name}",
+        "sequence_asset": f"{seq_pkg}/{seq_name}",
+        "config_path": f"{cfg_pkg}/{cfg_name}.{cfg_name}",
+        "config_asset": f"{cfg_pkg}/{cfg_name}",
+        "output_dir": output_dir.replace("\\", "/"),
+        "frame_count": frame_count,
+        "frame_rate": frame_rate,
+        "width": width,
+        "height": height,
+    }
+
+
+def _build_or_update_queue(unreal_mod, package_path: str, asset_name: str, jobs: list[dict], notes: list[str]) -> str | None:
+    """Create a MoviePipelineQueue asset with one executor job per system. Returns soft path."""
+    full = f"{package_path}/{asset_name}"
+    _ensure_dir_asset(unreal_mod, package_path)
+    queue_cls = getattr(unreal_mod, "MoviePipelineQueue", None)
+    if queue_cls is None:
+        notes.append("queue_class_missing")
+        return None
+    if unreal_mod.EditorAssetLibrary.does_asset_exist(full):
+        try:
+            unreal_mod.EditorAssetLibrary.delete_asset(full)
+        except Exception:  # noqa: BLE001
+            pass
+    tools = unreal_mod.AssetToolsHelpers.get_asset_tools()
+    factory = getattr(unreal_mod, "MoviePipelineQueueFactory", None)
+    queue = None
+    try:
+        if factory is not None:
+            queue = tools.create_asset(asset_name, package_path, queue_cls, factory())
+        else:
+            queue = tools.create_asset(asset_name, package_path, queue_cls, None)
+    except Exception as exc:  # noqa: BLE001
+        notes.append(f"queue_create_failed:{exc}")
+        return None
+    if queue is None:
+        notes.append("queue_create_returned_none")
+        return None
+
+    try:
+        queue.delete_all_jobs()
+    except Exception:  # noqa: BLE001
+        pass
+
+    job_cls = getattr(unreal_mod, "MoviePipelineExecutorJob", None)
+    for item in jobs:
+        try:
+            if job_cls is not None:
+                qjob = queue.allocate_new_job(job_cls)
+            else:
+                qjob = queue.allocate_new_job()
+            qjob.job_name = str(item["system_name"])
+            qjob.map = unreal_mod.SoftObjectPath(_soft(str(item["map_path"])))
+            qjob.sequence = unreal_mod.SoftObjectPath(_soft(str(item["sequence_path"])))
+            cfg = unreal_mod.EditorAssetLibrary.load_asset(str(item["config_asset"]))
+            if cfg is not None:
+                qjob.set_configuration(cfg)
+            notes.append(f"queue_job:{item['system_name']}")
+        except Exception as exc:  # noqa: BLE001
+            notes.append(f"queue_job_failed:{item.get('system_name')}:{exc}")
+            return None
+
+    try:
+        unreal_mod.EditorAssetLibrary.save_asset(full)
+        notes.append("saved_queue")
+    except Exception as exc:  # noqa: BLE001
+        notes.append(f"save_queue_failed:{exc}")
+        return None
+    return _soft(full)
+
+
 def main() -> None:
     import unreal  # type: ignore
 
@@ -715,8 +907,6 @@ def main() -> None:
         job_path = _job_path()
         result_path = job_path.parent / "author-result.json"
         job = json.loads(job_path.read_text(encoding="utf-8"))
-        system_object_path = str(job.get("system_object_path") or "")
-        system_name = str(job.get("system_name") or "system")
         map_path = str(job.get("map_path") or "/Game/Vellum/Maps/VellumNiagaraCapture")
         seq_pkg = str(job.get("sequence_package") or "/Game/Vellum/Sequences")
         cfg_pkg = str(job.get("config_package") or "/Game/Vellum/MRQ")
@@ -724,17 +914,21 @@ def main() -> None:
         height = int(job.get("height") or 1080)
         frame_count = int(job.get("frame_count") or DEFAULT_FRAMES)
         frame_rate = int(job.get("frame_rate") or DEFAULT_FPS)
-        output_dir = str(job.get("output_dir") or "")
-        if not system_object_path:
-            raise ValueError("missing system_object_path")
-        if not output_dir:
-            raise ValueError("missing output_dir")
 
-        safe = "".join(c if c.isalnum() or c in "-_" else "_" for c in system_name) or "system"
-        seq_name = f"LS_{safe}"
-        cfg_name = f"MRQ_{safe}"
+        # Batch: job.systems = [{object_path, asset_name, output_dir}, ...]
+        systems = list(job.get("systems") or [])
+        if not systems and job.get("system_object_path"):
+            systems = [
+                {
+                    "object_path": job.get("system_object_path"),
+                    "asset_name": job.get("system_name") or "system",
+                    "output_dir": job.get("output_dir"),
+                }
+            ]
+        if not systems:
+            raise ValueError("missing systems / system_object_path")
 
-        unreal.log(f"Vellum MRQ author start system={system_object_path}")
+        unreal.log(f"Vellum MRQ author start count={len(systems)} map={map_path}")
 
         if not _open_or_create_map(unreal, map_path, notes):
             raise RuntimeError("map_open_failed")
@@ -742,83 +936,59 @@ def main() -> None:
         actor_sub = _actor_subsystem(unreal)
         if actor_sub is None:
             raise RuntimeError("no_actor_subsystem")
-        _clear_vellum_actors(unreal, actor_sub, notes)
-        _spawn_lights(unreal, actor_sub, notes)
 
-        system_asset = unreal.EditorAssetLibrary.load_asset(system_object_path)
-        if system_asset is None:
-            raise RuntimeError(f"load_failed:{system_object_path}")
-
-        niagara = _spawn_niagara(unreal, actor_sub, system_asset, notes)
-        if niagara is None:
-            raise RuntimeError("spawn_niagara_failed")
-
-        cam_loc, cam_rot = _fireworks_camera_pose(unreal)
-        camera = _spawn(
-            unreal,
-            actor_sub,
-            actor_class=unreal.CineCameraActor,
-            loc=cam_loc,
-            rot=cam_rot,
-            label=f"{ACTOR_PREFIX}Camera",
-            notes=notes,
-        )
-        if camera is None:
-            camera = _spawn(
+        authored: list[dict] = []
+        for idx, sys in enumerate(systems):
+            system_object_path = str(sys.get("object_path") or sys.get("system_object_path") or "")
+            system_name = str(sys.get("asset_name") or sys.get("system_name") or f"system_{idx}")
+            output_dir = str(sys.get("output_dir") or "")
+            if not system_object_path or not output_dir:
+                raise ValueError(f"system[{idx}] missing object_path/output_dir")
+            notes.append(f"author_begin:{system_name}")
+            item = _author_one_system(
                 unreal,
                 actor_sub,
-                actor_class=unreal.CameraActor,
-                loc=cam_loc,
-                rot=cam_rot,
-                label=f"{ACTOR_PREFIX}Camera",
+                system_object_path=system_object_path,
+                system_name=system_name,
+                map_path=map_path,
+                seq_pkg=seq_pkg,
+                cfg_pkg=cfg_pkg,
+                output_dir=output_dir,
+                width=width,
+                height=height,
+                frame_count=frame_count,
+                frame_rate=frame_rate,
                 notes=notes,
+                errors=errors,
+                spawn_lights=(idx == 0),
             )
-        if camera is None:
-            raise RuntimeError("spawn_camera_failed")
-        _configure_cine_camera(unreal, camera, notes)
-        notes.append("camera_spawned")
+            authored.append(item)
+            notes.append(f"author_ok:{system_name}")
 
         live_count = _count_vellum_actors(actor_sub)
-        notes.append(f"level_actors_after_spawn:{live_count}")
-        if live_count < 3:
-            raise RuntimeError(f"too_few_level_actors:{live_count}")
+        notes.append(f"level_actors_after_batch:{live_count}")
+        _force_save_map(unreal, map_path, notes, errors, expect_actors=0)
 
-        sequence = _load_or_create_level_sequence(unreal, seq_pkg, seq_name)
-        if sequence is None:
-            raise RuntimeError("sequence_create_failed")
-        _configure_sequence(unreal, sequence, camera, niagara, frame_count, frame_rate, notes)
+        queue_path = _build_or_update_queue(
+            unreal,
+            cfg_pkg,
+            str(job.get("queue_name") or "VellumBatchQueue"),
+            authored,
+            notes,
+        )
 
-        config = _load_or_create_mrq_config(unreal, cfg_pkg, cfg_name)
-        _configure_mrq_config(unreal, config, output_dir.replace("\\", "/"), width, height, notes)
-
-        try:
-            unreal.EditorAssetLibrary.save_asset(f"{seq_pkg}/{seq_name}")
-            notes.append("saved_sequence")
-        except Exception as exc:  # noqa: BLE001
-            notes.append(f"save_sequence_failed:{exc}")
-            errors.append(f"save_sequence_failed:{exc}")
-        try:
-            unreal.EditorAssetLibrary.save_asset(f"{cfg_pkg}/{cfg_name}")
-            notes.append("saved_config")
-        except Exception as exc:  # noqa: BLE001
-            notes.append(f"save_config_failed:{exc}")
-            errors.append(f"save_config_failed:{exc}")
-
-        _force_save_map(unreal, map_path, notes, errors, expect_actors=live_count)
         if errors:
             raise RuntimeError(";".join(errors[:4]))
 
         out.update(
             {
                 "ok": True,
-                "system_name": system_name,
-                "system_object_path": system_object_path,
+                "mode": "batch" if len(authored) > 1 else "single",
                 "map_path": map_path,
-                "sequence_path": f"{seq_pkg}/{seq_name}.{seq_name}",
-                "sequence_asset": f"{seq_pkg}/{seq_name}",
-                "config_path": f"{cfg_pkg}/{cfg_name}.{cfg_name}",
-                "config_asset": f"{cfg_pkg}/{cfg_name}",
-                "output_dir": output_dir.replace("\\", "/"),
+                "queue_path": queue_path,
+                "jobs": authored,
+                # Back-compat for single-system readers:
+                **(authored[0] if len(authored) == 1 else {}),
                 "frame_count": frame_count,
                 "frame_rate": frame_rate,
                 "width": width,
@@ -826,7 +996,7 @@ def main() -> None:
             }
         )
         ok = True
-        unreal.log(f"Vellum MRQ author ok sequence={seq_name} config={cfg_name}")
+        unreal.log(f"Vellum MRQ author ok systems={len(authored)} queue={queue_path}")
     except Exception as exc:  # noqa: BLE001
         errors.append(str(exc))
         errors.append(traceback.format_exc()[-1500:])

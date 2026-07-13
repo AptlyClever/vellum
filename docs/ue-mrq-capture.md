@@ -1,11 +1,11 @@
 # Unreal lookdev capture (MRQ) — capability spec
 
-**Status:** implemented (scripted) / awaiting Aurora proof run  
+**Status:** implemented (scripted batch) / Aurora proof via recover ingest  
 **Pilot asset:** `fireworks-vol-1-niagara`  
 **Primary host:** Aurora (`config/ue-hosts.json` → `active: aurora`)  
 **Related:** host runbook `docs/scratch-inspect-niagara.md`, lookdev API `docs/api-lookdev.md`  
 **Decisions:** §12 locked 2026-07-13 (B / C / C / C / B)  
-**Runner fingerprint:** `mrq-sequencer (2026-07-13)`
+**Runner fingerprint:** `mrq-batch-queue (2026-07-13)`
 
 This is **new Vellum functionality**: turn a purchased Unreal Niagara pack into
 **full-fidelity lookdev renders** in the vault, driven from the Vellum UI, without
