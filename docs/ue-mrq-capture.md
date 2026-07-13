@@ -5,7 +5,7 @@
 **Primary host:** Aurora (`config/ue-hosts.json` → `active: aurora`)  
 **Related:** host runbook `docs/scratch-inspect-niagara.md`, lookdev API `docs/api-lookdev.md`  
 **Decisions:** §12 locked 2026-07-13 (B / C / C / C / B)  
-**Runner fingerprint:** `mrq-batch-queue (2026-07-13)`
+**Runner fingerprint:** `mrq-batch-skip (2026-07-13)`
 
 This is **new Vellum functionality**: turn a purchased Unreal Niagara pack into
 **full-fidelity lookdev renders** in the vault, driven from the Vellum UI, without
@@ -152,13 +152,21 @@ Old fingerprints (`editor-scenecapture*`, `game-mode-capture-map`, etc.) are his
 
 | Surface | Role in this capability |
 | --- | --- |
-| `POST /api/ue/capture` | Enqueue; payload includes `project_path`, `content_root`, `engine_version`, `ue_host`, `lane` |
+| `POST /api/ue/capture` | Enqueue; payload includes `project_path`, `content_root`, `engine_version`, `ue_host`, `lane`, `force` |
 | `POST /api/jobs/claim` | Windows agent |
 | `POST /api/jobs/{id}/progress` | Live phase / log tail |
 | `POST /api/jobs/{id}/report` | Success/failure + scratch path |
 | `GET /api/ue/hosts` | Active host profile for UI defaults |
 | `POST /api/lookdev/ingest-render` | Vault write for rendered frames |
-| `GET /api/lookdev/outputs` | Operator proof |
+| `GET /api/lookdev/outputs` | Operator proof + **skip check** before re-render |
+
+### Skip already-captured systems
+
+After inventory, before Phase B author / MRQ wipe:
+
+1. **Vault covered** — `GET /api/lookdev/outputs` has `niagara-render` for the system on both **slots** and **hail-overlay** → skip render and ingest.
+2. **Local MRQ ready** — `Saved/VellumCapture/mrq/<system>/` passes `pick_heroes` (≥30 non-black frames) but vault is incomplete → **ingest only** (no re-render).
+3. **Force** — `force: true` on `POST /api/ue/capture`, UI “Force re-render”, runner `-ForceCapture`, or `VELLUM_FORCE_CAPTURE=1` redoes everything. Recover uses `-Force` the same way.
 
 **Likely follow-ons** (track when implementing; do not silently invent):
 

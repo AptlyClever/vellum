@@ -3,7 +3,7 @@
 > **Current Active Issue:** Fireworks — durable Unreal lookdev capture (**MRQ + Sequencer**, batch queue)
 > **Governing CFD:** `cfd-inspiration-20260713-015950-vellum-control-alt-games-asset-vault-register-in` (slices A–F met; this is the post-CFD track)
 > **Capability spec:** `docs/ue-mrq-capture.md` (SoT — full fidelity; SceneCapture/HighResShot retired)
-> **Next Immediate Step:** Pull `mrq-batch-queue` on Aurora; Capture once to prove one-author + queue MRQ + per-system ingest.
+> **Next Immediate Step:** Pull `mrq-batch-skip` on Aurora; Capture skips vault-covered systems (use Force to re-render).
 
 ---
 
@@ -43,7 +43,8 @@
   - [x] Operator will not hand-author Sequencer/MRQ UI — spike/proof is scripted
   - [x] Implement cmdline **MRQ + Sequencer** backend + agent wiring
   - [x] Prove slots + hail-overlay lookdev in vault (recover ingest 2026-07-13: Chrysanthemum/Peony/Willow Single)
-  - [ ] Batch path: one author + one MoviePipelineQueue MRQ + per-system ingest (`mrq-batch-queue`)
+  - [x] Batch path: one author + one MoviePipelineQueue MRQ + per-system ingest (`mrq-batch-queue`)
+  - [x] Skip vault-covered / local-ready systems; `force` override (`mrq-batch-skip`)
 
 ---
 
@@ -80,3 +81,4 @@
 * **2026-07-13** — Transient-actor bug fixed (`spawn_* …, True` was `transient=True`); persistent actors + spawnables → non-black MRQ frames.
 * **2026-07-13** — Interrupted job recover: 3 systems × slots+hail-overlay heroes/sequences ingested (`Recover done ok=True systems=3 ingested=18`). Validated max_luma peaks 113–198 via lookdev `/file`.
 * **2026-07-13** — Phase B optimization: batch author + MoviePipelineQueue + **per-system ingest** (`mrq-batch-queue`).
+* **2026-07-13** — Skip already-captured systems (`mrq-batch-skip`): vault lookdev on slots+hail-overlay, or local good MRQ → ingest-only; `force` / Force re-render / `-ForceCapture`.

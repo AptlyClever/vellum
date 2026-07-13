@@ -60,25 +60,35 @@ function Invoke-CaptureJob {
   $maxSystems = if ($payload.max_systems) { [int]$payload.max_systems } else { 3 }
   $width = if ($payload.width) { [int]$payload.width } else { 1920 }
   $height = if ($payload.height) { [int]$payload.height } else { 1080 }
+  $forceCapture = $false
+  if ($null -ne $payload.force -and "$($payload.force)" -match '^(1|True|true|yes)$') {
+    $forceCapture = $true
+  }
 
   $resolvedUe = Find-UeCmdFromHost -HostProfile $UeHost -Hint $UeCmd
   Write-Host "Using UE Cmd: $resolvedUe"
-  Write-Host "Running capture for $assetId ($($Job.job_id)) on host $($UeHost.id)"
+  Write-Host "Running capture for $assetId ($($Job.job_id)) on host $($UeHost.id) force=$forceCapture"
   $env:VELLUM_JOB_ID = [string]$Job.job_id
-  & $Runner `
-    -Project $uproject `
-    -AssetId $assetId `
-    -ContentRoot $contentRoot `
-    -VellumBase $VellumBase `
-    -Lane $lane `
-    -EngineVersion $engineVersion `
-    -IntakeRunId $intakeRunId `
-    -UeCmd $resolvedUe `
-    -MaxSystems $maxSystems `
-    -Width $width `
-    -Height $height `
-    -JobId ([string]$Job.job_id) `
-    -HostName $UeHost.id
+  $runnerArgs = @{
+    Project        = $uproject
+    AssetId        = $assetId
+    ContentRoot    = $contentRoot
+    VellumBase     = $VellumBase
+    Lane           = $lane
+    EngineVersion  = $engineVersion
+    IntakeRunId    = $intakeRunId
+    UeCmd          = $resolvedUe
+    MaxSystems     = $maxSystems
+    Width          = $width
+    Height         = $height
+    JobId          = [string]$Job.job_id
+    HostName       = $UeHost.id
+  }
+  if ($forceCapture) {
+    & $Runner @runnerArgs -ForceCapture
+  } else {
+    & $Runner @runnerArgs
+  }
 
   $outDir = Join-Path (Split-Path $uproject -Parent) "Saved\VellumCapture"
   $manifestPath = Join-Path $outDir "manifest.json"
@@ -92,18 +102,20 @@ function Invoke-CaptureJob {
   $result = @{
     project_path       = (Split-Path $uproject -Parent)
     engine_version     = $engineVersion
-    notes              = "ue_agent capture host=$($UeHost.id)"
+    notes              = "ue_agent capture host=$($UeHost.id) force=$forceCapture"
     ue_host            = $UeHost.id
     niagara_systems    = if ($man) { $man.niagara_systems_found } else { 0 }
     stills             = if ($man) { @($man.stills).Count } else { 0 }
+    skipped_vault      = if ($man -and $man.skipped_vault) { @($man.skipped_vault).Count } else { 0 }
     manifest_ok        = [bool]$man.ok
     stills_attempted   = if ($man) { [bool]$man.stills_attempted } else { $false }
     mode               = if ($man) { [string]$man.mode } else { "" }
     errors             = $errs
   }
-  Write-Host "Report stills=$($result.stills) attempted=$($result.stills_attempted) errors=$($errs -join '; ')"
+  Write-Host "Report stills=$($result.stills) vault_skip=$($result.skipped_vault) ok=$($result.manifest_ok) errors=$($errs -join '; ')"
 
-  if ([int]$result.stills -le 0) {
+  # Success when new stills landed OR vault already covered all picked systems (skip path).
+  if (-not $man -or -not [bool]$man.ok) {
     $failMsg = "no_stills"
     if ($errs.Count -gt 0) {
       $failMsg = ([string]($errs | Select-Object -First 1))
@@ -137,7 +149,7 @@ Write-Host "UI trigger: asset detail → Capture from Unreal"
 Write-Host "Host profile: $($UeHost.id) ($($UeHost.label), $($UeHost.role)) — config active=$($UeHost.active_in_config)"
 Write-Host "Agent scripts: $Runner"
 Write-Host "Repo root: $RepoRoot"
-Write-Host "Agent fingerprint: mrq-batch-queue (2026-07-13)"
+Write-Host "Agent fingerprint: mrq-batch-skip (2026-07-13)"
 $runnerVersionLine = (Get-Content $Runner | Where-Object { $_ -match "Runner version:" } | Select-Object -First 1)
 if (-not $runnerVersionLine) { $runnerVersionLine = "(no 'Runner version:' line found — old pull?)" }
 Write-Host "Runner fingerprint: $($runnerVersionLine.Trim())"
@@ -156,7 +168,11 @@ if ($RecoverOnly) {
   $Recover = Join-Path $PSScriptRoot "recover_vellum_capture.ps1"
   if (-not (Test-Path $Recover)) { throw "recover_vellum_capture.ps1 missing" }
   Write-Host "RecoverOnly: ingesting finished MRQ dirs under Saved/VellumCapture/mrq (no UE launch, no job claim)"
-  & $Recover -VellumBase $VellumBase -HostName $UeHost.id -AssetId "fireworks-vol-1-niagara"
+  if ($env:VELLUM_FORCE_CAPTURE -match '^(1|true|yes)$') {
+    & $Recover -VellumBase $VellumBase -HostName $UeHost.id -AssetId "fireworks-vol-1-niagara" -Force
+  } else {
+    & $Recover -VellumBase $VellumBase -HostName $UeHost.id -AssetId "fireworks-vol-1-niagara"
+  }
   exit $LASTEXITCODE
 }
 

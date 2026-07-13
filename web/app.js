@@ -399,6 +399,18 @@ async function openDetail(id) {
   engLabel.appendChild(engInput);
   scratchForm.appendChild(engLabel);
 
+  const forceLabel = document.createElement("label");
+  forceLabel.className = "field";
+  const forceSpan = document.createElement("span");
+  forceSpan.textContent = "Force re-render";
+  const forceInput = document.createElement("input");
+  forceInput.type = "checkbox";
+  forceInput.title =
+    "Re-render even when vault lookdev already exists for this pack";
+  forceLabel.appendChild(forceSpan);
+  forceLabel.appendChild(forceInput);
+  scratchForm.appendChild(forceLabel);
+
   const captureBtn = document.createElement("button");
   captureBtn.type = "button";
   captureBtn.className = "btn";
@@ -426,6 +438,7 @@ async function openDetail(id) {
           engine_version: engInput.value.trim(),
           intake_run_id: intakeRunId,
           content_root: "/Game/FireworksV1",
+          force: !!forceInput.checked,
         }),
       });
       if (!res.ok) throw new Error(`ue capture ${res.status}`);

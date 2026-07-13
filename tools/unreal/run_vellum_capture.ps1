@@ -26,7 +26,10 @@ param(
   [int]$Width = $(if ($env:VELLUM_WIDTH) { [int]$env:VELLUM_WIDTH } else { 1920 }),
   [int]$Height = $(if ($env:VELLUM_HEIGHT) { [int]$env:VELLUM_HEIGHT } else { 1080 }),
   [string]$MapPath = "/Game/Vellum/Maps/VellumNiagaraCapture",
-  [string]$JobId = $(if ($env:VELLUM_JOB_ID) { $env:VELLUM_JOB_ID } else { "" })
+  [string]$JobId = $(if ($env:VELLUM_JOB_ID) { $env:VELLUM_JOB_ID } else { "" }),
+  [switch]$ForceCapture = $(
+    if ($env:VELLUM_FORCE_CAPTURE -match '^(1|true|yes)$') { $true } else { $false }
+  )
 )
 
 $ErrorActionPreference = "Stop"
@@ -258,6 +261,56 @@ function Ingest-CapturedSystem {
   return $uploaded
 }
 
+function Get-LookdevOutputs {
+  param([string]$VellumBase, [string]$AssetId)
+  try {
+    $r = Invoke-RestMethod -Method Get -Uri "$VellumBase/api/lookdev/outputs?asset_id=$AssetId" -TimeoutSec 45
+    if ($r.outputs) { return @($r.outputs) }
+  } catch {
+    Write-Host "WARNING: lookdev outputs fetch failed: $($_.Exception.Message)"
+  }
+  return @()
+}
+
+function Test-VaultHasSystemLookdev {
+  param(
+    [object[]]$Outputs,
+    [string]$SystemName,
+    [string[]]$Lanes
+  )
+  foreach ($laneName in $Lanes) {
+    $hits = @($Outputs | Where-Object {
+        $_.kind -eq "niagara-render" -and
+        [string]$_.lane -eq $laneName -and (
+          ([string]$_.path -like "*$SystemName*") -or
+          ([string]$_.note -like "*$SystemName*")
+        )
+      })
+    if ($hits.Count -eq 0) { return $false }
+  }
+  return $true
+}
+
+function Test-LocalMrqLookdevReady {
+  param(
+    [string]$SeqDir,
+    [string]$PickHeroesPy,
+    [string]$JsonOut,
+    [int]$MinRgb = 8,
+    [int]$MinFrames = 30
+  )
+  if (-not (Test-Path $SeqDir)) { return $false }
+  $pngs = @(Get-ChildItem -Path $SeqDir -Recurse -File -Filter "*.png" -ErrorAction SilentlyContinue)
+  if ($pngs.Count -lt $MinFrames) { return $false }
+  $py = Get-Command python -ErrorAction SilentlyContinue
+  if (-not $py) { $py = Get-Command py -ErrorAction SilentlyContinue }
+  if (-not $py) { return $false }
+  & $py.Source $PickHeroesPy $SeqDir --min-rgb $MinRgb --json-out $JsonOut *> $null
+  if ($LASTEXITCODE -ne 0 -or -not (Test-Path $JsonOut)) { return $false }
+  $doc = Get-Content $JsonOut -Raw | ConvertFrom-Json
+  return [bool]$doc.ok
+}
+
 $RepoRoot = Resolve-Path (Join-Path $PSScriptRoot "..\..")
 $InventoryPySource = Join-Path $PSScriptRoot "vellum_capture.py"
 $AuthorPySource = Join-Path $PSScriptRoot "vellum_capture_mrq_author.py"
@@ -295,9 +348,10 @@ $IngestLanes = @("slots", "hail-overlay")
 Write-Host "UE (Cmd): $Ue"
 Write-Host "Project: $ProjectUe"
 Write-Host "MaxSystems=$MaxSystems Width=$Width Height=$Height MapPath=$MapPath"
-Write-Host "Runner version: mrq-batch-queue (2026-07-13)"
+Write-Host "Runner version: mrq-batch-skip (2026-07-13)"
 Write-Host "UE host: $($UeHost.id) ($($UeHost.label))"
 Write-Host "Ingest lanes: $($IngestLanes -join ', ')"
+Write-Host "ForceCapture=$ForceCapture"
 if ($JobId) { Write-Host "JobId=$JobId (progress -> $VellumBase/api/jobs/$JobId/progress)" }
 
 $allErrors = New-Object System.Collections.ArrayList
@@ -365,19 +419,103 @@ if ($pickedSystems.Count -eq 0) {
 }
 
 # ---------------------------------------------------------------------------
-# Phase B: author ALL systems in one UE process + MoviePipelineQueue.
+# Skip systems already covered in vault (lanes) or ready locally (ingest-only).
+# ForceCapture / VELLUM_FORCE_CAPTURE re-renders everything.
+# ---------------------------------------------------------------------------
+$skippedVault = New-Object System.Collections.ArrayList
+$ingestOnlySystems = New-Object System.Collections.ArrayList
+$toRenderSystems = New-Object System.Collections.ArrayList
+$vaultOutputs = @()
+if (-not $ForceCapture -and $pickedSystems.Count -gt 0) {
+  $vaultOutputs = Get-LookdevOutputs -VellumBase $VellumBase -AssetId $AssetId
+  Write-Host "Skip check: vault lookdev outputs=$(@($vaultOutputs).Count) force=$ForceCapture"
+}
+foreach ($sys in $pickedSystems) {
+  $systemName = [string]$sys.asset_name
+  $objectPath = [string]$sys.object_path
+  $safeHint = Safe-Name $systemName
+  $seqOutDir = Join-Path $MrqRoot $safeHint
+  $skipEntry = @{
+    asset_name  = $systemName
+    object_path = $objectPath
+    safe_name   = $safeHint
+    seq_dir     = $seqOutDir
+  }
+  if ($ForceCapture) {
+    [void]$toRenderSystems.Add($sys)
+    continue
+  }
+  if (Test-VaultHasSystemLookdev -Outputs $vaultOutputs -SystemName $systemName -Lanes $IngestLanes) {
+    $skipEntry.reason = "vault_covered"
+    [void]$skippedVault.Add($skipEntry)
+    Write-Host "SKIP render $systemName (vault already has lookdev on $($IngestLanes -join '+'))"
+    continue
+  }
+  $HeroProbe = Join-Path $OutDir "heroes-skip-$safeHint.json"
+  if (Test-LocalMrqLookdevReady -SeqDir $seqOutDir -PickHeroesPy $StagedPickHeroesPy -JsonOut $HeroProbe) {
+    $skipEntry.reason = "local_mrq_ready"
+    $skipEntry.heroes_json = $HeroProbe
+    [void]$ingestOnlySystems.Add($skipEntry)
+    Write-Host "SKIP render $systemName (local MRQ lookdev-ready; ingest only)"
+    continue
+  }
+  [void]$toRenderSystems.Add($sys)
+}
+Send-VellumProgress -Message ("Skip plan: render={0} ingest_only={1} vault_skip={2} force={3}" -f `
+  $toRenderSystems.Count, $ingestOnlySystems.Count, $skippedVault.Count, [bool]$ForceCapture)
+
+foreach ($entry in @($ingestOnlySystems)) {
+  $systemName = [string]$entry.asset_name
+  $objectPath = [string]$entry.object_path
+  $safeHint = [string]$entry.safe_name
+  $seqOutDir = [string]$entry.seq_dir
+  $HeroJson = [string]$entry.heroes_json
+  $heroDoc = Get-Content $HeroJson -Raw | ConvertFrom-Json
+  foreach ($h in @($heroDoc.heroes)) {
+    $src = [string]$h.path
+    if (-not (Test-Path $src)) { continue }
+    $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
+    $dest = Join-Path $StillsDir "$AssetId-$safeHint-$($h.role)-$stamp.png"
+    Copy-Item -Force -Path $src -Destination $dest
+    [void]$stills.Add(@{
+        path        = $dest
+        kind        = "niagara-render"
+        system      = $systemName
+        object_path = $objectPath
+        method      = "local-reuse"
+        role        = [string]$h.role
+        max_rgb     = [int]$h.max_rgb
+        bytes       = (Get-Item $dest).Length
+      })
+  }
+  [void]$sequences.Add(@{
+      system = $systemName
+      path   = $seqOutDir
+      frames = [int]$heroDoc.frame_count
+    })
+  $sysHeroes = @($stills | Where-Object { $_.system -eq $systemName })
+  $nUp = Ingest-CapturedSystem -AssetId $AssetId -SystemName $systemName `
+    -HeroStills $sysHeroes -SeqDir $seqOutDir -OutDir $OutDir `
+    -VellumBase $VellumBase -Lanes $IngestLanes
+  Send-VellumProgress -Message "Ingest-only $systemName heroes=$(@($heroDoc.heroes).Count) ingested=$nUp"
+}
+
+# ---------------------------------------------------------------------------
+# Phase B: author systems needing render in one UE process + MoviePipelineQueue.
 # Phase C: one cmdline MRQ for the queue (fallback: per-system if no queue).
 # Then heroes + per-system ingest.
 # ---------------------------------------------------------------------------
 $batchSystems = @()
 $slotIndex = 0
-foreach ($sys in $pickedSystems) {
+foreach ($sys in $toRenderSystems) {
   $systemName = [string]$sys.asset_name
   $objectPath = [string]$sys.object_path
   $safeHint = Safe-Name $systemName
   $seqOutDir = Join-Path $MrqRoot $safeHint
   New-Item -ItemType Directory -Force -Path $seqOutDir | Out-Null
   Get-ChildItem -Path $seqOutDir -File -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
+  Get-ChildItem -Path $seqOutDir -Recurse -File -Filter "*.png" -ErrorAction SilentlyContinue |
+    Remove-Item -Force -ErrorAction SilentlyContinue
   $batchSystems += @{
     object_path = $objectPath
     asset_name  = $systemName
@@ -598,6 +736,8 @@ if ($batchSystems.Count -gt 0) {
 # ---------------------------------------------------------------------------
 # Manifest + scratch (per-system ingest already completed above)
 # ---------------------------------------------------------------------------
+$vaultSkipOk = ($pickedSystems.Count -gt 0 -and $toRenderSystems.Count -eq 0 -and
+  $ingestOnlySystems.Count -eq 0 -and $skippedVault.Count -gt 0 -and $allErrors.Count -eq 0)
 $Manifest = Join-Path $OutDir "manifest.json"
 $man = @{
   schema_version        = 1
@@ -609,15 +749,22 @@ $man = @{
   niagara_systems       = $inv.niagara_systems
   stills                = @($stills)
   sequences             = @($sequences)
+  skipped_vault         = @($skippedVault)
+  ingest_only           = @($ingestOnlySystems | ForEach-Object { $_.asset_name })
+  render_systems        = @($toRenderSystems | ForEach-Object { $_.asset_name })
+  force_capture         = [bool]$ForceCapture
   errors                = @($allErrors)
-  stills_attempted      = $true
-  ok                    = ($stills.Count -gt 0)
+  stills_attempted      = ($toRenderSystems.Count -gt 0 -or $ingestOnlySystems.Count -gt 0)
+  ok                    = (($stills.Count -gt 0) -or $vaultSkipOk)
   ingest_policy         = "per_system"
+  skip_policy           = "vault_or_local_mrq"
 }
 ($man | ConvertTo-Json -Depth 8) | Set-Content -Path $Manifest -Encoding utf8
 
 $errJoin = (@($allErrors) -join "; ")
-$notes = "auto-capture(mrq-sequencer) systems=$($inv.niagara_systems_found) stills=$($stills.Count) sequences=$($sequences.Count) errors=$errJoin"
+$notes = ("auto-capture(mrq-sequencer) systems={0} stills={1} sequences={2} vault_skip={3} ingest_only={4} render={5} errors={6}" -f `
+  $inv.niagara_systems_found, $stills.Count, $sequences.Count, $skippedVault.Count, `
+  $ingestOnlySystems.Count, $toRenderSystems.Count, $errJoin)
 Write-Host "Manifest mode=$($man.mode) stills=$($stills.Count) ok=$($man.ok)"
 if ($errJoin) { Write-Host "Manifest errors: $errJoin" }
 Send-VellumProgress -Message "Done stills=$($stills.Count) ok=$($man.ok)"

@@ -78,6 +78,10 @@ class UeCaptureRequest(BaseModel):
     content_root: str | None = Field(default=None, max_length=200)
     engine_version: str | None = Field(default="5.8", max_length=64)
     intake_run_id: str | None = Field(default=None, max_length=200)
+    force: bool = Field(
+        default=False,
+        description="Re-render even when vault or local MRQ already has lookdev for the system.",
+    )
 
 
 class JobClaimRequest(BaseModel):
@@ -371,6 +375,7 @@ def api_ue_capture(body: UeCaptureRequest) -> dict[str, Any]:
             "content_root": content_root,
             "engine_version": engine,
             "ue_host": host_id,
+            "force": bool(body.force),
         },
     )
     return {"schema_version": 1, "job": job, "ue_host": host_id}

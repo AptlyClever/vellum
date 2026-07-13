@@ -18,7 +18,10 @@ param(
   [string]$Project = "",
   [int]$MinFrames = 30,
   [int]$MinRgb = 8,
-  [string[]]$Systems = @()  # empty = all dirs under mrq/ with enough PNGs
+  [string[]]$Systems = @(),  # empty = all dirs under mrq/ with enough PNGs
+  [switch]$Force = $(
+    if ($env:VELLUM_FORCE_CAPTURE -match '^(1|true|yes)$') { $true } else { $false }
+  )
 )
 
 $ErrorActionPreference = "Stop"
@@ -44,6 +47,43 @@ function Safe-Name([string]$Name) {
 function Get-ImageCount([string]$Root) {
   if (-not (Test-Path $Root)) { return 0 }
   return @(Get-ChildItem -Path $Root -Recurse -File -Filter "*.png" -ErrorAction SilentlyContinue).Count
+}
+
+function Get-LookdevOutputs {
+  param([string]$VellumBase, [string]$AssetId)
+  try {
+    $r = Invoke-RestMethod -Method Get -Uri "$VellumBase/api/lookdev/outputs?asset_id=$AssetId" -TimeoutSec 45
+    if ($r.outputs) { return @($r.outputs) }
+  } catch {
+    Write-Host "WARNING: lookdev outputs fetch failed: $($_.Exception.Message)"
+  }
+  return @()
+}
+
+function Test-VaultHasSystemLookdev {
+  param(
+    [object[]]$Outputs,
+    [string]$SystemName,
+    [string[]]$Lanes
+  )
+  foreach ($laneName in $Lanes) {
+    $hits = @($Outputs | Where-Object {
+        $_.kind -eq "niagara-render" -and
+        [string]$_.lane -eq $laneName -and (
+          ([string]$_.path -like "*$SystemName*") -or
+          ([string]$_.note -like "*$SystemName*")
+        )
+      })
+    if ($hits.Count -eq 0) { return $false }
+  }
+  return $true
+}
+
+$IngestLanes = @("slots", "hail-overlay")
+$vaultOutputs = @()
+if (-not $Force) {
+  $vaultOutputs = Get-LookdevOutputs -VellumBase $VellumBase -AssetId $AssetId
+  Write-Host "Recover skip check: vault outputs=$(@($vaultOutputs).Count) force=$Force"
 }
 
 $py = Get-Command python -ErrorAction SilentlyContinue
@@ -113,6 +153,12 @@ foreach ($dir in $dirs) {
     system = $systemName
     path   = $dir.FullName
     frames = $frames
+  }
+  if (-not $Force -and (Test-VaultHasSystemLookdev -Outputs $vaultOutputs -SystemName $systemName -Lanes $IngestLanes)) {
+    $entry.skip = "vault_covered"
+    [void]$report.skipped.Add($entry)
+    Write-Host "SKIP $systemName vault already has lookdev on $($IngestLanes -join '+')"
+    continue
   }
   if ($frames -lt $MinFrames) {
     $entry.skip = "too_few_frames:$frames"

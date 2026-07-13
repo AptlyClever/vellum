@@ -64,6 +64,14 @@ def test_ue_capture_claim_is_not_taken_by_linux_kinds(tmp_path: Path, monkeypatc
     assert body["job"]["kind"] == "ue_capture"
     assert body["ue_host"] == "aurora"
     assert "F:\\Games" in body["job"]["payload"]["project_path"]
+    assert body["job"]["payload"].get("force") is False
+
+    forced = client.post(
+        "/api/ue/capture",
+        json={"asset_id": "fireworks-vol-1-niagara", "lane": "slots", "force": True},
+    )
+    assert forced.status_code == 200
+    assert forced.json()["job"]["payload"]["force"] is True
 
     claim = client.post("/api/jobs/claim", json={"kinds": ["ue_capture"]})
     assert claim.status_code == 200
