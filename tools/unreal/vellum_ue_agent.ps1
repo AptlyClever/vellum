@@ -23,9 +23,15 @@ param(
   [string]$UeCmd = $env:VELLUM_UE_CMD,
   [switch]$RecoverOnly,
   [switch]$ReportHostSpecs,
-  # Disaster / debug only — cold-starts UnrealEditor-Cmd per phase.
+  # Experimental: warm Lookdev Worker (:8771). Default is Cmd runner (proven on Aurora).
+  [switch]$UseLookdevWorker,
+  # Explicit default / WinSW stamp — Cmd-per-phase MRQ (works without warm editor).
   [switch]$LegacyCmdRunner
 )
+# Default capture path is legacy Cmd. Worker is opt-in only.
+if (-not $UseLookdevWorker) {
+  $LegacyCmdRunner = $true
+}
 
 $ErrorActionPreference = "Stop"
 $RepoRoot = Resolve-Path (Join-Path $PSScriptRoot "..\..")
@@ -269,12 +275,11 @@ function Invoke-CaptureJob {
   param($Job)
   $ctx = Get-CaptureJobContext -Job $Job
   Write-Host "Using project: $($ctx.Uproject)"
-  if (-not $LegacyCmdRunner) {
-    # Primary path: warm Lookdev Worker. Do NOT silently fall back to Cmd-per-phase —
-    # that reopens desert-map E2E and hides real worker failures from Vellum.
+  if ($UseLookdevWorker -and -not $LegacyCmdRunner) {
     Invoke-CaptureViaWorker -Ctx $ctx
     return
   }
+  # Default (2026-07-13): UnrealEditor-Cmd MRQ — path that already produced vault stills.
   Invoke-CaptureViaLegacyRunner -Ctx $ctx
 }
 
@@ -283,16 +288,16 @@ Write-Host "UI trigger: asset detail → Capture from Unreal"
 Write-Host "Host profile: $($UeHost.id) ($($UeHost.label), $($UeHost.role)) — config active=$($UeHost.active_in_config)"
 Write-Host "Agent scripts: $Runner"
 Write-Host "Repo root: $RepoRoot"
-Write-Host "Agent fingerprint: lookdev-worker (2026-07-13)"
-Write-Host "Capture mode: $(if ($LegacyCmdRunner) { 'legacy Cmd-per-phase' } else { "Lookdev Worker $WorkerUrl (self-heal on each job)" })"
+Write-Host "Agent fingerprint: legacy-cmd-default (2026-07-13)"
+Write-Host "Capture mode: $(if ($UseLookdevWorker -and -not $LegacyCmdRunner) { "Lookdev Worker $WorkerUrl" } else { 'legacy Cmd-per-phase (default)' })"
 $runnerVersionLine = (Get-Content $Runner | Where-Object { $_ -match "Runner version:" } | Select-Object -First 1)
 if (-not $runnerVersionLine) { $runnerVersionLine = "(no 'Runner version:' line found — old pull?)" }
 Write-Host "Legacy runner fingerprint: $($runnerVersionLine.Trim())"
 
-# Startup heal once (git pull + Ensure). Watchdog may restart this service afterward.
-if ((-not $LegacyCmdRunner) -and (Test-Path $Heal) -and (-not $RecoverOnly) -and (-not $ReportHostSpecs)) {
+# Startup: always git-pull + restart service if SHA moved (never kill Unreal for worker).
+if ((Test-Path $Heal) -and (-not $RecoverOnly) -and (-not $ReportHostSpecs)) {
   try {
-    Write-Host "Startup host-heal…"
+    Write-Host "Startup host-heal (git + agent bounce if needed)…"
     & $Heal -HostName $UeHost.id -VellumBase $VellumBase
   } catch {
     Write-Host "WARNING: startup host-heal failed: $($_.Exception.Message)"
