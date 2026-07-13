@@ -39,7 +39,11 @@ flowchart LR
   same-line `quit` (HighResShot is async; quit raced the PNG flush). PowerShell
   waits ~8s then kills the process, then searches `Saved/` for the new image.
 
-Fingerprint to confirm refresh: `game-mode-capture-map-settled (2026-07-13)`.
+Fingerprint to confirm refresh: `game-mode-gui-failfast (2026-07-13)`.
+
+Game stills use **UnrealEditor.exe** (GUI), windowed, **without** `-unattended`.
+First missing PNG **fails fast** (no multi-system retry loop) and prints recent
+files under `Saved/` so we can see where shots land.
 
 ## One-time Windows setup
 

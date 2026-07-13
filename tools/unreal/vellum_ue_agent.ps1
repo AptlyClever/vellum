@@ -108,7 +108,7 @@ Write-Host "Vellum UE agent polling $VellumBase every ${PollSeconds}s"
 Write-Host "UI trigger: asset detail → Capture from Unreal"
 Write-Host "Agent scripts: $Runner"
 Write-Host "Repo root: $RepoRoot"
-Write-Host "Agent fingerprint: game-mode-capture-map-settled (2026-07-13)"
+Write-Host "Agent fingerprint: game-mode-gui-failfast (2026-07-13)"
 # Fingerprint so we can tell if Windows is still on an old pull. Search the
 # whole file instead of a fixed line number so this survives runner edits.
 $runnerVersionLine = (Get-Content $Runner | Where-Object { $_ -match "Runner version:" } | Select-Object -First 1)

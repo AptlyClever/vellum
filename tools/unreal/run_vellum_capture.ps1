@@ -66,6 +66,53 @@ function Find-UeCmd {
   throw "UnrealEditor-Cmd.exe not found. Set VELLUM_UE_CMD to the full path."
 }
 
+function Find-UeEditor {
+  param([string]$CmdPath)
+  # -game stills need a real presented swapchain. UnrealEditor-Cmd -unattended
+  # often never flushes HighResShot. Prefer the GUI binary beside Cmd.
+  if ($CmdPath -and $CmdPath -match "UnrealEditor-Cmd\.exe$") {
+    $gui = $CmdPath -replace "UnrealEditor-Cmd\.exe$", "UnrealEditor.exe"
+    if (Test-Path $gui) { return $gui }
+  }
+  foreach ($c in @(
+      "C:\Program Files\Epic Games\UE_5.8\Engine\Binaries\Win64\UnrealEditor.exe",
+      "C:\Program Files\Epic Games\UE_5.7\Engine\Binaries\Win64\UnrealEditor.exe"
+    )) {
+    if (Test-Path $c) { return $c }
+  }
+  return $CmdPath
+}
+
+function Find-RecentImages {
+  param(
+    [string[]]$Roots,
+    [datetime]$Since,
+    [string]$NameHint = ""
+  )
+  $found = New-Object System.Collections.Generic.List[object]
+  foreach ($root in $Roots) {
+    if (-not (Test-Path $root)) { continue }
+    Get-ChildItem -Path $root -Recurse -Include *.png,*.jpg,*.jpeg,*.bmp -ErrorAction SilentlyContinue |
+      Where-Object {
+        $_.LastWriteTime -ge $Since.AddSeconds(-5) -and
+        ($NameHint -eq "" -or $_.Name -like "*$NameHint*" -or $_.DirectoryName -like "*VellumCapture*" -or $_.DirectoryName -like "*Screenshots*")
+      } |
+      ForEach-Object { $found.Add($_) }
+  }
+  return @($found | Sort-Object LastWriteTime -Descending)
+}
+
+function Get-SavedTreeSnippet {
+  param([string]$SavedRoot, [int]$MaxLines = 30)
+  if (-not (Test-Path $SavedRoot)) { return "(no Saved dir)" }
+  $lines = Get-ChildItem -Path $SavedRoot -Recurse -Include *.png,*.jpg,*.jpeg,*.bmp -ErrorAction SilentlyContinue |
+    Sort-Object LastWriteTime -Descending |
+    Select-Object -First $MaxLines |
+    ForEach-Object { "{0:u}  {1}" -f $_.LastWriteTime.ToUniversalTime(), $_.FullName }
+  if (-not $lines) { return "(no images under Saved/)" }
+  return ($lines -join "`n")
+}
+
 function ConvertTo-UePath([string]$Path) {
   return (($Path -replace '\\', '/').TrimEnd('/'))
 }
@@ -91,6 +138,7 @@ if (-not (Test-Path $BakePySource)) { throw "vellum_capture_bake_map.py not foun
 if (-not (Test-Path $Project)) { throw "Project not found: $Project" }
 
 $Ue = Find-UeCmd -Hint $UeCmd
+$UeGame = Find-UeEditor -CmdPath $Ue
 $ProjectDir = Split-Path $Project -Parent
 $OutDir = Join-Path $ProjectDir "Saved\VellumCapture"
 $StillsDir = Join-Path $OutDir "stills"
@@ -106,10 +154,11 @@ Copy-Item -Force -Path $BakePySource -Destination $StagedBakePy
 $ProjectUe = ConvertTo-UePath $Project
 $OutDirUe = ConvertTo-UePath $OutDir
 
-Write-Host "UE: $Ue"
+Write-Host "UE (editor/inventory): $Ue"
+Write-Host "UE (game stills): $UeGame"
 Write-Host "Project: $ProjectUe"
 Write-Host "MaxSystems=$MaxSystems Width=$Width Height=$Height MapPath=$MapPath"
-Write-Host "Runner version: game-mode-capture-map-settled (2026-07-13)"
+Write-Host "Runner version: game-mode-gui-failfast (2026-07-13)"
 
 $allErrors = New-Object System.Collections.Generic.List[string]
 $stills = New-Object System.Collections.Generic.List[object]
@@ -216,16 +265,19 @@ foreach ($sys in $pickedSystems) {
     continue
   }
 
-  # Real render loop. Do NOT put `quit` in the same ExecCmds as HighResShot —
-  # HighResShot is async (captures end-of-frame / next frame) and same-line
-  # quit aborts before the PNG is flushed (exit=0, stills=0).
+  # Game stills: GUI UnrealEditor.exe (not Cmd), NO -unattended (that flag
+  # often skips presenting a viewport so HighResShot never writes a file).
+  # Do NOT put quit in the same ExecCmds as HighResShot (async flush race).
   $shotStart = Get-Date
   $GameLog = Join-Path $OutDir "ue-game-$slotIndex.log"
   if (Test-Path $GameLog) { Remove-Item -Force $GameLog }
 
-  $stillLeaf = "VellumCapture/stills/{0}-{1}" -f $AssetId, (Safe-Name $systemName)
-  # No spaces in ExecCmds filename= path — avoids quote mangling on Start-Process.
-  $ExecCmds = "r.MotionBlurQuality 0,HighResShot ${Width}x${Height} filename=$stillLeaf"
+  $safeHint = Safe-Name $systemName
+  $stillLeaf = "VellumCapture/stills/$AssetId-$safeHint"
+  # Fire HighResShot after a short console delay via multiple commands is
+  # unreliable; WarmupTime on the component covers particle readiness.
+  # Also issue plain `Shot` as a second chance (writes under Screenshots/).
+  $ExecCmds = "r.MotionBlurQuality 0,HighResShot ${Width}x${Height} filename=$stillLeaf,Shot"
 
   $gameArgs = @(
     $ProjectUe,
@@ -234,30 +286,24 @@ foreach ($sys in $pickedSystems) {
     "-windowed",
     "-ResX=$Width",
     "-ResY=$Height",
-    "-unattended",
     "-nosplash",
     "-nop4",
-    "-stdout",
-    "-FullStdOutLogOutput",
     "-ExecCmds=$ExecCmds"
   )
-  Write-Host "Phase B [$slotIndex] -game launch (no quit-in-ExecCmds; kill after settle)"
+  Write-Host "Phase B [$slotIndex] GAME still via $UeGame (windowed, no -unattended)"
 
   $gameProc = $null
   $gameExit = 0
   try {
-    # Don't redirect stdout — UnrealEditor-Cmd + redirected handles is flaky on
-    # Windows; engine log still lands under Saved/Logs/. We only need the PNG.
-    $gameProc = Start-Process -FilePath $Ue -ArgumentList $gameArgs -PassThru -WindowStyle Minimized
-    $settleSeconds = 8
+    $gameProc = Start-Process -FilePath $UeGame -ArgumentList $gameArgs -PassThru -WindowStyle Normal
+    $settleSeconds = 10
     if (-not $gameProc.WaitForExit($settleSeconds * 1000)) {
-      Write-Host "Phase B [$slotIndex] settle ${settleSeconds}s elapsed — stopping UE"
+      Write-Host "Phase B [$slotIndex] settle ${settleSeconds}s — stopping UE"
       try { Stop-Process -Id $gameProc.Id -Force -ErrorAction SilentlyContinue } catch { }
       try { $gameProc.WaitForExit(20000) | Out-Null } catch { }
     }
     try { $gameExit = $gameProc.ExitCode } catch { $gameExit = 0 }
     if ($null -eq $gameExit) { $gameExit = 0 }
-    # Best-effort copy of the newest engine log for this slot.
     $engineLogs = Join-Path $ProjectDir "Saved\Logs"
     if (Test-Path $engineLogs) {
       $newestLog = Get-ChildItem $engineLogs -Filter "*.log" |
@@ -271,45 +317,39 @@ foreach ($sys in $pickedSystems) {
   }
   Write-Host "Phase B [$slotIndex] -game exit code: $gameExit"
 
-  # HighResShot with filename= writes under Saved/<filename>.png (and sometimes
-  # also under Saved/Screenshots/). Search both.
-  $candidates = New-Object System.Collections.Generic.List[object]
   $searchRoots = @(
     $StillsDir,
     (Join-Path $ProjectDir "Saved\VellumCapture\stills"),
     (Join-Path $ProjectDir "Saved\Screenshots"),
     (Join-Path $ProjectDir "Saved")
   )
-  foreach ($root in $searchRoots) {
-    if (-not (Test-Path $root)) { continue }
-    Get-ChildItem -Path $root -Recurse -Include *.png,*.jpg -ErrorAction SilentlyContinue |
-      Where-Object { $_.LastWriteTime -ge $shotStart.AddSeconds(-5) } |
-      ForEach-Object { $candidates.Add($_) }
-  }
-  $newPng = $candidates |
-    Sort-Object LastWriteTime -Descending |
-    Select-Object -First 1
+  $recent = Find-RecentImages -Roots $searchRoots -Since $shotStart -NameHint $safeHint
+  $newPng = $recent | Select-Object -First 1
 
   if (-not $newPng) {
+    $tree = Get-SavedTreeSnippet -SavedRoot (Join-Path $ProjectDir "Saved")
     $allErrors.Add("no_png:$systemName`:exit=$gameExit")
-    Write-Host "Phase B [$slotIndex] no PNG found under Saved/ after -game (see $GameLog)"
-  } else {
-    $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
-    $safe = Safe-Name $systemName
-    $dest = Join-Path $StillsDir "$AssetId-$safe-$stamp.png"
-    if ($newPng.FullName -ne $dest) {
-      Copy-Item -Force -Path $newPng.FullName -Destination $dest
-    }
-    $stills.Add(@{
-        path        = $dest
-        kind        = "niagara-render"
-        system      = $systemName
-        object_path = $objectPath
-        method      = "game-mode-highresshot-settled"
-        source      = $newPng.FullName
-      })
-    Write-Host "Phase B [$slotIndex] captured still $dest (from $($newPng.FullName))"
+    $allErrors.Add("saved_images:`n$tree")
+    Write-Host "Phase B [$slotIndex] FAIL: no PNG after game still. Recent Saved/ images:"
+    Write-Host $tree
+    Write-Host "Failing fast — not baking remaining systems until one still works."
+    break
   }
+
+  $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
+  $dest = Join-Path $StillsDir "$AssetId-$safeHint-$stamp.png"
+  if ($newPng.FullName -ne $dest) {
+    Copy-Item -Force -Path $newPng.FullName -Destination $dest
+  }
+  $stills.Add(@{
+      path        = $dest
+      kind        = "niagara-render"
+      system      = $systemName
+      object_path = $objectPath
+      method      = "game-mode-gui-highresshot"
+      source      = $newPng.FullName
+    })
+  Write-Host "Phase B [$slotIndex] captured still $dest (from $($newPng.FullName))"
 
   $slotIndex++
 }
