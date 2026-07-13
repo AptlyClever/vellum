@@ -12,10 +12,12 @@ Vellum is the Control Alt Games asset vault and intake/prototyping project.
 ## Read first
 
 1. `README.md` — project identity, paths, first slice.
-2. `DEV_TRACKER.md` — parking lot and work log.
-3. `docs/humble-asset-vault-inventory.md` — 37-item inventory (no keys).
-4. `docs/asset-import-engine.md` — intake runner / vault layout plan.
-5. `docs/brand-canon.md` — core vs Games classification rules.
+2. `DEV_TRACKER.md` — Active Issue + **Governing CFD**.
+3. Live CFD: `GET /api/cfd/inspirations/cfd-inspiration-20260713-015950-vellum-control-alt-games-asset-vault-register-in` (Axiom) or mirror `docs/cfd/governing-inspiration.json`.
+4. `docs/cfd/architecture-research.md` — locked architecture lessons.
+5. `docs/humble-asset-vault-inventory.md` — 37-item inventory (no keys).
+6. `docs/asset-import-engine.md` — intake runner / vault layout plan.
+7. `docs/brand-canon.md` — core vs Games classification rules.
 
 ## Working rules
 
