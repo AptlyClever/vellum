@@ -858,13 +858,22 @@ if ($batchSystems.Count -gt 0) {
         # Do not redirect native stdout with *>$null - PowerShell can hang after
         # python exits (observed after heroes-0.json was already written).
         $pickArgs = @($StagedPickHeroesPy, $seqOutDir, "--json-out", $HeroJson)
+        if (Test-Path $HeroJson) { Remove-Item -Force $HeroJson -ErrorAction SilentlyContinue }
         $pickProc = Start-Process -FilePath $py.Source -ArgumentList $pickArgs `
-          -PassThru -Wait -WindowStyle Hidden
-        $pickCode = 0
-        try { $pickCode = [int]$pickProc.ExitCode } catch { $pickCode = 0 }
-        if ($pickCode -ne 0 -or -not (Test-Path $HeroJson)) {
+          -PassThru -WindowStyle Hidden
+        $pickPid = [int]$pickProc.Id
+        $pickProc = $null
+        $pickDeadline = (Get-Date).AddMinutes(10)
+        while ($null -ne (Get-Process -Id $pickPid -ErrorAction SilentlyContinue)) {
+          if ((Get-Date) -gt $pickDeadline) {
+            try { Stop-Process -Id $pickPid -Force -ErrorAction SilentlyContinue } catch { }
+            break
+          }
+          Start-Sleep -Seconds 2
+        }
+        if (-not (Test-Path $HeroJson)) {
           [void]$allErrors.Add("hero_pick_failed:$systemName")
-          Send-VellumProgress -Message "FAIL hero pick $systemName code=$pickCode"
+          Send-VellumProgress -Message "FAIL hero pick $systemName (no json)"
           $slotIndex++
           continue
         }
