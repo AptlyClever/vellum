@@ -60,4 +60,4 @@ def public_hosts_payload() -> dict[str, Any]:
 
 def default_project_dir() -> str:
     host = get_host()
-    return str(host.get("project_dir") or host.get("project") or r"F:\Games\VellumImport")
+    return str(host.get("project_dir") or host.get("project") or r"F:\Games\AuroraVellum")

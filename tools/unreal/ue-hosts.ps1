@@ -157,7 +157,10 @@ function Resolve-UprojectFromHost {
   if ($HostProfile) {
     if ($HostProfile.project) { [void]$tries.Add($HostProfile.project) }
     if ($HostProfile.project_dir) {
+      $leaf = Split-Path $HostProfile.project_dir -Leaf
+      [void]$tries.Add((Join-Path $HostProfile.project_dir ($leaf + ".uproject")))
       [void]$tries.Add((Join-Path $HostProfile.project_dir "VellumImport.uproject"))
+      [void]$tries.Add((Join-Path $HostProfile.project_dir "AuroraVellum.uproject"))
       if (Test-Path -LiteralPath $HostProfile.project_dir) {
         Get-ChildItem -LiteralPath $HostProfile.project_dir -Filter "*.uproject" -File -ErrorAction SilentlyContinue |
           ForEach-Object { [void]$tries.Add($_.FullName) }
@@ -180,6 +183,7 @@ function Resolve-UprojectFromHost {
     }
   }
   foreach ($extra in @(
+      "F:\Games\AuroraVellum\AuroraVellum.uproject",
       "F:\Games\VellumImport\VellumImport.uproject",
       "E:\epic\VellumImport\VellumImport.uproject",
       "E:\Dev\VellumImport\VellumImport.uproject",

@@ -6,7 +6,7 @@ You stay in **Vellum**. Unreal runs unattended on the Windows box.
 
 | Host | Role | UE | Scratch project (default) |
 | --- | --- | --- | --- |
-| **aurora** | primary (active) | `F:\Games\UE_5.8\…\UnrealEditor.exe` | `F:\Games\VellumImport` |
+| **aurora** | primary (active) | `F:\Games\UE_5.8\…\UnrealEditor.exe` | `F:\Games\AuroraVellum` |
 | **borealis** | secondary | `C:\Program Files\Epic Games\UE_5.8\…` | `C:\epic\VellumImport` |
 
 Config: [`config/ue-hosts.json`](../config/ue-hosts.json). API: `GET /api/ue/hosts`.
@@ -62,7 +62,7 @@ are visible and systems differ.
 2. **Python Editor Script Plugin** enabled
 3. If the scratch `.uproject` is not under the profile `project` path, edit
    `config/ue-hosts.json` for that host (Aurora currently assumes
-   `F:\Games\VellumImport\VellumImport.uproject`)
+   `F:\Games\AuroraVellum\AuroraVellum.uproject`)
 
 ## Troubleshooting
 

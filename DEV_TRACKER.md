@@ -2,7 +2,7 @@
 
 > **Current Active Issue:** Fireworks — Niagara SceneCapture stills on **Aurora** (primary host)
 > **Governing CFD:** `cfd-inspiration-20260713-015950-vellum-control-alt-games-asset-vault-register-in` (slices A–F met; this is the post-CFD track)
-> **Next Immediate Step:** `git pull` on Aurora → restart `vellum_ue_agent.ps1` (fingerprint `ue-hosts`) → confirm preflight resolves `F:\Games\UE_5.8\…\UnrealEditor-Cmd.exe` → Capture from Vellum. Edit `config/ue-hosts.json` `aurora.project` if scratch `.uproject` is not under `F:\Games\VellumImport`
+> **Next Immediate Step:** `git pull` on Aurora → restart agent → confirm preflight finds `F:\Games\AuroraVellum\AuroraVellum.uproject` → Capture from Vellum
 
 ---
 
@@ -29,7 +29,8 @@
   - [x] `vellum_ue_agent.ps1` poll loop
   - [x] Borealis smoke: agent + Capture (`job-20260713-062514-5e88d4`) — pipeline OK; stills were debug cube / black (host issues; stop investing here)
   - [x] Host profiles: `config/ue-hosts.json` (aurora active / borealis secondary) + `GET /api/ue/hosts`
-  - [ ] Aurora: Fireworks in scratch project + Python Editor Script Plugin (confirm `aurora.project` path)
+  - [x] Aurora project path: `F:\Games\AuroraVellum`
+  - [ ] Aurora: Fireworks in project + Python Editor Script Plugin
   - [ ] Aurora: agent preflight OK + Capture
   - [ ] Confirm stills show real Niagara particles (not cube-only / not pure black)
 
@@ -59,3 +60,4 @@
 * **2026-07-13** — **Verified on Borealis:** pipeline OK (`job-20260713-062514-5e88d4`, 3 stills ingested). Earlier batch pure black; latest batch gray debug cube only — Niagara particles missing. Operator: stop Borealis capture debug; switch UE agent host to **Aurora**.
 * **2026-07-13** — Aurora first Capture failed (`job-20260713-174728-597c9c`): `UnrealEditor-Cmd.exe not found` — UE not under `C:\Program Files\Epic Games`; job payload still Borealis `C:\epic\VellumImport`. Agent/runner now discover E:/D: installs + registry; support `VELLUM_UE_CMD` / `VELLUM_UE_PROJECT` (`aurora-ue-discovery`).
 * **2026-07-13** — **UE host profiles:** `config/ue-hosts.json` — Aurora primary (`F:\Games\UE_5.8\…\UnrealEditor.exe`, derives `-Cmd`), Borealis secondary; `active: aurora`. Shared `tools/unreal/ue-hosts.ps1`; agent `-HostName` / `VELLUM_UE_HOST`; API `GET /api/ue/hosts`; UI defaults to active host.
+* **2026-07-13** — Aurora scratch project path set to `F:\Games\AuroraVellum`.

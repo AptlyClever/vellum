@@ -377,9 +377,9 @@ async function openDetail(id) {
   pathInput.type = "text";
   const hostProject =
     (activeHost && (activeHost.project_dir || activeHost.project)) || "";
-  pathInput.placeholder = hostProject || "F:\\Games\\VellumImport";
+  pathInput.placeholder = hostProject || "F:\\Games\\AuroraVellum";
   // Prefer active host (Aurora) over a stale Borealis path on the asset.
-  pathInput.value = hostProject || a.scratch_project_path || "F:\\Games\\VellumImport";
+  pathInput.value = hostProject || a.scratch_project_path || "F:\\Games\\AuroraVellum";
   pathLabel.appendChild(pathSpan);
   pathLabel.appendChild(pathInput);
   scratchForm.appendChild(pathLabel);

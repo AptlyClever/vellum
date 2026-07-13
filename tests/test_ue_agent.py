@@ -73,7 +73,7 @@ def test_ue_capture_claim_is_not_taken_by_linux_kinds(tmp_path: Path, monkeypatc
         f"/api/jobs/{jid}/report",
         json={
             "result": {"notes": "test", "ue_host": "aurora"},
-            "scratch_project_path": r"F:\Games\VellumImport",
+            "scratch_project_path": r"F:\Games\AuroraVellum",
             "engine_version": "5.8",
         },
     )

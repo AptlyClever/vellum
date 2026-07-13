@@ -347,7 +347,7 @@ def api_ue_capture(body: UeCaptureRequest) -> dict[str, Any]:
         body.project_path
         or ue_hosts_mod.default_project_dir()
         or asset.get("scratch_project_path")
-        or r"F:\Games\VellumImport"
+        or r"F:\Games\AuroraVellum"
     ).strip()
     content_root = (body.content_root or "/Game/FireworksV1").strip()
     try:
