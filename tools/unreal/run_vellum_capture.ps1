@@ -855,12 +855,20 @@ if ($batchSystems.Count -gt 0) {
         if (-not $py) { $py = Get-Command py -ErrorAction SilentlyContinue }
         if (-not $py) { throw "python/py not found on PATH for pick_heroes.py" }
         Send-VellumProgress -Message "Phase C[$slotIndex] pick heroes $systemName"
-        & $py.Source $StagedPickHeroesPy $seqOutDir --json-out $HeroJson *> $null
-        if ($LASTEXITCODE -ne 0 -or -not (Test-Path $HeroJson)) {
+        # Do not redirect native stdout with *>$null - PowerShell can hang after
+        # python exits (observed after heroes-0.json was already written).
+        $pickArgs = @($StagedPickHeroesPy, $seqOutDir, "--json-out", $HeroJson)
+        $pickProc = Start-Process -FilePath $py.Source -ArgumentList $pickArgs `
+          -PassThru -Wait -WindowStyle Hidden
+        $pickCode = 0
+        try { $pickCode = [int]$pickProc.ExitCode } catch { $pickCode = 0 }
+        if ($pickCode -ne 0 -or -not (Test-Path $HeroJson)) {
           [void]$allErrors.Add("hero_pick_failed:$systemName")
+          Send-VellumProgress -Message "FAIL hero pick $systemName code=$pickCode"
           $slotIndex++
           continue
         }
+        Send-VellumProgress -Message "Phase C[$slotIndex] heroes ready $systemName"
         $heroDoc = Get-Content $HeroJson -Raw | ConvertFrom-Json
         if (-not [bool]$heroDoc.ok) {
           [void]$allErrors.Add("hero_rejected:$systemName`:$($heroDoc.error)")

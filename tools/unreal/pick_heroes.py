@@ -115,7 +115,8 @@ def main() -> None:
     text = json.dumps(payload, indent=2) + "\n"
     if args.json_out:
         Path(args.json_out).write_text(text, encoding="utf-8")
-    print(text)
+    else:
+        print(text)
 
 
 if __name__ == "__main__":
