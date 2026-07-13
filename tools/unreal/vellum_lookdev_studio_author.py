@@ -214,6 +214,8 @@ def _spawn_slot_mark(unreal_mod, actor_sub, notes: list[str]) -> None:
 
 
 def _spawn_lights(unreal_mod, actor_sub, notes: list[str]) -> None:
+    # Photo studio lighting — do NOT enable SkyLight real-time capture without
+    # SkyAtmosphere (UE paints a red viewport banner and Lit mode goes black).
     try:
         light = _spawn(
             unreal_mod,
@@ -226,10 +228,47 @@ def _spawn_lights(unreal_mod, actor_sub, notes: list[str]) -> None:
         if light:
             comp = light.get_component_by_class(unreal_mod.DirectionalLightComponent)
             if comp is not None:
-                _set_prop(comp, ("intensity",), 8.0)
+                _set_prop(comp, ("intensity",), 12.0)
+                _set_prop(comp, ("indirect_lighting_intensity",), 1.0)
+                _set_prop(comp, ("atmosphere_sun_light", "b_atmosphere_sun_light"), True)
         notes.append("key_light")
     except Exception as exc:  # noqa: BLE001
         notes.append(f"key_light_failed:{exc}")
+
+    # Soft fill opposite the key so the pedestal/floor read in Lit mode.
+    try:
+        fill = _spawn(
+            unreal_mod,
+            actor_sub,
+            actor_class=unreal_mod.PointLight,
+            loc=unreal_mod.Vector(-600.0, 800.0, 400.0),
+            label=f"{PREFIX}FillLight",
+        )
+        if fill:
+            comp = fill.get_component_by_class(unreal_mod.PointLightComponent)
+            if comp is not None:
+                _set_prop(comp, ("intensity",), 8.0)
+                _set_prop(comp, ("attenuation_radius", "AttenuationRadius"), 4000.0)
+                _set_prop(comp, ("source_radius", "SourceRadius"), 80.0)
+        notes.append("fill_light")
+    except Exception as exc:  # noqa: BLE001
+        notes.append(f"fill_light_failed:{exc}")
+
+    try:
+        atm_cls = getattr(unreal_mod, "SkyAtmosphere", None)
+        if atm_cls is not None:
+            atm = _spawn(
+                unreal_mod,
+                actor_sub,
+                actor_class=atm_cls,
+                loc=unreal_mod.Vector(0.0, 0.0, 0.0),
+                label=f"{PREFIX}SkyAtmosphere",
+            )
+            if atm is not None:
+                notes.append("sky_atmosphere")
+    except Exception as exc:  # noqa: BLE001
+        notes.append(f"sky_atmosphere_failed:{exc}")
+
     try:
         sky = _spawn(
             unreal_mod,
@@ -241,8 +280,15 @@ def _spawn_lights(unreal_mod, actor_sub, notes: list[str]) -> None:
         if sky:
             comp = sky.get_component_by_class(unreal_mod.SkyLightComponent)
             if comp is not None:
-                _set_prop(comp, ("intensity",), 1.5)
-                _set_prop(comp, ("real_time_capture", "b_real_time_capture"), True)
+                _set_prop(comp, ("intensity",), 1.0)
+                # Static / non-realtime cubemap path — safe without RT sky capture.
+                _set_prop(comp, ("real_time_capture", "b_real_time_capture"), False)
+                try:
+                    # Recapture once from the atmosphere we just placed.
+                    if hasattr(comp, "recapture_sky"):
+                        comp.recapture_sky()
+                except Exception:  # noqa: BLE001
+                    pass
         notes.append("sky_light")
     except Exception as exc:  # noqa: BLE001
         notes.append(f"sky_light_failed:{exc}")

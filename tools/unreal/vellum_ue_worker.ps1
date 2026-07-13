@@ -20,7 +20,8 @@ param(
   [int]$ReadyTimeoutSec = 180,
   [switch]$Ensure,
   [switch]$Status,
-  [switch]$StopHttp
+  [switch]$StopHttp,
+  [switch]$ForceStudio
 )
 
 $ErrorActionPreference = "Stop"
@@ -193,6 +194,22 @@ if ($StopHttp) {
 }
 
 if ($Ensure) {
+  if ($ForceStudio) {
+    $paths = Get-ProjectPaths
+    $ready = Join-Path $paths.OutDir "studio-ready.json"
+    if (Test-Path $ready) { Remove-Item -Force $ready }
+    Write-Host "ForceStudio: removed $ready"
+  }
   $h = Start-LookdevWorker
   $h | ConvertTo-Json -Depth 5
+  if ($ForceStudio -and $h -and $h.ok) {
+    try {
+      $body = @{ force = $true } | ConvertTo-Json
+      Invoke-RestMethod -Method Post -Uri "$WorkerUrl/v1/ensure_studio" `
+        -ContentType "application/json" -Body $body -TimeoutSec 180 | Out-Null
+      Write-Host "ForceStudio: /v1/ensure_studio requested"
+    } catch {
+      Write-Host "ForceStudio ensure_studio call: $($_.Exception.Message)"
+    }
+  }
 }
