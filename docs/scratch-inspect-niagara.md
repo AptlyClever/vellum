@@ -65,7 +65,8 @@ Humble → Epic redeem / first Add to Project only.
    without `\*` often returns empty — runners before
    `game-mode-gui-failfast-filterfix` could miss real screenshots). Live
    heartbeats: `GET /api/jobs/{job_id}/progress`. Current fingerprint:
-   `game-mode-progress-heartbeat`.
+   `game-mode-wait-ready` (GAME wait up to 120s for map-ready / PNG — 10s was
+   killing mid-shader-init).
 3. **`bake_failed` / `bake_no_result`** — see `ue-bake-<n>.log`.
 4. Restart the agent after every `git pull`.
 5. Chromium `Software\Chromium` result 5 is noise from UE's embedded browser.

@@ -96,6 +96,23 @@ function Invoke-CaptureJob {
   }
   Write-Host "Report stills=$($result.stills) attempted=$($result.stills_attempted) errors=$($errs -join '; ')"
 
+  if ([int]$result.stills -le 0) {
+    $failMsg = "no_stills"
+    if ($errs.Count -gt 0) {
+      $failMsg = ([string]($errs | Select-Object -First 1))
+      if ($failMsg.Length -gt 500) { $failMsg = $failMsg.Substring(0, 500) }
+    }
+    $fail = @{
+      error                = $failMsg
+      result               = $result
+      scratch_project_path = (Split-Path $uproject -Parent)
+      engine_version       = $engineVersion
+    } | ConvertTo-Json -Depth 6
+    Invoke-RestMethod -Method Post -Uri "$VellumBase/api/jobs/$($Job.job_id)/report" `
+      -ContentType "application/json" -Body $fail | Out-Null
+    throw $failMsg
+  }
+
   $report = @{
     result               = $result
     scratch_project_path = (Split-Path $uproject -Parent)
@@ -110,7 +127,7 @@ Write-Host "Vellum UE agent polling $VellumBase every ${PollSeconds}s"
 Write-Host "UI trigger: asset detail → Capture from Unreal"
 Write-Host "Agent scripts: $Runner"
 Write-Host "Repo root: $RepoRoot"
-Write-Host "Agent fingerprint: game-mode-progress-heartbeat (2026-07-13)"
+Write-Host "Agent fingerprint: game-mode-wait-ready (2026-07-13)"
 # Fingerprint so we can tell if Windows is still on an old pull. Search the
 # whole file instead of a fixed line number so this survives runner edits.
 $runnerVersionLine = (Get-Content $Runner | Where-Object { $_ -match "Runner version:" } | Select-Object -First 1)

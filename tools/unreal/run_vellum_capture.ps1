@@ -246,7 +246,7 @@ Write-Host "UE (editor/inventory): $Ue"
 Write-Host "UE (game stills): $UeGame"
 Write-Host "Project: $ProjectUe"
 Write-Host "MaxSystems=$MaxSystems Width=$Width Height=$Height MapPath=$MapPath"
-Write-Host "Runner version: game-mode-progress-heartbeat (2026-07-13)"
+Write-Host "Runner version: game-mode-wait-ready (2026-07-13)"
 if ($JobId) { Write-Host "JobId=$JobId (progress -> $VellumBase/api/jobs/$JobId/progress)" }
 
 $allErrors = New-Object System.Collections.ArrayList
@@ -381,6 +381,7 @@ foreach ($sys in $pickedSystems) {
     "-ResY=$Height",
     "-nosplash",
     "-nop4",
+    "-nosound",
     "-ExecCmds=$ExecCmds"
   )
   Write-Host "Phase B [$slotIndex] GAME still via $UeGame (windowed, no -unattended)"
@@ -388,23 +389,59 @@ foreach ($sys in $pickedSystems) {
 
   $gameProc = $null
   $gameExit = 0
+  # Prior runs killed at 10s during Turnkey/shader init — HighResShot never ran.
+  # Wait for map-ready (or a PNG to appear), then allow flush time before kill.
+  $maxWaitSeconds = if ($env:VELLUM_GAME_WAIT) { [int]$env:VELLUM_GAME_WAIT } else { 120 }
+  $flushSeconds = 8
   try {
     $gameProc = Start-Process -FilePath $UeGame -ArgumentList $gameArgs -PassThru -WindowStyle Normal
-    $settleSeconds = 10
     $waited = 0
-    while (-not $gameProc.HasExited -and $waited -lt $settleSeconds) {
-      Start-Sleep -Seconds 2
-      $waited += 2
-      Send-VellumProgress -Message "Phase B[$slotIndex] GAME settle ${waited}/${settleSeconds}s"
+    $readyAt = $null
+    $engineLogs = Join-Path $ProjectDir "Saved\Logs"
+    while (-not $gameProc.HasExited -and $waited -lt $maxWaitSeconds) {
+      Start-Sleep -Seconds 3
+      $waited += 3
+      if (Test-Path $engineLogs) {
+        $newestLog = Get-ChildItem $engineLogs -Filter "*.log" |
+          Sort-Object LastWriteTime -Descending |
+          Select-Object -First 1
+        if ($newestLog) { Copy-Item -Force $newestLog.FullName $GameLog }
+      }
+      # Early success: PNG already on disk.
+      $early = Find-RecentImages -Roots @(
+          $StillsDir,
+          (Join-Path $ProjectDir "Saved\Screenshots"),
+          (Join-Path $ProjectDir "Saved\VellumCapture")
+        ) -Since $shotStart -NameHint $safeHint
+      if ($early -and $early.Count -gt 0) {
+        Send-VellumProgress -Message "Phase B[$slotIndex] GAME PNG appeared at ${waited}s" -LogPath $GameLog
+        break
+      }
+      $readyHit = $false
+      if (Test-Path $GameLog) {
+        $readyHit = $null -ne (
+          Select-String -Path $GameLog -Pattern "HighResShot|Screenshot taken|Wrote screenshot|LoadMap: .*took|Bringing up level for play|Game Engine Initialized" -SimpleMatch:$false -ErrorAction SilentlyContinue |
+            Select-Object -First 1
+        )
+      }
+      if ($readyHit -and -not $readyAt) {
+        $readyAt = $waited
+        Send-VellumProgress -Message "Phase B[$slotIndex] GAME ready signal at ${waited}s; flushing ${flushSeconds}s" -LogPath $GameLog
+      }
+      if ($readyAt -and (($waited - $readyAt) -ge $flushSeconds)) {
+        Send-VellumProgress -Message "Phase B[$slotIndex] GAME flush done at ${waited}s" -LogPath $GameLog
+        break
+      }
+      $phase = if ($readyAt) { "flush" } else { "boot" }
+      Send-VellumProgress -Message "Phase B[$slotIndex] GAME ${phase} ${waited}/${maxWaitSeconds}s" -LogPath $GameLog
     }
     if (-not $gameProc.HasExited) {
-      Write-Host "Phase B [$slotIndex] settle ${settleSeconds}s — stopping UE"
+      Write-Host "Phase B [$slotIndex] stopping UE after ${waited}s"
       try { Stop-Process -Id $gameProc.Id -Force -ErrorAction SilentlyContinue } catch { }
       try { $gameProc.WaitForExit(20000) | Out-Null } catch { }
     }
     try { $gameExit = $gameProc.ExitCode } catch { $gameExit = 0 }
     if ($null -eq $gameExit) { $gameExit = 0 }
-    $engineLogs = Join-Path $ProjectDir "Saved\Logs"
     if (Test-Path $engineLogs) {
       $newestLog = Get-ChildItem $engineLogs -Filter "*.log" |
         Sort-Object LastWriteTime -Descending |

@@ -307,7 +307,9 @@ def api_jobs_report(job_id: str, body: JobReportRequest) -> dict[str, Any]:
                 result["scratch_record_error"] = str(exc)
 
     completed = jobs_mod.complete_job(
-        job_id, result=result if not body.error else None, error=body.error
+        job_id,
+        result=result if result else None,
+        error=body.error,
     )
     return {"schema_version": 1, "job": completed}
 
