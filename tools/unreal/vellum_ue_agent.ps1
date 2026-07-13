@@ -139,7 +139,7 @@ function Invoke-CaptureViaWorker {
     Invoke-RestMethod -Method Post -Uri $progressUri -ContentType "application/json" -Body $prog | Out-Null
   } catch { }
 
-  $body = @{
+  $bodyObj = @{
     job_id         = $Ctx.JobId
     asset_id       = $Ctx.AssetId
     content_root   = $Ctx.ContentRoot
@@ -150,14 +150,64 @@ function Invoke-CaptureViaWorker {
     frame_rate     = 30
     map_path       = "/Game/Vellum/Maps/VellumLookdevStudio"
     force          = [bool]$Ctx.ForceCapture
-    # Rebuild studio when Force — also auto-rebuilds if studio_build is stale.
     force_studio   = [bool]$Ctx.ForceCapture
     vellum_base    = $VellumBase
-  } | ConvertTo-Json -Depth 6
+  }
+  $body = $bodyObj | ConvertTo-Json -Depth 6
 
-  Write-Host "POST $WorkerUrl/v1/capture force=$($Ctx.ForceCapture)"
-  $capture = Invoke-RestMethod -Method Post -Uri "$WorkerUrl/v1/capture" `
-    -ContentType "application/json" -Body $body -TimeoutSec 21600
+  # Inbox + poll outbox — do not use a multi-hour blocking HTTP POST (that hung forever
+  # while the old worker froze the editor with serve_forever on the main script thread).
+  $outDir = Join-Path $Ctx.ProjectDir "Saved\VellumCapture"
+  $inboxDir = Join-Path $outDir "worker-inbox"
+  $outboxDir = Join-Path $outDir "worker-outbox"
+  New-Item -ItemType Directory -Force -Path $inboxDir | Out-Null
+  New-Item -ItemType Directory -Force -Path $outboxDir | Out-Null
+  $inboxJob = Join-Path $inboxDir "job.json"
+  $outboxResult = Join-Path $outboxDir "result.json"
+  if (Test-Path $outboxResult) { Remove-Item -Force $outboxResult }
+  Set-Content -Path $inboxJob -Value $body -Encoding UTF8
+  Write-Host "Wrote worker inbox $inboxJob"
+
+  # Kick the in-UE queue if HTTP is up (best-effort; inbox is the source of truth).
+  try {
+    Invoke-RestMethod -Method Post -Uri "$WorkerUrl/v1/capture" `
+      -ContentType "application/json" -Body $body -TimeoutSec 5 | Out-Null
+  } catch {
+    Write-Host "HTTP kick skipped/busy (inbox still queued): $($_.Exception.Message)"
+  }
+
+  $deadline = (Get-Date).AddHours(6)
+  $lastNote = ""
+  $capture = $null
+  while ((Get-Date) -lt $deadline) {
+    if (Test-Path $outboxResult) {
+      try {
+        $capture = Get-Content $outboxResult -Raw | ConvertFrom-Json
+        Write-Host "Worker outbox ready ok=$($capture.ok)"
+        break
+      } catch {
+        Start-Sleep -Seconds 2
+        continue
+      }
+    }
+    $note = "Waiting for Lookdev Worker…"
+    try {
+      $h = Invoke-RestMethod -Method Get -Uri "$WorkerUrl/health" -TimeoutSec 3
+      $note = "Worker busy=$($h.busy) studio_build=$($h.studio_build) version=$($h.version)"
+    } catch { }
+    if ($note -ne $lastNote) {
+      try {
+        $prog = @{ message = $note } | ConvertTo-Json
+        Invoke-RestMethod -Method Post -Uri $progressUri -ContentType "application/json" -Body $prog | Out-Null
+      } catch { }
+      $lastNote = $note
+      Write-Host $note
+    }
+    Start-Sleep -Seconds 5
+  }
+  if (-not $capture) {
+    throw "worker_timeout: no outbox result under $outboxResult"
+  }
 
   # Ingest heroes/sequences from MRQ dirs the worker wrote.
   if (Test-Path $Recover) {

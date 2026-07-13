@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
-WORKER_VERSION = "lookdev-worker-1"
+WORKER_VERSION = "lookdev-worker-2"
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8771
 STUDIO_MAP = "/Game/Vellum/Maps/VellumLookdevStudio"
@@ -671,6 +671,28 @@ def _enqueue_and_wait(job: dict[str, Any], *, timeout_sec: float) -> dict[str, A
 def _on_editor_tick_dispatch(_delta: float) -> bool:
     global _pending_job, _pending_result, _capture_session
 
+    # File inbox — agent can drop a job without depending on a blocking HTTP reply.
+    try:
+        inbox = _out_dir() / "worker-inbox" / "job.json"
+        if (
+            inbox.is_file()
+            and _pending_job is None
+            and not _state.get("busy")
+            and _mrq_session is None
+        ):
+            job = json.loads(inbox.read_text(encoding="utf-8"))
+            try:
+                inbox.unlink()
+            except Exception:  # noqa: BLE001
+                pass
+            with _state_lock:
+                _pending_result = None
+                _result_event.clear()
+                _pending_job = dict(job)
+            _log(f"inbox_accepted job_id={job.get('job_id')}")
+    except Exception as exc:  # noqa: BLE001
+        _log(f"inbox_failed:{exc}")
+
     # Continue in-flight MRQ without accepting a new job.
     if _mrq_session is not None and _capture_session is not None:
         finished = _poll_mrq_session()
@@ -681,6 +703,12 @@ def _on_editor_tick_dispatch(_delta: float) -> bool:
                 _state["busy"] = False
                 _state["map"] = _current_map_path()
                 _state["last_error"] = str(finished.get("error") or "")
+            try:
+                outbox = _out_dir() / "worker-outbox"
+                outbox.mkdir(parents=True, exist_ok=True)
+                (outbox / "result.json").write_text(json.dumps(finished, indent=2) + "\n", encoding="utf-8")
+            except Exception:  # noqa: BLE001
+                pass
             _result_event.set()
         return True
 
@@ -717,12 +745,15 @@ def _on_editor_tick_dispatch(_delta: float) -> bool:
         _state["busy"] = False
         _state["map"] = _current_map_path()
         _state["last_error"] = str((result or {}).get("error") or "")
+    if result is not None:
+        try:
+            outbox = _out_dir() / "worker-outbox"
+            outbox.mkdir(parents=True, exist_ok=True)
+            (outbox / "result.json").write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
+        except Exception:  # noqa: BLE001
+            pass
     _result_event.set()
     return True
-
-
-class _Handler(BaseHTTPRequestHandler):
-    protocol_version = "HTTP/1.1"
 
     def log_message(self, fmt: str, *args: Any) -> None:  # noqa: A003
         _log("http " + (fmt % args))
@@ -822,15 +853,18 @@ def main() -> None:
     )
     _log(f"listening http://{host}:{port} version={WORKER_VERSION}")
 
-    try:
-        server.serve_forever(poll_interval=0.5)
-    finally:
-        try:
-            if _tick_handle is not None:
-                unreal.unregister_slate_post_tick_callback(_tick_handle)
-        except Exception:  # noqa: BLE001
-            pass
-        _log("stopped")
+    # CRITICAL: never serve_forever on the ExecutePythonScript thread.
+    # That froze the editor after loading the map — Capture waited forever because
+    # slate ticks (which run /v1/capture work) never got the GIL/editor time.
+    thread = threading.Thread(
+        target=server.serve_forever,
+        kwargs={"poll_interval": 0.5},
+        name="VellumWorkerHTTP",
+        daemon=False,
+    )
+    thread.start()
+    _log("http_background_thread_started — editor stays ticking for Capture")
+    # Return: UnrealEditor remains open; tick callback drives Capture jobs.
 
 
 if __name__ == "__main__":
