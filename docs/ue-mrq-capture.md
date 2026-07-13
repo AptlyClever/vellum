@@ -5,7 +5,7 @@
 **Primary host:** Aurora (`config/ue-hosts.json` → `active: aurora`)  
 **Related:** host runbook `docs/scratch-inspect-niagara.md`, lookdev API `docs/api-lookdev.md`  
 **Decisions:** §12 locked 2026-07-13 (B / C / C / C / B)  
-**Runner fingerprint:** `mrq-pack-resilient (2026-07-13)`
+**Runner fingerprint:** `mrq-lookdev-studio (2026-07-13)`
 
 This is **new Vellum functionality**: turn a purchased Unreal Niagara pack into
 **full-fidelity lookdev renders** in the vault, driven from the Vellum UI, without
@@ -75,7 +75,7 @@ flowchart TB
 | **Host profile** | `config/ue-hosts.json` — UE path, scratch `.uproject`, content root | Shipped (Aurora active) |
 | **Agent shell** | Poll, resolve host, invoke runner, upload, report | Shipped |
 | **Inventory** | List / pick Niagara systems under content root | Exists; needs content on Aurora |
-| **Capture backend** | Sequencer shot + MRQ render | **Not built** (this spec) |
+| **Capture backend** | Sequencer + MRQ on Lookdev Studio map | Shipped (`mrq-lookdev-studio`) |
 | **Ingest** | Multipart lookdev ingest + register derived outputs | Shipped |
 
 Retired backends (do not extend): `-game`+HighResShot; SceneCapture2D export bake.
@@ -93,7 +93,7 @@ For the Fireworks pilot, each selected Niagara system produces **lookdev media**
 | **Short sequence** | Time-bounded PNG sequence covering the effect’s readable arc; retained in vault |
 
 Resolution default: **1920×1080** (overridable via job payload / env).  
-Capture window default (**§12.2 = C**): **≤4s @ 30fps** (120 frames max); camera from bounds after warmup; heroes = mid + max-luma.  
+Capture window default: **~2s @ 30fps** (60 frames; fireworks bursts) on permanent **Lookdev Studio** map (`/Game/Vellum/Maps/VellumLookdevStudio`); heroes = mid + max-luma. Spec §12.2 still records the earlier 4s adaptive decision — studio + shorter window is the live default.  
 Lane ingest on Capture success (**§12.5 = B**): **slots** + **hail-overlay**.
 
 **Out of scope for v1 of this capability (explicit, not a fidelity cut):**
@@ -181,6 +181,12 @@ Windows agent POSTs a CIM snapshot to `POST /api/ue/hosts/specs` on startup (`re
 - Job payload fields: `capture_backend: "mrq_sequencer"`, `frame_rate`, `duration_sec`, `max_systems`, `output_kind: stills|sequence|both`
 - DerivedOutput `kind` values beyond `niagara-render` if sequences need a distinct kind
 - Progress messages that distinguish inventory / sequence author / MRQ / ingest phases
+
+### Lookdev Studio (photo stage)
+
+Permanent map `/Game/Vellum/Maps/VellumLookdevStudio` — floor, pedestal, center slot (`VellumStudio_Slot_Center`), lights, mid camera. Built once (Phase 0 / `vellum_lookdev_studio_author.py`); `studio-ready.json` skips rebuild unless `ForceStudio` / `VELLUM_FORCE_STUDIO=1`.
+
+Capture places each Niagara system at the slot and uses the studio camera. Default window **60 frames @ 30fps**. Prior void-space stills remain in the vault but **do not match** studio lighting/framing — use **Force** for a pack refresh after this lands.
 
 ---
 

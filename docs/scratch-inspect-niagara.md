@@ -43,7 +43,7 @@ $env:VELLUM_MAX_SYSTEMS = "1"
 pwsh -ExecutionPolicy Bypass -File .\tools\unreal\vellum_ue_agent.ps1
 ```
 
-Expect fingerprint **`mrq-sequencer (2026-07-13)`**. Then Vellum → Fireworks → **Capture from Unreal**.
+Expect fingerprint **`mrq-lookdev-studio (2026-07-13)`**. Then Vellum → Fireworks → **Force** + **Capture entire pack** (rebuilds on the Lookdev Studio map).
 
 Until that fingerprint shows, you’re on an old pull.
 

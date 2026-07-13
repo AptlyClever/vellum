@@ -16,10 +16,12 @@ from pathlib import Path
 
 
 ACTOR_PREFIX = "VellumMRQ_"
-DEFAULT_FRAMES = 120
+STUDIO_PREFIX = "VellumStudio_"
+DEFAULT_MAP = "/Game/Vellum/Maps/VellumLookdevStudio"
+DEFAULT_FRAMES = 60  # ~2s @ 30fps — fireworks are short bursts, not ambient loops
 DEFAULT_FPS = 30
 # Frames before playback start used as camera-cut warm-up head.
-WARMUP_FRAMES = 60
+WARMUP_FRAMES = 30
 
 
 def _job_path() -> Path:
@@ -190,18 +192,49 @@ def _spawn(unreal_mod, actor_sub, actor_class=None, obj=None, loc=None, rot=None
     return actor
 
 
-def _count_vellum_actors(actor_sub) -> int:
-    n = 0
+def _find_labeled_actor(actor_sub, label: str):
     try:
         for actor in actor_sub.get_all_level_actors():
             try:
-                if actor.get_actor_label().startswith(ACTOR_PREFIX):
-                    n += 1
+                if actor.get_actor_label() == label:
+                    return actor
             except Exception:  # noqa: BLE001
                 continue
     except Exception:  # noqa: BLE001
-        return n
-    return n
+        return None
+    return None
+
+
+def _studio_slot_location(unreal_mod, actor_sub, notes: list[str]):
+    for label in (f"{STUDIO_PREFIX}Slot_Center", f"{STUDIO_PREFIX}Pedestal"):
+        actor = _find_labeled_actor(actor_sub, label)
+        if actor is None:
+            continue
+        try:
+            loc = actor.get_actor_location()
+            notes.append(f"slot_from:{label}")
+            return loc
+        except Exception as exc:  # noqa: BLE001
+            notes.append(f"slot_loc_failed:{label}:{exc}")
+    notes.append("slot_default_origin")
+    return unreal_mod.Vector(0.0, 0.0, 120.0)
+
+
+def _studio_camera_pose(unreal_mod, actor_sub, notes: list[str]):
+    actor = _find_labeled_actor(actor_sub, f"{STUDIO_PREFIX}Cam_Mid")
+    if actor is not None:
+        try:
+            loc = actor.get_actor_location()
+            rot = actor.get_actor_rotation()
+            notes.append("camera_pose_from_studio")
+            return loc, rot
+        except Exception as exc:  # noqa: BLE001
+            notes.append(f"studio_cam_pose_failed:{exc}")
+    return _fireworks_camera_pose(unreal_mod)
+
+
+def _map_has_studio_fixtures(actor_sub) -> bool:
+    return _find_labeled_actor(actor_sub, f"{STUDIO_PREFIX}Slot_Center") is not None
 
 
 def _spawn_lights(unreal_mod, actor_sub, notes: list[str]) -> None:
@@ -253,8 +286,9 @@ def _niagara_component(unreal_mod, actor):
         return None
 
 
-def _spawn_niagara(unreal_mod, actor_sub, system_asset, notes: list[str]):
-    loc = unreal_mod.Vector(0.0, 0.0, 0.0)
+def _spawn_niagara(unreal_mod, actor_sub, system_asset, notes: list[str], loc=None):
+    if loc is None:
+        loc = unreal_mod.Vector(0.0, 0.0, 120.0)
     actor = None
     try:
         actor = _spawn(
@@ -745,19 +779,24 @@ def _author_one_system(
 ) -> dict:
     if spawn_lights:
         _clear_vellum_actors(unreal_mod, actor_sub, notes)
-        _spawn_lights(unreal_mod, actor_sub, notes)
+        if _map_has_studio_fixtures(actor_sub):
+            notes.append("studio_fixtures_kept")
+        else:
+            _spawn_lights(unreal_mod, actor_sub, notes)
     else:
+        # Later systems: wipe prior Niagara/camera possessables only.
         _destroy_labeled(actor_sub, notes)
 
     system_asset = unreal_mod.EditorAssetLibrary.load_asset(system_object_path)
     if system_asset is None:
         raise RuntimeError(f"load_failed:{system_object_path}")
 
-    niagara = _spawn_niagara(unreal_mod, actor_sub, system_asset, notes)
+    slot_loc = _studio_slot_location(unreal_mod, actor_sub, notes)
+    niagara = _spawn_niagara(unreal_mod, actor_sub, system_asset, notes, loc=slot_loc)
     if niagara is None:
         raise RuntimeError(f"spawn_niagara_failed:{system_name}")
 
-    cam_loc, cam_rot = _fireworks_camera_pose(unreal_mod)
+    cam_loc, cam_rot = _studio_camera_pose(unreal_mod, actor_sub, notes)
     camera = _spawn(
         unreal_mod,
         actor_sub,
@@ -790,7 +829,7 @@ def _author_one_system(
         raise RuntimeError(f"sequence_create_failed:{system_name}")
     _configure_sequence(unreal_mod, sequence, camera, niagara, frame_count, frame_rate, notes)
 
-    # Level keeps lights only; sequences own camera+Niagara as spawnables.
+    # Level keeps studio fixtures; sequences own camera+Niagara as spawnables.
     try:
         actor_sub.destroy_actor(camera)
         actor_sub.destroy_actor(niagara)
@@ -907,7 +946,7 @@ def main() -> None:
         job_path = _job_path()
         result_path = job_path.parent / "author-result.json"
         job = json.loads(job_path.read_text(encoding="utf-8"))
-        map_path = str(job.get("map_path") or "/Game/Vellum/Maps/VellumNiagaraCapture")
+        map_path = str(job.get("map_path") or DEFAULT_MAP)
         seq_pkg = str(job.get("sequence_package") or "/Game/Vellum/Sequences")
         cfg_pkg = str(job.get("config_package") or "/Game/Vellum/MRQ")
         width = int(job.get("width") or 1920)

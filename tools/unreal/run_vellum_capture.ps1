@@ -4,10 +4,9 @@
   Unsupervised Fireworks scratch inspect + still capture -> Vellum.
 
 .DESCRIPTION
-  Phase A (editor Cmd): inventory Niagara systems.
-  Phase B (editor Cmd): bake one system into a capture map and write a PNG via
-  SceneCapture2D + export_render_target. The old `-game` HighResShot path is
-  gone — on this workstation the game window stayed blank and wrote zero PNGs.
+  Phase 0 (once): ensure permanent Lookdev Studio map (floor, pedestal, lights, slot).
+  Phase A: inventory Niagara systems (cached when possible).
+  Phase B: author Sequencer + MoviePipelineQueue onto the studio map; MRQ render; ingest.
 
 .EXAMPLE
   pwsh -File tools/unreal/run_vellum_capture.ps1
@@ -25,10 +24,13 @@ param(
   [int]$MaxSystems = $(if ($env:VELLUM_MAX_SYSTEMS) { [int]$env:VELLUM_MAX_SYSTEMS } else { 0 }),
   [int]$Width = $(if ($env:VELLUM_WIDTH) { [int]$env:VELLUM_WIDTH } else { 1920 }),
   [int]$Height = $(if ($env:VELLUM_HEIGHT) { [int]$env:VELLUM_HEIGHT } else { 1080 }),
-  [string]$MapPath = "/Game/Vellum/Maps/VellumNiagaraCapture",
+  [string]$MapPath = "/Game/Vellum/Maps/VellumLookdevStudio",
   [string]$JobId = $(if ($env:VELLUM_JOB_ID) { $env:VELLUM_JOB_ID } else { "" }),
   [switch]$ForceCapture = $(
     if ($env:VELLUM_FORCE_CAPTURE -match '^(1|true|yes)$') { $true } else { $false }
+  ),
+  [switch]$ForceStudio = $(
+    if ($env:VELLUM_FORCE_STUDIO -match '^(1|true|yes)$') { $true } else { $false }
   )
 )
 
@@ -330,9 +332,11 @@ function Test-VaultHasSystemLookdev {
 $RepoRoot = Resolve-Path (Join-Path $PSScriptRoot "..\..")
 $InventoryPySource = Join-Path $PSScriptRoot "vellum_capture.py"
 $AuthorPySource = Join-Path $PSScriptRoot "vellum_capture_mrq_author.py"
+$StudioPySource = Join-Path $PSScriptRoot "vellum_lookdev_studio_author.py"
 $PickHeroesPy = Join-Path $PSScriptRoot "pick_heroes.py"
 if (-not (Test-Path $InventoryPySource)) { throw "vellum_capture.py not found next to runner" }
 if (-not (Test-Path $AuthorPySource)) { throw "vellum_capture_mrq_author.py not found next to runner" }
+if (-not (Test-Path $StudioPySource)) { throw "vellum_lookdev_studio_author.py not found next to runner" }
 if (-not (Test-Path $PickHeroesPy)) { throw "pick_heroes.py not found next to runner" }
 if (-not $Project) {
   $Project = Resolve-UprojectFromHost -HostProfile $UeHost
@@ -349,14 +353,16 @@ New-Item -ItemType Directory -Force -Path $MrqRoot | Out-Null
 
 $StagedInventoryPy = Join-Path $OutDir "vellum_capture.py"
 $StagedAuthorPy = Join-Path $OutDir "vellum_capture_mrq_author.py"
+$StagedStudioPy = Join-Path $OutDir "vellum_lookdev_studio_author.py"
 $StagedPickHeroesPy = Join-Path $OutDir "pick_heroes.py"
 Copy-Item -Force -Path $InventoryPySource -Destination $StagedInventoryPy
 Copy-Item -Force -Path $AuthorPySource -Destination $StagedAuthorPy
+Copy-Item -Force -Path $StudioPySource -Destination $StagedStudioPy
 Copy-Item -Force -Path $PickHeroesPy -Destination $StagedPickHeroesPy
 
 $ProjectUe = ConvertTo-UePath $Project
 $OutDirUe = ConvertTo-UePath $OutDir
-$FrameCount = 120
+$FrameCount = 60
 $FrameRate = 30
 $IngestLanes = @("slots", "hail-overlay")
 $Ue = $null
@@ -370,17 +376,62 @@ function Ensure-UeCmd {
 
 Write-Host "Project: $ProjectUe"
 Write-Host "MaxSystems=$MaxSystems (0=entire pack) Width=$Width Height=$Height MapPath=$MapPath"
-Write-Host "Runner version: mrq-fast-skip (2026-07-13)"
+Write-Host "Runner version: mrq-lookdev-studio (2026-07-13)"
 Write-Host "UE host: $($UeHost.id) ($($UeHost.label))"
 Write-Host "Ingest lanes: $($IngestLanes -join ', ')"
-Write-Host "ForceCapture=$ForceCapture"
+Write-Host "ForceCapture=$ForceCapture ForceStudio=$ForceStudio"
 if ($JobId) { Write-Host "JobId=$JobId (progress -> $VellumBase/api/jobs/$JobId/progress)" }
 
 $allErrors = New-Object System.Collections.ArrayList
 $stills = New-Object System.Collections.ArrayList
 $sequences = New-Object System.Collections.ArrayList
 $InventoryCachePath = Join-Path $OutDir "inventory-cache.json"
+$StudioReadyPath = Join-Path $OutDir "studio-ready.json"
 $InventoryCacheMaxAgeHours = 72
+
+# ---------------------------------------------------------------------------
+# Phase 0: ensure permanent Lookdev Studio map exists (photo studio)
+# ---------------------------------------------------------------------------
+$needStudio = $ForceStudio -or -not (Test-Path $StudioReadyPath)
+if (-not $needStudio) {
+  try {
+    $studioDoc = Get-Content $StudioReadyPath -Raw | ConvertFrom-Json
+    if (-not [bool]$studioDoc.ok) { $needStudio = $true }
+    if ($studioDoc.map_path -and [string]$studioDoc.map_path -ne $MapPath) { $needStudio = $true }
+  } catch {
+    $needStudio = $true
+  }
+}
+if ($needStudio) {
+  $Ue = Ensure-UeCmd
+  $env:VELLUM_OUT_DIR = $OutDirUe
+  $env:VELLUM_STUDIO_MAP = $MapPath
+  $StudioLog = Join-Path $OutDir "ue-studio.log"
+  if (Test-Path $StudioLog) { Remove-Item -Force $StudioLog }
+  $StudioExecFlag = "-ExecutePythonScript=" + (ConvertTo-UePath $StagedStudioPy)
+  Write-Host "Phase 0 (lookdev studio): $StudioExecFlag"
+  Send-VellumProgress -Message "Building Lookdev Studio map…"
+  $studioExit = 0
+  try {
+    $studioExit = Invoke-UeLogged -Exe $Ue -ArgumentList @(
+        $ProjectUe, "-stdout", "-FullStdOutLogOutput", "-unattended", "-nop4", $StudioExecFlag
+      ) -LogPath $StudioLog -Phase "Phase 0 lookdev studio"
+  } catch {
+    $studioExit = 1
+    $_ | Out-File -FilePath $StudioLog -Append
+  }
+  if (-not (Test-Path $StudioReadyPath)) {
+    throw "Lookdev Studio did not write studio-ready.json (exit=$studioExit). See $StudioLog"
+  }
+  $studioDoc = Get-Content $StudioReadyPath -Raw | ConvertFrom-Json
+  if (-not [bool]$studioDoc.ok) {
+    throw "Lookdev Studio build reported ok=false. See $StudioLog"
+  }
+  Send-VellumProgress -Message "Lookdev Studio ready: $MapPath"
+} else {
+  Write-Host "Phase 0 skipped: studio-ready.json present"
+  Send-VellumProgress -Message "Lookdev Studio already built"
+}
 
 function Read-InventoryCache {
   param([string]$Path, [string]$ExpectedRoot, [int]$MaxAgeHours, [int]$MaxSystems)

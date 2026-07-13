@@ -3,7 +3,7 @@
 > **Current Active Issue:** Fireworks pack — **full automated lookdev** (all effects), then next purchased packs
 > **Governing CFD:** `cfd-inspiration-20260713-015950-vellum-control-alt-games-asset-vault-register-in` (slices A–F met; this is the post-CFD track)
 > **Capability spec:** `docs/ue-mrq-capture.md` (SoT — full fidelity; SceneCapture/HighResShot retired)
-> **Next Immediate Step:** Pull `mrq-pack-resilient` on Aurora (restart agent — auto-posts host specs). Click **Capture entire pack** again; bad systems no longer kill the whole run; inventory cache avoids UE on pure-skip.
+> **Next Immediate Step:** Pull `mrq-lookdev-studio` on Aurora → restart agent → **Force** + **Capture entire pack** so Fireworks re-renders on the permanent photo-studio map (old void stills are skipped unless Force).
 
 ---
 
@@ -50,6 +50,7 @@
   - [x] Default Capture = **entire pack** (`max_systems=0`, Single-over-Loop) — `mrq-full-pack`
   - [x] Inventory cache + vault-only skip without UE; soft-fail per system (`mrq-pack-resilient`)
   - [x] Host specs report from UE agent → `GET /api/ue/hosts`
+  - [x] Lookdev Studio map (permanent photo stage) + capture wiring (`mrq-lookdev-studio`)
   - [ ] Fireworks pack lookdev complete in vault (all unique systems; skip already-done)
   - [ ] Next purchased Unreal packs through the same Capture path (no operator digging)
 
@@ -92,3 +93,4 @@
 * **2026-07-13** — Reset Capture default to **entire pack** (`mrq-full-pack`, `max_systems=0`); drop `*_Loop` when `*_Single` sibling exists. Operator path: click Capture once; no per-system digging.
 * **2026-07-13** — Live import panel on asset detail (job progress + lookdev refresh).
 * **2026-07-13** — `mrq-pack-resilient`: inventory cache (skip UE cold start), continue on black/ingest failure, host specs POST from agent.
+* **2026-07-13** — **Lookdev Studio** (`mrq-lookdev-studio`): permanent photo-studio map (`VellumLookdevStudio`) with center slot + lights + mid cam; capture defaults to 60 frames (~2s); Phase 0 builds studio once. Old void stills inconsistent — Force re-render for pack.
