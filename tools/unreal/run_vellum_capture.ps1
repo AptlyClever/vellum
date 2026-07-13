@@ -425,7 +425,7 @@ function Ensure-UeCmd {
 
 Write-Host "Project: $ProjectUe"
 Write-Host "MaxSystems=$MaxSystems (0=entire pack) Width=$Width Height=$Height MapPath=$MapPath"
-Write-Host "Runner version: mrq-adaptive-frames (2026-07-13)"
+Write-Host "Runner version: mrq-artifact-gate (2026-07-13)"
 Write-Host "UE host: $($UeHost.id) ($($UeHost.label))"
 Write-Host "Ingest lanes: $($IngestLanes -join ', ')"
 Write-Host "ForceCapture=$ForceCapture ForceStudio=$ForceStudio MaxFrameCount=$FrameCount (per-system estimate may be shorter)"
