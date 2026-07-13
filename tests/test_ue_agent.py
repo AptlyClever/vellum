@@ -50,6 +50,29 @@ def test_ue_host_specs_roundtrip(tmp_path: Path, monkeypatch) -> None:
     assert active["host_specs"]["gpus"][0]["name"] == "Test GPU"
 
 
+def test_cancel_running_ue_capture(tmp_path: Path, monkeypatch) -> None:
+    reg = tmp_path / "register.yaml"
+    db = tmp_path / "jobs.sqlite3"
+    monkeypatch.setenv("VELLUM_REGISTER_PATH", str(reg))
+    monkeypatch.setenv("VELLUM_JOBS_DB_PATH", str(db))
+    monkeypatch.delenv("VELLUM_VAULT_REGISTER_PATH", raising=False)
+    ensure_register(force_reseed=True)
+
+    job = enqueue_job(kind="ue_capture", asset_id="fireworks-vol-1-niagara", payload={})
+    claimed = claim_next_job(kinds=UE_AGENT_KINDS)
+    assert claimed is not None
+
+    from backend.main import app
+
+    client = TestClient(app)
+    cancelled = client.post(f"/api/jobs/{job['job_id']}/cancel", json={})
+    assert cancelled.status_code == 200
+    assert cancelled.json()["job"]["status"] == "cancelled"
+
+    again = client.post(f"/api/jobs/{job['job_id']}/cancel", json={})
+    assert again.status_code == 409
+
+
 def test_ue_capture_claim_is_not_taken_by_linux_kinds(tmp_path: Path, monkeypatch) -> None:
     reg = tmp_path / "register.yaml"
     db = tmp_path / "jobs.sqlite3"

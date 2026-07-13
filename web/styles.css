@@ -377,6 +377,7 @@ table.assets tbody tr:last-child td {
   border-left-color: var(--open);
 }
 
+.capture-live[data-state="cancelled"],
 .capture-live[data-state="failed"] {
   border-left-color: var(--expired);
 }
@@ -483,14 +484,113 @@ table.assets tbody tr:last-child td {
   position: fixed;
   top: 0;
   right: 0;
-  width: min(28rem, 100%);
+  width: min(26rem, 100%);
   height: 100%;
   background: var(--panel);
   border-left: 1px solid var(--line);
-  padding: 1.5rem 1.25rem;
+  padding: 1.35rem 1.1rem 2rem;
   overflow: auto;
   box-shadow: none;
   z-index: 20;
+}
+
+.detail-title-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  margin: 0 1.5rem 0.35rem 0;
+}
+
+.detail-title-row h2 {
+  margin: 0;
+  font-size: 1.2rem;
+  letter-spacing: -0.02em;
+}
+
+.detail-summary {
+  margin: 0 0 1rem;
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.detail-section {
+  margin: 0 0 1.25rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.detail-section h3 {
+  margin: 0 0 0.45rem;
+  font-size: 0.95rem;
+}
+
+.capture-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  margin: 0.55rem 0 0.75rem;
+}
+
+.force-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+  margin-left: 0.15rem;
+}
+
+.btn-danger {
+  color: var(--expired);
+  background: transparent;
+  border-color: var(--expired);
+}
+
+.btn-danger:hover {
+  background: var(--expired-bg);
+}
+
+.btn-tiny {
+  padding: 0.2rem 0.45rem;
+  font-size: 0.72rem;
+  margin: 0;
+}
+
+.detail-more {
+  margin-top: 0.5rem;
+  border-top: 1px solid var(--line);
+  padding-top: 0.65rem;
+}
+
+.detail-more summary {
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: var(--muted);
+  list-style: none;
+}
+
+.detail-more summary::-webkit-details-marker {
+  display: none;
+}
+
+.detail-more[open] summary {
+  color: var(--ink);
+  margin-bottom: 0.65rem;
+}
+
+.detail-more h4 {
+  margin: 0.85rem 0 0.35rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.detail-meta {
+  margin: 0.35rem 0 0;
 }
 
 .detail .close {

@@ -268,9 +268,11 @@ def complete_job(
     *,
     result: dict[str, Any] | None = None,
     error: str | None = None,
+    status: str | None = None,
 ) -> dict[str, Any]:
     now = _now()
-    status = "failed" if error else "succeeded"
+    if status is None:
+        status = "failed" if error else "succeeded"
     with _conn() as conn:
         conn.execute(
             """
@@ -290,6 +292,22 @@ def complete_job(
     job = get_job(job_id)
     assert job is not None
     return job
+
+
+def cancel_job(job_id: str, *, reason: str = "operator_cancelled") -> dict[str, Any]:
+    """Operator cancel for queued/running jobs (including orphaned UE captures)."""
+    job = get_job(job_id)
+    if not job:
+        raise KeyError("job_not_found")
+    if job.get("status") not in {"queued", "running"}:
+        raise ValueError(f"job_status_{job.get('status')}")
+    note = (reason or "operator_cancelled").strip()[:4000] or "operator_cancelled"
+    return complete_job(
+        job_id,
+        error=note,
+        status="cancelled",
+        result={"cancelled": True, "reason": note},
+    )
 
 
 def stage_path_for_asset(asset: dict[str, Any]) -> Path:

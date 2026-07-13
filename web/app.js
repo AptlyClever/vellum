@@ -111,29 +111,63 @@ function startCaptureWatch({
   feedEl,
   lookdevHost,
   captureBtn,
+  cancelBtn,
+  onIdle,
 }) {
   stopCaptureWatch();
   liveRoot.hidden = false;
   let lastOutputCount = -1;
   let ticksAfterDone = 0;
+  let watchingJobId = jobId;
+
+  if (cancelBtn) {
+    cancelBtn.hidden = false;
+    cancelBtn.disabled = false;
+    cancelBtn.onclick = async () => {
+      cancelBtn.disabled = true;
+      cancelBtn.textContent = "Cancelling…";
+      try {
+        await cancelJob(watchingJobId, "operator_cancelled");
+        phaseEl.textContent = "Cancelled — you can start Capture again";
+        liveRoot.dataset.state = "cancelled";
+        if (captureBtn) {
+          captureBtn.disabled = false;
+          captureBtn.textContent = "Capture entire pack";
+        }
+        cancelBtn.textContent = "Cancelled";
+        stopCaptureWatch();
+        if (onIdle) onIdle();
+      } catch (err) {
+        cancelBtn.disabled = false;
+        cancelBtn.textContent = "Cancel job";
+        phaseEl.textContent = `Cancel failed: ${err.message || err}`;
+        console.error(err);
+      }
+    };
+  }
 
   const tick = async () => {
     try {
       const [job, progress, derived] = await Promise.all([
-        fetchJson(`/api/jobs/${encodeURIComponent(jobId)}`),
-        fetchJson(`/api/jobs/${encodeURIComponent(jobId)}/progress`),
+        fetchJson(`/api/jobs/${encodeURIComponent(watchingJobId)}`),
+        fetchJson(`/api/jobs/${encodeURIComponent(watchingJobId)}/progress`),
         fetchJson(
           `/api/lookdev/outputs?asset_id=${encodeURIComponent(assetId)}&limit=48`
         ),
       ]);
       const status = job.status || progress.status || "running";
       const phase = humanPhaseFromProgressLog(progress.log);
-      const phases = recentPhasesFromProgressLog(progress.log, 10);
+      const phases = recentPhasesFromProgressLog(progress.log, 6);
       const outputs = derived.outputs || [];
       const niagara = outputs.filter((o) => o.kind === "niagara-render");
 
-      phaseEl.textContent = phase;
-      metaEl.textContent = `${status} · ${jobId} · lookdev ${niagara.length} niagara / ${outputs.length} total`;
+      phaseEl.textContent =
+        status === "cancelled"
+          ? "Cancelled"
+          : status === "failed"
+            ? `Failed: ${job.error || phase}`
+            : phase;
+      metaEl.textContent = `${status} · lookdev ${niagara.length}`;
       clear(feedEl);
       for (const msg of phases.slice().reverse()) {
         const li = document.createElement("li");
@@ -145,26 +179,44 @@ function startCaptureWatch({
         lastOutputCount = outputs.length;
         renderLookdevGrid(lookdevHost, outputs, {
           emptyText: "Waiting for first lookdev frames to land…",
-          limit: 36,
+          limit: 24,
         });
       }
 
-      const terminal = status === "succeeded" || status === "failed";
+      const terminal =
+        status === "succeeded" ||
+        status === "failed" ||
+        status === "cancelled";
       if (terminal) {
         ticksAfterDone += 1;
+        liveRoot.dataset.state = status;
+        if (cancelBtn) {
+          cancelBtn.hidden = status !== "running" && status !== "queued";
+          cancelBtn.disabled = true;
+          cancelBtn.textContent =
+            status === "cancelled" ? "Cancelled" : "Cancel job";
+        }
         if (captureBtn) {
           captureBtn.disabled = false;
           captureBtn.textContent =
             status === "succeeded"
-              ? "Capture finished — run again for remaining"
-              : "Capture failed — try again";
+              ? "Capture entire pack"
+              : status === "cancelled"
+                ? "Capture entire pack"
+                : "Capture entire pack";
         }
-        liveRoot.dataset.state = status;
-        // One extra refresh after report so late ingest shows up.
-        if (ticksAfterDone >= 2) stopCaptureWatch();
+        if (ticksAfterDone >= 2) {
+          stopCaptureWatch();
+          if (onIdle) onIdle();
+        }
       } else if (captureBtn) {
         captureBtn.disabled = true;
-        captureBtn.textContent = "Capturing pack…";
+        captureBtn.textContent = "Capturing…";
+        if (cancelBtn) {
+          cancelBtn.hidden = false;
+          cancelBtn.disabled = false;
+          cancelBtn.textContent = "Cancel job";
+        }
       }
     } catch (err) {
       phaseEl.textContent = "Live update interrupted — retrying…";
@@ -267,7 +319,7 @@ function makeStatusPill(status) {
   const kind =
     status === "done" || status === "succeeded"
       ? "open"
-      : status === "blocked" || status === "failed"
+      : status === "blocked" || status === "failed" || status === "cancelled"
         ? "expired"
         : status === "needs-human" || status === "queued" || status === "running"
           ? "needs"
@@ -275,6 +327,19 @@ function makeStatusPill(status) {
   span.className = `pill ${kind}`;
   span.textContent = status || "unknown";
   return span;
+}
+
+async function cancelJob(jobId, reason = "operator_cancelled") {
+  const res = await fetch(`/api/jobs/${encodeURIComponent(jobId)}/cancel`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ reason }),
+  });
+  if (!res.ok) {
+    const detail = await res.text();
+    throw new Error(`cancel ${res.status}: ${detail}`);
+  }
+  return res.json();
 }
 
 function renderIntakeRun(host, run) {
@@ -363,271 +428,91 @@ async function openDetail(id) {
   const host = $("detail-body");
   clear(host);
 
+  const titleRow = document.createElement("div");
+  titleRow.className = "detail-title-row";
   const h2 = document.createElement("h2");
   h2.textContent = a.display_name || a.id;
-  host.appendChild(h2);
-  host.appendChild(makePill(a.redeem_window));
+  titleRow.appendChild(h2);
+  titleRow.appendChild(makePill(a.redeem_window));
+  host.appendChild(titleRow);
 
-  const actions = document.createElement("div");
-  actions.className = "detail-actions";
-  const proposeBtn = document.createElement("button");
-  proposeBtn.type = "button";
-  proposeBtn.className = "btn";
-  proposeBtn.textContent = "Propose intake";
-  proposeBtn.addEventListener("click", async () => {
-    proposeBtn.disabled = true;
-    proposeBtn.textContent = "Proposing…";
-    try {
-      await proposeIntake(a.id);
-      await openDetail(a.id);
-    } catch (err) {
-      proposeBtn.textContent = "Propose failed";
-      console.error(err);
-    }
-  });
-  actions.appendChild(proposeBtn);
-  host.appendChild(actions);
+  const summary = document.createElement("p");
+  summary.className = "detail-summary";
+  summary.textContent = `${a.engine || "?"} · ${a.package_type || "pack"} · ${a.store_label || a.store_lane || "store?"}`;
+  host.appendChild(summary);
 
-  const dl = document.createElement("dl");
-  addDlRow(dl, "Id", a.id);
-  addDlRow(dl, "Engine / type", `${a.engine || ""} · ${a.package_type || ""}`);
-  addDlRow(dl, "Store", a.store_label || a.store_lane || "");
-  addDlRow(dl, "Redeem by", formatDeadline(a.redemption_deadline));
-  addDlRow(dl, "Status", a.redemption_status || "not_recorded");
-  addDlRow(dl, "Project fit", a.project_fit || "");
-  addDlRow(dl, "Source bundle", a.source_bundle || "");
-  addDlRow(dl, "Scratch", a.scratch_project_status || "not_recorded");
-  if (a.scratch_project_path) {
-    addDlRow(dl, "Scratch path", a.scratch_project_path);
-  }
-  if (a.scratch_engine_version) {
-    addDlRow(dl, "Scratch engine", a.scratch_engine_version);
-  }
-  host.appendChild(dl);
-
-  const note = document.createElement("p");
-  note.className = "fit";
-  note.style.marginTop = "1.25rem";
-  note.textContent =
-    "Expired redeem window only means we may not re-fetch from the store — it does not invalidate staged assets.";
-  host.appendChild(note);
-
-  const intakeHead = document.createElement("h3");
-  intakeHead.textContent = "Intake";
-  intakeHead.style.marginTop = "1.5rem";
-  host.appendChild(intakeHead);
-
-  const latest = document.createElement("div");
-  latest.id = "intake-latest";
-  host.appendChild(latest);
-
-  try {
-    const listed = await fetchJson(
-      `/api/intake?asset_id=${encodeURIComponent(a.id)}&limit=3`
-    );
-    const runs = listed.runs || [];
-    if (!runs.length) {
-      const empty = document.createElement("p");
-      empty.className = "fit";
-      empty.textContent = "No IntakeRuns yet. Propose one to get a step plan.";
-      latest.appendChild(empty);
-    } else {
-      for (const run of runs) renderIntakeRun(latest, run);
-    }
-  } catch (err) {
-    console.error(err);
-  }
-
-  const jobsHead = document.createElement("h3");
-  jobsHead.textContent = "Jobs";
-  jobsHead.style.marginTop = "1.5rem";
-  host.appendChild(jobsHead);
-
-  const jobsHost = document.createElement("div");
-  jobsHost.className = "jobs-list";
-  host.appendChild(jobsHost);
-
-  try {
-    const jobsListed = await fetchJson(
-      `/api/jobs?asset_id=${encodeURIComponent(a.id)}`
-    );
-    const jobs = jobsListed.jobs || [];
-    if (!jobs.length) {
-      const empty = document.createElement("p");
-      empty.className = "fit";
-      empty.textContent = "No jobs yet. Enqueue automatable steps from an IntakeRun.";
-      jobsHost.appendChild(empty);
-    } else {
-      for (const job of jobs.slice(0, 8)) {
-        const row = document.createElement("div");
-        row.className = "job-row";
-        const label = document.createElement("span");
-        label.textContent = `${job.kind} · ${job.job_id}`;
-        row.appendChild(label);
-        row.appendChild(makeStatusPill(job.status));
-        jobsHost.appendChild(row);
-        if (job.error) {
-          const err = document.createElement("p");
-          err.className = "fit";
-          err.textContent = job.error;
-          jobsHost.appendChild(err);
-        }
-      }
-    }
-  } catch (err) {
-    console.error(err);
-  }
-
-  const scratchHead = document.createElement("h3");
-  scratchHead.textContent = "Unreal capture";
-  scratchHead.style.marginTop = "1.5rem";
-  host.appendChild(scratchHead);
-
-  const captureHelp = document.createElement("p");
-  captureHelp.className = "fit";
-  captureHelp.textContent =
-    "Queues MRQ + Sequencer capture on the active UE host (Aurora). Keep vellum_ue_agent.ps1 running — no Unreal UI clicking. Heroes + sequences ingest to slots and hail-overlay.";
-  host.appendChild(captureHelp);
-
-  const hostMeta = document.createElement("p");
-  hostMeta.className = "fit";
-  hostMeta.textContent = "Loading UE host profile…";
-  host.appendChild(hostMeta);
+  // ---- Capture (primary) ----
+  const captureSec = document.createElement("section");
+  captureSec.className = "detail-section";
+  const captureHead = document.createElement("h3");
+  captureHead.textContent = "Capture";
+  captureSec.appendChild(captureHead);
 
   let activeHost = null;
   try {
     const hostsPayload = await fetchJson("/api/ue/hosts");
     activeHost = hostsPayload.active_host || null;
-    const labels = (hostsPayload.hosts || [])
-      .map((h) => `${h.id}${h.active ? " (active)" : ""}`)
-      .join(", ");
-    hostMeta.textContent = activeHost
-      ? `Active host: ${activeHost.label || activeHost.id} · profiles: ${labels}`
-      : `UE hosts: ${labels}`;
-    if (activeHost && activeHost.host_specs) {
-      const s = activeHost.host_specs;
-      const cpu = (s.cpu && s.cpu[0]) || {};
-      const gpus = Array.isArray(s.gpus) ? s.gpus : [];
-      const discrete =
-        gpus.find(
-          (g) =>
-            g &&
-            g.name &&
-            !/remote display|microsoft basic|meta.*virtual/i.test(g.name)
-        ) || gpus[0];
-      const vols = Array.isArray(s.volumes) ? s.volumes : [];
-      const volTxt = vols
-        .map((v) => `${v.device_id} ${v.free_gb ?? "?"}/${v.size_gb ?? "?"} GB free`)
-        .join(" · ");
-
-      const specsPanel = document.createElement("div");
-      specsPanel.className = "host-specs";
-      const specsTitle = document.createElement("p");
-      specsTitle.className = "host-specs-title";
-      specsTitle.textContent = "Aurora hardware (from agent)";
-      specsPanel.appendChild(specsTitle);
-      const specsDl = document.createElement("dl");
-      specsDl.className = "host-specs-dl";
-      const rows = [
-        ["Machine", `${s.hostname || "?"} · ${s.manufacturer || ""} ${s.model || ""}`.trim()],
-        ["OS", `${s.os_caption || "?"} (${s.os_arch || "?"})`],
-        [
-          "CPU",
-          cpu.name
-            ? `${cpu.name} · ${cpu.cores || "?"}c / ${cpu.logical_processors || "?"}t`
-            : "?",
-        ],
-        ["RAM", s.ram_gb != null ? `${s.ram_gb} GB` : "?"],
-        [
-          "GPU",
-          s.nvidia_gpus && s.nvidia_gpus[0]
-            ? `${s.nvidia_gpus[0].name} · ${s.nvidia_gpus[0].vram_gb} GB VRAM (nvidia-smi)`
-            : discrete && discrete.name
-              ? `${discrete.name}${
-                  discrete.adapter_ram_gb != null
-                    ? ` · Win32 VRAM report ${discrete.adapter_ram_gb} GB (often undercounts)`
-                    : ""
-                }`
-              : "?",
-        ],
-        [
-          "Other adapters",
-          gpus
-            .filter((g) => g && discrete && g.name !== discrete.name)
-            .map((g) => g.name)
-            .join(", ") || "—",
-        ],
-        ["Volumes", volTxt || "—"],
-        ["UE", `${s.ue_editor || activeHost.ue_editor || "?"} · ${s.ue_project || ""}`],
-      ];
-      for (const [k, v] of rows) {
-        const dt = document.createElement("dt");
-        dt.textContent = k;
-        const dd = document.createElement("dd");
-        dd.textContent = v;
-        specsDl.append(dt, dd);
-      }
-      specsPanel.appendChild(specsDl);
-      hostMeta.after(specsPanel);
-    } else if (activeHost) {
-      hostMeta.textContent +=
-        " · host specs pending (restart UE agent after pull)";
-    }
   } catch (err) {
-    hostMeta.textContent = "UE host profiles unavailable — using local defaults.";
     console.warn(err);
   }
 
-  const scratchForm = document.createElement("div");
-  scratchForm.className = "scratch-form";
-  const pathLabel = document.createElement("label");
-  pathLabel.className = "field grow";
-  const pathSpan = document.createElement("span");
-  pathSpan.textContent = "Unreal project path";
-  const pathInput = document.createElement("input");
-  pathInput.type = "text";
-  const hostProject =
-    (activeHost && (activeHost.project_dir || activeHost.project)) || "";
-  pathInput.placeholder = hostProject || "F:\\Games\\AuroraVellum";
-  // Prefer active host (Aurora) over a stale Borealis path on the asset.
-  pathInput.value = hostProject || a.scratch_project_path || "F:\\Games\\AuroraVellum";
-  pathLabel.appendChild(pathSpan);
-  pathLabel.appendChild(pathInput);
-  scratchForm.appendChild(pathLabel);
+  const hostLine = document.createElement("p");
+  hostLine.className = "fit";
+  if (activeHost) {
+    const s = activeHost.host_specs || {};
+    const cpu = (s.cpu && s.cpu[0] && s.cpu[0].name) || "";
+    const gpu =
+      (s.nvidia_gpus && s.nvidia_gpus[0] && s.nvidia_gpus[0].name) ||
+      (Array.isArray(s.gpus) &&
+        (s.gpus.find((g) => g && g.name && !/remote display/i.test(g.name)) ||
+          {}).name) ||
+      "";
+    const bits = [activeHost.label || activeHost.id];
+    if (s.ram_gb) bits.push(`${s.ram_gb} GB RAM`);
+    if (gpu) bits.push(gpu);
+    else if (cpu) bits.push(cpu.split("@")[0].trim());
+    hostLine.textContent = bits.join(" · ");
+  } else {
+    hostLine.textContent = "UE host unknown — start vellum_ue_agent on Aurora";
+  }
+  captureSec.appendChild(hostLine);
 
-  const engLabel = document.createElement("label");
-  engLabel.className = "field";
-  const engSpan = document.createElement("span");
-  engSpan.textContent = "Engine";
+  const pathInput = document.createElement("input");
+  pathInput.type = "hidden";
+  pathInput.value =
+    (activeHost && (activeHost.project_dir || activeHost.project)) ||
+    a.scratch_project_path ||
+    "F:\\Games\\AuroraVellum";
   const engInput = document.createElement("input");
-  engInput.type = "text";
-  engInput.placeholder = "5.8";
+  engInput.type = "hidden";
   engInput.value =
     (activeHost && activeHost.engine_version) ||
     a.scratch_engine_version ||
     "5.8";
-  engLabel.appendChild(engSpan);
-  engLabel.appendChild(engInput);
-  scratchForm.appendChild(engLabel);
 
-  const forceLabel = document.createElement("label");
-  forceLabel.className = "field";
-  const forceSpan = document.createElement("span");
-  forceSpan.textContent = "Force re-render";
-  const forceInput = document.createElement("input");
-  forceInput.type = "checkbox";
-  forceInput.title =
-    "Re-render even when vault lookdev already exists for this pack";
-  forceLabel.appendChild(forceSpan);
-  forceLabel.appendChild(forceInput);
-  scratchForm.appendChild(forceLabel);
+  const actions = document.createElement("div");
+  actions.className = "capture-actions";
 
   const captureBtn = document.createElement("button");
   captureBtn.type = "button";
   captureBtn.className = "btn";
   captureBtn.textContent = "Capture entire pack";
-  scratchForm.appendChild(captureBtn);
-  host.appendChild(scratchForm);
+  actions.appendChild(captureBtn);
+
+  const cancelBtn = document.createElement("button");
+  cancelBtn.type = "button";
+  cancelBtn.className = "btn btn-danger";
+  cancelBtn.textContent = "Cancel job";
+  cancelBtn.hidden = true;
+  actions.appendChild(cancelBtn);
+
+  const forceLabel = document.createElement("label");
+  forceLabel.className = "force-check";
+  const forceInput = document.createElement("input");
+  forceInput.type = "checkbox";
+  forceLabel.append(forceInput, document.createTextNode(" Force re-render"));
+  actions.appendChild(forceLabel);
+  captureSec.appendChild(actions);
 
   const liveRoot = document.createElement("section");
   liveRoot.className = "capture-live";
@@ -635,10 +520,10 @@ async function openDetail(id) {
   liveRoot.setAttribute("aria-live", "polite");
   const liveHead = document.createElement("div");
   liveHead.className = "capture-live-head";
-  const liveTitle = document.createElement("h3");
+  const liveTitle = document.createElement("strong");
   liveTitle.textContent = "Live import";
   liveHead.appendChild(liveTitle);
-  const liveMeta = document.createElement("p");
+  const liveMeta = document.createElement("span");
   liveMeta.className = "capture-live-meta";
   liveMeta.textContent = "—";
   liveHead.appendChild(liveMeta);
@@ -650,74 +535,19 @@ async function openDetail(id) {
   const liveFeed = document.createElement("ul");
   liveFeed.className = "capture-live-feed";
   liveRoot.appendChild(liveFeed);
-  host.appendChild(liveRoot);
+  captureSec.appendChild(liveRoot);
+  host.appendChild(captureSec);
 
+  // ---- Lookdev ----
+  const lookdevSec = document.createElement("section");
+  lookdevSec.className = "detail-section";
   const lookdevHead = document.createElement("h3");
   lookdevHead.textContent = "Lookdev";
-  lookdevHead.style.marginTop = "1.5rem";
-  host.appendChild(lookdevHead);
-
-  const lookdevActions = document.createElement("div");
-  lookdevActions.className = "detail-actions";
-  const deriveBtn = document.createElement("button");
-  deriveBtn.type = "button";
-  deriveBtn.className = "btn";
-  deriveBtn.textContent = "Derive lookdev stills";
-  deriveBtn.addEventListener("click", async () => {
-    deriveBtn.disabled = true;
-    deriveBtn.textContent = "Queuing…";
-    try {
-      const res = await fetch("/api/lookdev/derive", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ asset_id: a.id }),
-      });
-      if (!res.ok) throw new Error(`derive ${res.status}`);
-      deriveBtn.textContent = "Queued";
-      setTimeout(() => openDetail(a.id), 1500);
-    } catch (err) {
-      deriveBtn.textContent = "Derive failed";
-      console.error(err);
-    }
-  });
-  lookdevActions.appendChild(deriveBtn);
-
-  const fileLabel = document.createElement("label");
-  fileLabel.className = "btn btn-secondary file-btn";
-  fileLabel.textContent = "Upload Niagara render";
-  const fileInput = document.createElement("input");
-  fileInput.type = "file";
-  fileInput.accept = "image/png,image/jpeg,image/webp";
-  fileInput.hidden = true;
-  fileInput.addEventListener("change", async () => {
-    const file = fileInput.files && fileInput.files[0];
-    if (!file) return;
-    fileLabel.textContent = "Uploading…";
-    try {
-      const fd = new FormData();
-      fd.append("asset_id", a.id);
-      fd.append("lane", "slots");
-      fd.append("note", "Niagara viewport still from Unreal scratch");
-      fd.append("file", file, file.name);
-      const res = await fetch("/api/lookdev/ingest-render", {
-        method: "POST",
-        body: fd,
-      });
-      if (!res.ok) throw new Error(`ingest ${res.status}`);
-      await openDetail(a.id);
-    } catch (err) {
-      fileLabel.textContent = "Upload failed";
-      console.error(err);
-    }
-  });
-  fileLabel.appendChild(fileInput);
-  fileLabel.addEventListener("click", () => fileInput.click());
-  lookdevActions.appendChild(fileLabel);
-  host.appendChild(lookdevActions);
-
+  lookdevSec.appendChild(lookdevHead);
   const lookdevHost = document.createElement("div");
   lookdevHost.className = "lookdev-grid";
-  host.appendChild(lookdevHost);
+  lookdevSec.appendChild(lookdevHost);
+  host.appendChild(lookdevSec);
 
   const startWatchForJob = (jobId) => {
     startCaptureWatch({
@@ -729,6 +559,7 @@ async function openDetail(id) {
       feedEl: liveFeed,
       lookdevHost,
       captureBtn,
+      cancelBtn,
     });
   };
 
@@ -741,7 +572,8 @@ async function openDetail(id) {
         const listed = await fetchJson(
           `/api/intake?asset_id=${encodeURIComponent(a.id)}&limit=1`
         );
-        intakeRunId = (listed.runs && listed.runs[0] && listed.runs[0].run_id) || null;
+        intakeRunId =
+          (listed.runs && listed.runs[0] && listed.runs[0].run_id) || null;
       } catch {
         /* ignore */
       }
@@ -762,7 +594,6 @@ async function openDetail(id) {
       const body = await res.json();
       const jobId = body.job && body.job.job_id;
       if (!jobId) throw new Error("missing job_id");
-      captureBtn.textContent = "Capturing pack…";
       startWatchForJob(jobId);
     } catch (err) {
       captureBtn.disabled = false;
@@ -780,21 +611,172 @@ async function openDetail(id) {
     console.error(err);
   }
 
-  // Resume live panel if Capture is already running for this asset.
+  // Active / orphaned capture job
+  let activeCapture = null;
+  let jobs = [];
   try {
     const jobsListed = await fetchJson(
       `/api/jobs?asset_id=${encodeURIComponent(a.id)}`
     );
-    const active = (jobsListed.jobs || []).find(
+    jobs = jobsListed.jobs || [];
+    activeCapture = jobs.find(
       (j) =>
         j.kind === "ue_capture" &&
         (j.status === "running" || j.status === "queued")
     );
-    if (active && active.job_id) startWatchForJob(active.job_id);
+    if (activeCapture) startWatchForJob(activeCapture.job_id);
   } catch (err) {
     console.warn(err);
   }
 
+  // ---- More (collapsed) ----
+  const more = document.createElement("details");
+  more.className = "detail-more";
+  const moreSum = document.createElement("summary");
+  moreSum.textContent = "More details";
+  more.appendChild(moreSum);
+
+  const dl = document.createElement("dl");
+  dl.className = "detail-meta";
+  addDlRow(dl, "Id", a.id);
+  addDlRow(dl, "Redeem by", formatDeadline(a.redemption_deadline));
+  addDlRow(dl, "Fit", a.project_fit || "—");
+  if (a.scratch_project_path) {
+    addDlRow(dl, "Scratch", a.scratch_project_path);
+  }
+  more.appendChild(dl);
+
+  if (activeHost && activeHost.host_specs) {
+    const s = activeHost.host_specs;
+    const specsP = document.createElement("p");
+    specsP.className = "fit";
+    const nvidia = s.nvidia_gpus && s.nvidia_gpus[0];
+    specsP.textContent = [
+      s.os_caption,
+      s.cpu && s.cpu[0] && s.cpu[0].name,
+      nvidia
+        ? `${nvidia.name} ${nvidia.vram_gb} GB`
+        : null,
+      (s.volumes || [])
+        .map((v) => `${v.device_id}${v.free_gb}G free`)
+        .join(" "),
+    ]
+      .filter(Boolean)
+      .join(" · ");
+    more.appendChild(specsP);
+  }
+
+  const jobsHead = document.createElement("h4");
+  jobsHead.textContent = "Recent jobs";
+  more.appendChild(jobsHead);
+  const jobsHost = document.createElement("div");
+  jobsHost.className = "jobs-list";
+  more.appendChild(jobsHost);
+  if (!jobs.length) {
+    const empty = document.createElement("p");
+    empty.className = "fit";
+    empty.textContent = "No jobs yet.";
+    jobsHost.appendChild(empty);
+  } else {
+    for (const job of jobs.slice(0, 6)) {
+      const row = document.createElement("div");
+      row.className = "job-row";
+      const label = document.createElement("span");
+      const shortId = String(job.job_id || "").replace(/^job-\d{8}-/, "");
+      label.textContent = `${job.kind} · ${shortId}`;
+      row.appendChild(label);
+      row.appendChild(makeStatusPill(job.status));
+      if (
+        job.kind === "ue_capture" &&
+        (job.status === "running" || job.status === "queued")
+      ) {
+        const miniCancel = document.createElement("button");
+        miniCancel.type = "button";
+        miniCancel.className = "btn btn-danger btn-tiny";
+        miniCancel.textContent = "Cancel";
+        miniCancel.addEventListener("click", async () => {
+          miniCancel.disabled = true;
+          try {
+            await cancelJob(job.job_id);
+            await openDetail(a.id);
+          } catch (err) {
+            miniCancel.disabled = false;
+            console.error(err);
+          }
+        });
+        row.appendChild(miniCancel);
+      }
+      jobsHost.appendChild(row);
+    }
+  }
+
+  const intakeWrap = document.createElement("div");
+  intakeWrap.className = "intake-compact";
+  const intakeHead = document.createElement("h4");
+  intakeHead.textContent = "Intake";
+  more.appendChild(intakeHead);
+  more.appendChild(intakeWrap);
+  try {
+    const listed = await fetchJson(
+      `/api/intake?asset_id=${encodeURIComponent(a.id)}&limit=1`
+    );
+    const runs = listed.runs || [];
+    if (!runs.length) {
+      const empty = document.createElement("p");
+      empty.className = "fit";
+      empty.textContent = "No intake run yet.";
+      intakeWrap.appendChild(empty);
+      const proposeBtn = document.createElement("button");
+      proposeBtn.type = "button";
+      proposeBtn.className = "btn btn-secondary";
+      proposeBtn.textContent = "Propose intake";
+      proposeBtn.addEventListener("click", async () => {
+        proposeBtn.disabled = true;
+        try {
+          await proposeIntake(a.id);
+          await openDetail(a.id);
+        } catch (err) {
+          proposeBtn.textContent = "Propose failed";
+          console.error(err);
+        }
+      });
+      intakeWrap.appendChild(proposeBtn);
+    } else {
+      const run = runs[0];
+      const line = document.createElement("p");
+      line.className = "fit";
+      line.textContent = `${run.run_id} · ${run.status}`;
+      intakeWrap.appendChild(line);
+    }
+  } catch (err) {
+    console.error(err);
+  }
+
+  const lookdevTools = document.createElement("div");
+  lookdevTools.className = "detail-actions";
+  const deriveBtn = document.createElement("button");
+  deriveBtn.type = "button";
+  deriveBtn.className = "btn btn-secondary";
+  deriveBtn.textContent = "Derive texture stills";
+  deriveBtn.addEventListener("click", async () => {
+    deriveBtn.disabled = true;
+    try {
+      const res = await fetch("/api/lookdev/derive", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ asset_id: a.id }),
+      });
+      if (!res.ok) throw new Error(`derive ${res.status}`);
+      deriveBtn.textContent = "Queued";
+    } catch (err) {
+      deriveBtn.textContent = "Derive failed";
+      console.error(err);
+    }
+  });
+  lookdevTools.appendChild(deriveBtn);
+  more.appendChild(lookdevTools);
+
+  host.appendChild(more);
   $("detail").hidden = false;
 }
 

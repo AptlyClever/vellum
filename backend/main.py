@@ -298,6 +298,23 @@ def api_jobs_claim(body: JobClaimRequest) -> dict[str, Any]:
     return {"schema_version": 1, "job": job}
 
 
+class JobCancelRequest(BaseModel):
+    reason: str | None = Field(default="operator_cancelled", max_length=4000)
+
+
+@app.post("/api/jobs/{job_id}/cancel")
+def api_jobs_cancel(job_id: str, body: JobCancelRequest | None = None) -> dict[str, Any]:
+    """Cancel a queued/running job (UI: orphaned Capture, stop before re-queue)."""
+    reason = (body.reason if body else None) or "operator_cancelled"
+    try:
+        cancelled = jobs_mod.cancel_job(job_id, reason=reason)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="job_not_found") from None
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from None
+    return {"schema_version": 1, "job": cancelled}
+
+
 @app.post("/api/jobs/{job_id}/report")
 def api_jobs_report(job_id: str, body: JobReportRequest) -> dict[str, Any]:
     """External agent reports success/failure for a claimed job."""
