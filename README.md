@@ -39,7 +39,8 @@ pytest -q
 - **A (shipped):** register + browse UI, redeem-by green/red, `/api/health`, Compose on `:8770`
 - **B (shipped):** IntakeRun propose API + UI (`docs/api-intake.md`)
 - **C (shipped):** SQLite job queue + `vellum-worker`; enqueue automatable IntakeRun steps
-- **Next:** D — Axiom Read nav + embed polish
+- **D (shipped):** Axiom Read `#/axiom/vellum` + `?embed=axiom`
+- **Next:** E — drive brittle imports with human checkpoints
 
 ## Boundaries
 

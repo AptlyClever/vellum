@@ -1,8 +1,8 @@
 # Development Tracker: Vellum
 
-> **Current Active Issue:** Slice D — Axiom Read nav + embed polish
+> **Current Active Issue:** Slice E — Drive downloads/imports with human checkpoints
 > **Governing CFD:** `cfd-inspiration-20260713-015950-vellum-control-alt-games-asset-vault-register-in`
-> **Next Immediate Step:** Hardcode Vellum under Axiom Read in `Shell.tsx` (plan task `task-vellum-slice-d-axiom-read`)
+> **Next Immediate Step:** Drive one brittle Epic/Unity import path with honest needs-human gates (plan task `task-vellum-slice-e-drive-imports`)
 
 ---
 
@@ -10,6 +10,7 @@
 *Keep your commands here so you never have to search for them.*
 
 * **UI:** http://192.168.68.93:8770/
+* **Axiom Read:** http://192.168.68.93:7895/#/axiom/vellum
 * **Health:** `curl -sS http://192.168.68.93:8770/api/health`
 * **Propose intake:** `curl -sS -X POST http://192.168.68.93:8770/api/intake/propose -H 'Content-Type: application/json' -d '{"asset_id":"portal-vfx-enhanced","requested_by":"agent"}'`
 * **Enqueue automatable:** `curl -sS -X POST http://192.168.68.93:8770/api/intake/{run_id}/enqueue-automatable`
@@ -23,11 +24,11 @@
 
 ## 2. The Active Issue (Do Not Add Steps Here!)
 
-* **What success looks like:** Vellum appears under Axiom leftnav **Read** (hardcoded like other surfaces); embed loads cleanly at `:8770`.
+* **What success looks like:** At least one real download/import path can be driven with agent help and honest human checkpoints (no fake Epic autopilot).
 * **Sub-Tasks:**
-  - [ ] Hardcode Read nav entry in Axiom `Shell.tsx`
-  - [ ] Confirm registry embed settings for `vellum`
-  - [ ] Smoke open from Axiom → Vellum UI
+  - [ ] Pick one brittle store path (Epic or Unity)
+  - [ ] Document/drive human redeem + download checkpoints
+  - [ ] Stage result into vault via existing jobs
 
 ---
 
@@ -35,7 +36,7 @@
 *Ideas deferred until the active issue completes.*
 
 * Unity tier contents unresolved until redemption / library inspection.
-* Slice E–F (drive imports, lookdev derive).
+* Slice F (lookdev derive).
 * Optional deeper AI fit-tagging.
 
 ---
@@ -50,3 +51,4 @@
 * **2026-07-13** — **Slice A shipped:** register + browse + redeem-by lights on `:8770`.
 * **2026-07-13** — **Slice B shipped:** IntakeRun propose/list/get/patch-step API; honest needs-human/blocked steps; detail UI “Propose intake”; `docs/api-intake.md`. Active issue → Slice C.
 * **2026-07-13** — **Slice C shipped:** SQLite jobs + `vellum-worker`; enqueue automatable steps; job status API/UI. Epic/Unity stay needs-human. Active issue → Slice D.
+* **2026-07-13** — **Slice D shipped:** Axiom Read nav `#/axiom/vellum` (Shell hardcode + registry embed); Vellum `?embed=axiom` chrome. Active issue → Slice E.

@@ -357,6 +357,17 @@ $("detail-close").addEventListener("click", () => {
   $("detail").hidden = true;
 });
 
+(function applyEmbedMode() {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("embed") === "axiom") {
+      document.body.setAttribute("data-embed", "axiom");
+    }
+  } catch {
+    /* ignore */
+  }
+})();
+
 $("q").addEventListener("input", debounce(refresh, 180));
 $("engine").addEventListener("change", refresh);
 $("redeem").addEventListener("change", refresh);
