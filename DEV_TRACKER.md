@@ -1,8 +1,8 @@
 # Development Tracker: Vellum
 
-> **Current Active Issue:** Slice C — Worker stage jobs (API + background worker)
+> **Current Active Issue:** Slice D — Axiom Read nav + embed polish
 > **Governing CFD:** `cfd-inspiration-20260713-015950-vellum-control-alt-games-asset-vault-register-in`
-> **Next Immediate Step:** Add Conduit-style worker for long stage/scan jobs (plan task `task-vellum-slice-c-worker`)
+> **Next Immediate Step:** Hardcode Vellum under Axiom Read in `Shell.tsx` (plan task `task-vellum-slice-d-axiom-read`)
 
 ---
 
@@ -12,8 +12,10 @@
 * **UI:** http://192.168.68.93:8770/
 * **Health:** `curl -sS http://192.168.68.93:8770/api/health`
 * **Propose intake:** `curl -sS -X POST http://192.168.68.93:8770/api/intake/propose -H 'Content-Type: application/json' -d '{"asset_id":"portal-vfx-enhanced","requested_by":"agent"}'`
-* **Intake API docs:** `docs/api-intake.md`
-* **Compose:** `docker compose up -d --build` (port **8770**)
+* **Enqueue automatable:** `curl -sS -X POST http://192.168.68.93:8770/api/intake/{run_id}/enqueue-automatable`
+* **Jobs:** `curl -sS 'http://192.168.68.93:8770/api/jobs?asset_id=portal-vfx-enhanced'`
+* **Intake/jobs API docs:** `docs/api-intake.md`
+* **Compose:** `docker compose up -d --build` (app + worker, port **8770**)
 * **Tests:** `PYTHONPATH=. pytest -q`
 * **Governing CFD:** `#/axiom/praxis-tracker?inspiration=cfd-inspiration-20260713-015950-vellum-control-alt-games-asset-vault-register-in`
 
@@ -21,12 +23,11 @@
 
 ## 2. The Active Issue (Do Not Add Steps Here!)
 
-* **What success looks like:** Long vault work (stage/scan) leaves the HTTP request; job status is visible; agents use the same job API as the UI.
+* **What success looks like:** Vellum appears under Axiom leftnav **Read** (hardcoded like other surfaces); embed loads cleanly at `:8770`.
 * **Sub-Tasks:**
-  - [ ] Background worker process (Conduit-shaped)
-  - [ ] Enqueue stage/scan from IntakeRun steps that are automatable
-  - [ ] Job status API + UI surface
-  - [ ] Keep needs-human steps honest (no fake Epic autopilot)
+  - [ ] Hardcode Read nav entry in Axiom `Shell.tsx`
+  - [ ] Confirm registry embed settings for `vellum`
+  - [ ] Smoke open from Axiom → Vellum UI
 
 ---
 
@@ -34,7 +35,7 @@
 *Ideas deferred until the active issue completes.*
 
 * Unity tier contents unresolved until redemption / library inspection.
-* Slice D–F (Axiom Read nav, drive imports, lookdev derive).
+* Slice E–F (drive imports, lookdev derive).
 * Optional deeper AI fit-tagging.
 
 ---
@@ -48,3 +49,4 @@
 * **2026-07-13** — Added `vellum` to handoff `registry/projects.yaml`; Axiom mount + bind-cfd verified.
 * **2026-07-13** — **Slice A shipped:** register + browse + redeem-by lights on `:8770`.
 * **2026-07-13** — **Slice B shipped:** IntakeRun propose/list/get/patch-step API; honest needs-human/blocked steps; detail UI “Propose intake”; `docs/api-intake.md`. Active issue → Slice C.
+* **2026-07-13** — **Slice C shipped:** SQLite jobs + `vellum-worker`; enqueue automatable steps; job status API/UI. Epic/Unity stay needs-human. Active issue → Slice D.

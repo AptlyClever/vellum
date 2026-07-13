@@ -124,11 +124,11 @@ function addDlRow(dl, term, value) {
 function makeStatusPill(status) {
   const span = document.createElement("span");
   const kind =
-    status === "done"
+    status === "done" || status === "succeeded"
       ? "open"
-      : status === "blocked"
+      : status === "blocked" || status === "failed"
         ? "expired"
-        : status === "needs-human"
+        : status === "needs-human" || status === "queued" || status === "running"
           ? "needs"
           : "unknown";
   span.className = `pill ${kind}`;
@@ -153,6 +153,30 @@ function renderIntakeRun(host, run) {
   meta.textContent = `requested_by=${run.requested_by || "?"} · ${run.steps?.length || 0} steps`;
   wrap.appendChild(meta);
 
+  const enqueueBtn = document.createElement("button");
+  enqueueBtn.type = "button";
+  enqueueBtn.className = "btn btn-secondary";
+  enqueueBtn.textContent = "Enqueue automatable jobs";
+  enqueueBtn.addEventListener("click", async () => {
+    enqueueBtn.disabled = true;
+    enqueueBtn.textContent = "Enqueueing…";
+    try {
+      const res = await fetch(
+        `/api/intake/${encodeURIComponent(run.run_id)}/enqueue-automatable`,
+        { method: "POST" }
+      );
+      if (!res.ok) throw new Error(`enqueue ${res.status}`);
+      const body = await res.json();
+      enqueueBtn.textContent = `Queued ${body.count}`;
+      // Give worker a moment, then refresh detail
+      setTimeout(() => openDetail(run.asset_id), 1200);
+    } catch (err) {
+      enqueueBtn.textContent = "Enqueue failed";
+      console.error(err);
+    }
+  });
+  wrap.appendChild(enqueueBtn);
+
   const ol = document.createElement("ol");
   ol.className = "intake-steps";
   for (const step of run.steps || []) {
@@ -169,6 +193,12 @@ function renderIntakeRun(host, run) {
       d.className = "fit";
       d.textContent = step.detail;
       li.appendChild(d);
+    }
+    if (step.notes) {
+      const n = document.createElement("p");
+      n.className = "fit";
+      n.textContent = `notes: ${step.notes}`;
+      li.appendChild(n);
     }
     ol.appendChild(li);
   }
@@ -206,13 +236,8 @@ async function openDetail(id) {
     proposeBtn.disabled = true;
     proposeBtn.textContent = "Proposing…";
     try {
-      const run = await proposeIntake(a.id);
+      await proposeIntake(a.id);
       await openDetail(a.id);
-      const anchor = document.getElementById("intake-latest");
-      if (anchor) {
-        clear(anchor);
-        renderIntakeRun(anchor, run);
-      }
     } catch (err) {
       proposeBtn.textContent = "Propose failed";
       console.error(err);
@@ -259,6 +284,46 @@ async function openDetail(id) {
       latest.appendChild(empty);
     } else {
       for (const run of runs) renderIntakeRun(latest, run);
+    }
+  } catch (err) {
+    console.error(err);
+  }
+
+  const jobsHead = document.createElement("h3");
+  jobsHead.textContent = "Jobs";
+  jobsHead.style.marginTop = "1.5rem";
+  host.appendChild(jobsHead);
+
+  const jobsHost = document.createElement("div");
+  jobsHost.className = "jobs-list";
+  host.appendChild(jobsHost);
+
+  try {
+    const jobsListed = await fetchJson(
+      `/api/jobs?asset_id=${encodeURIComponent(a.id)}`
+    );
+    const jobs = jobsListed.jobs || [];
+    if (!jobs.length) {
+      const empty = document.createElement("p");
+      empty.className = "fit";
+      empty.textContent = "No jobs yet. Enqueue automatable steps from an IntakeRun.";
+      jobsHost.appendChild(empty);
+    } else {
+      for (const job of jobs.slice(0, 8)) {
+        const row = document.createElement("div");
+        row.className = "job-row";
+        const label = document.createElement("span");
+        label.textContent = `${job.kind} · ${job.job_id}`;
+        row.appendChild(label);
+        row.appendChild(makeStatusPill(job.status));
+        jobsHost.appendChild(row);
+        if (job.error) {
+          const err = document.createElement("p");
+          err.className = "fit";
+          err.textContent = job.error;
+          jobsHost.appendChild(err);
+        }
+      }
     }
   } catch (err) {
     console.error(err);

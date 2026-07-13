@@ -12,6 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from . import intake as intake_mod
+from . import jobs as jobs_mod
 from . import register as register_mod
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -26,8 +27,8 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(
     title="Vellum",
-    description="Control Alt Games asset vault — register, browse, intake propose.",
-    version="0.2.0",
+    description="Control Alt Games asset vault — register, intake propose, background jobs.",
+    version="0.3.0",
     lifespan=lifespan,
 )
 
@@ -43,16 +44,26 @@ class IntakeStepPatchRequest(BaseModel):
     notes: str | None = Field(default=None, max_length=4000)
 
 
+class JobEnqueueRequest(BaseModel):
+    kind: str = Field(min_length=1, max_length=64)
+    asset_id: str | None = Field(default=None, max_length=200)
+    intake_run_id: str | None = Field(default=None, max_length=200)
+    step_id: str | None = Field(default=None, max_length=120)
+    payload: dict[str, Any] = Field(default_factory=dict)
+
+
 @app.get("/api/health")
 def health() -> dict[str, Any]:
     summary = register_mod.register_summary()
     runs = intake_mod.list_runs(limit=5)
+    queued = jobs_mod.list_jobs(status="queued", limit=20)
     return {
         "ok": True,
         "app": "vellum",
         "brand_family": "control-alt-games",
         "register": summary,
         "intake_runs_recent": len(runs),
+        "jobs_queued": len(queued),
     }
 
 
@@ -128,6 +139,47 @@ def api_intake_patch_step(run_id: str, step_id: str, body: IntakeStepPatchReques
         raise HTTPException(status_code=404, detail=detail) from e
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
+
+
+@app.post("/api/intake/{run_id}/enqueue-automatable")
+def api_intake_enqueue_automatable(run_id: str) -> dict[str, Any]:
+    try:
+        jobs = jobs_mod.enqueue_automatable_for_run(run_id)
+    except KeyError as e:
+        raise HTTPException(status_code=404, detail="intake_run_not_found") from e
+    return {"schema_version": 1, "count": len(jobs), "jobs": jobs}
+
+
+@app.post("/api/jobs")
+def api_jobs_enqueue(body: JobEnqueueRequest) -> dict[str, Any]:
+    allowed = {"prepare_stage", "record_paths", "confirm_project_fit"}
+    if body.kind not in allowed:
+        raise HTTPException(status_code=400, detail=f"kind must be one of {sorted(allowed)}")
+    return jobs_mod.enqueue_job(
+        kind=body.kind,
+        asset_id=body.asset_id,
+        intake_run_id=body.intake_run_id,
+        step_id=body.step_id,
+        payload=body.payload,
+    )
+
+
+@app.get("/api/jobs")
+def api_jobs_list(
+    status: str | None = Query(default=None),
+    asset_id: str | None = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=200),
+) -> dict[str, Any]:
+    jobs = jobs_mod.list_jobs(status=status, asset_id=asset_id, limit=limit)
+    return {"schema_version": 1, "count": len(jobs), "jobs": jobs}
+
+
+@app.get("/api/jobs/{job_id}")
+def api_jobs_get(job_id: str) -> dict[str, Any]:
+    job = jobs_mod.get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="job_not_found")
+    return job
 
 
 @app.get("/")

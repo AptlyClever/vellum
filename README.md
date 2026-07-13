@@ -38,7 +38,8 @@ pytest -q
 
 - **A (shipped):** register + browse UI, redeem-by green/red, `/api/health`, Compose on `:8770`
 - **B (shipped):** IntakeRun propose API + UI (`docs/api-intake.md`)
-- **Next:** C — worker stage jobs
+- **C (shipped):** SQLite job queue + `vellum-worker`; enqueue automatable IntakeRun steps
+- **Next:** D — Axiom Read nav + embed polish
 
 ## Boundaries
 

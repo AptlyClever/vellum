@@ -244,6 +244,27 @@ table.assets tbody tr:last-child td {
   cursor: wait;
 }
 
+.btn-secondary {
+  margin-top: 0.5rem;
+  color: var(--ink);
+  background: transparent;
+  border-color: var(--line);
+}
+
+.jobs-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.job-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  font-size: 0.9rem;
+}
+
 .intake-run {
   margin-top: 0.85rem;
   padding-top: 0.85rem;

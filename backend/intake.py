@@ -1,7 +1,7 @@
 """Vellum IntakeRun — propose staged intake plans (Slice B).
 
 Honest about brittle Epic/Unity steps: many steps start as needs-human.
-Does not download or import yet (Slice C/E).
+Does not download or import Epic/Unity packs (Slice E). Automatable vault steps run via jobs (Slice C).
 """
 
 from __future__ import annotations

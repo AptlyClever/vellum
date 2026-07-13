@@ -13,11 +13,13 @@ services:
       VELLUM_REGISTER_PATH: /app/data/asset-register.yaml
       VELLUM_SEED_PATH: /app/config/humble-seed.yaml
       VELLUM_INTAKE_RUNS_PATH: /app/data/intake-runs.yaml
-      VELLUM_VAULT_REGISTER_PATH: /vault/02-index/asset-register.yaml
-      VELLUM_VAULT_INTAKE_RUNS_PATH: /vault/02-index/intake-runs.yaml
+      VELLUM_JOBS_DB_PATH: /app/data/jobs.sqlite3
+      VELLUM_VAULT_ROOT: /mnt/data/vault/vellum
+      VELLUM_VAULT_REGISTER_PATH: /mnt/data/vault/vellum/02-index/asset-register.yaml
+      VELLUM_VAULT_INTAKE_RUNS_PATH: /mnt/data/vault/vellum/02-index/intake-runs.yaml
     volumes:
       - ./data:/app/data
-      - /mnt/data/vault/vellum:/vault
+      - /mnt/data/vault/vellum:/mnt/data/vault/vellum
     healthcheck:
       test:
         [
@@ -29,6 +31,28 @@ services:
       retries: 5
       start_period: 10s
 
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: vellum-worker
+    restart: unless-stopped
+    command: ["python", "-m", "backend.worker"]
+    environment:
+      PYTHONPATH: /app
+      VELLUM_REGISTER_PATH: /app/data/asset-register.yaml
+      VELLUM_SEED_PATH: /app/config/humble-seed.yaml
+      VELLUM_INTAKE_RUNS_PATH: /app/data/intake-runs.yaml
+      VELLUM_JOBS_DB_PATH: /app/data/jobs.sqlite3
+      VELLUM_VAULT_ROOT: /mnt/data/vault/vellum
+      VELLUM_VAULT_REGISTER_PATH: /mnt/data/vault/vellum/02-index/asset-register.yaml
+      VELLUM_VAULT_INTAKE_RUNS_PATH: /mnt/data/vault/vellum/02-index/intake-runs.yaml
+    volumes:
+      - ./data:/app/data
+      - /mnt/data/vault/vellum:/mnt/data/vault/vellum
+    depends_on:
+      - app
+
   test:
     build:
       context: .
@@ -39,3 +63,6 @@ services:
       PYTHONPATH: /app
       VELLUM_REGISTER_PATH: /tmp/vellum-test-register.yaml
       VELLUM_SEED_PATH: /app/config/humble-seed.yaml
+      VELLUM_INTAKE_RUNS_PATH: /tmp/vellum-test-intake.yaml
+      VELLUM_JOBS_DB_PATH: /tmp/vellum-test-jobs.sqlite3
+      VELLUM_VAULT_ROOT: /tmp/vellum-test-vault
