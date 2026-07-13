@@ -60,8 +60,11 @@ Humble → Epic redeem / first Add to Project only.
 1. **`##PlatformValidate: Linux INVALID`** (and Mac/Android/etc.) during UE
    startup is normal on a Windows-only box. It is **not** the capture script
    importing Linux modules.
-2. **`no_png:...:exit=0`** — check `Saved/VellumCapture/ue-game-<n>.log`. Older
-   runners put `HighResShot,quit` on one line (PNG never flushed). Current
-   runner fingerprint must say `game-mode-capture-map-settled`.
+2. **`no_png:...:exit=0`** — check `Saved/VellumCapture/ue-game-<n>.log` and
+   whether PNGs already exist under `Saved/` (Windows PowerShell `-Include`
+   without `\*` often returns empty — runners before
+   `game-mode-gui-failfast-filterfix` could miss real screenshots). Current
+   fingerprint: `game-mode-gui-failfast-filterfix`.
 3. **`bake_failed` / `bake_no_result`** — see `ue-bake-<n>.log`.
 4. Restart the agent after every `git pull`.
+5. Chromium `Software\Chromium` result 5 is noise from UE's embedded browser.

@@ -83,6 +83,19 @@ function Find-UeEditor {
   return $CmdPath
 }
 
+function Get-ImageFiles {
+  # Windows PowerShell: -Include without a trailing \* often returns NOTHING.
+  # Prefer -Filter (one extension per call) + -File.
+  param([string]$Root, [string[]]$Extensions = @("*.png", "*.jpg", "*.jpeg", "*.bmp"))
+  if (-not (Test-Path $Root)) { return @() }
+  $found = New-Object System.Collections.Generic.List[object]
+  foreach ($ext in $Extensions) {
+    Get-ChildItem -Path $Root -Recurse -File -Filter $ext -ErrorAction SilentlyContinue |
+      ForEach-Object { $found.Add($_) }
+  }
+  return @($found)
+}
+
 function Find-RecentImages {
   param(
     [string[]]$Roots,
@@ -91,13 +104,16 @@ function Find-RecentImages {
   )
   $found = New-Object System.Collections.Generic.List[object]
   foreach ($root in $Roots) {
-    if (-not (Test-Path $root)) { continue }
-    Get-ChildItem -Path $root -Recurse -Include *.png,*.jpg,*.jpeg,*.bmp -ErrorAction SilentlyContinue |
-      Where-Object {
-        $_.LastWriteTime -ge $Since.AddSeconds(-5) -and
-        ($NameHint -eq "" -or $_.Name -like "*$NameHint*" -or $_.DirectoryName -like "*VellumCapture*" -or $_.DirectoryName -like "*Screenshots*")
-      } |
-      ForEach-Object { $found.Add($_) }
+    foreach ($img in (Get-ImageFiles -Root $root)) {
+      if ($img.LastWriteTime -lt $Since.AddSeconds(-5)) { continue }
+      if ($NameHint -ne "" -and
+          $img.Name -notlike "*$NameHint*" -and
+          $img.DirectoryName -notlike "*VellumCapture*" -and
+          $img.DirectoryName -notlike "*Screenshots*") {
+        continue
+      }
+      $found.Add($img)
+    }
   }
   return @($found | Sort-Object LastWriteTime -Descending)
 }
@@ -105,11 +121,20 @@ function Find-RecentImages {
 function Get-SavedTreeSnippet {
   param([string]$SavedRoot, [int]$MaxLines = 30)
   if (-not (Test-Path $SavedRoot)) { return "(no Saved dir)" }
-  $lines = Get-ChildItem -Path $SavedRoot -Recurse -Include *.png,*.jpg,*.jpeg,*.bmp -ErrorAction SilentlyContinue |
+  $lines = Get-ImageFiles -Root $SavedRoot |
     Sort-Object LastWriteTime -Descending |
     Select-Object -First $MaxLines |
     ForEach-Object { "{0:u}  {1}" -f $_.LastWriteTime.ToUniversalTime(), $_.FullName }
   if (-not $lines) { return "(no images under Saved/)" }
+  return ($lines -join "`n")
+}
+
+function Get-LogShotSnippet([string]$LogPath) {
+  if (-not (Test-Path $LogPath)) { return "(no game log)" }
+  $lines = Select-String -Path $LogPath -Pattern "HighResShot|Screenshot|Shot |Writing|filename=|Error:|Fatal|LogViewport|LogRenderer" -ErrorAction SilentlyContinue |
+    Select-Object -Last 40 |
+    ForEach-Object { $_.Line }
+  if (-not $lines) { return "(no HighResShot/Screenshot lines in log)" }
   return ($lines -join "`n")
 }
 
@@ -158,7 +183,7 @@ Write-Host "UE (editor/inventory): $Ue"
 Write-Host "UE (game stills): $UeGame"
 Write-Host "Project: $ProjectUe"
 Write-Host "MaxSystems=$MaxSystems Width=$Width Height=$Height MapPath=$MapPath"
-Write-Host "Runner version: game-mode-gui-failfast (2026-07-13)"
+Write-Host "Runner version: game-mode-gui-failfast-filterfix (2026-07-13)"
 
 $allErrors = New-Object System.Collections.Generic.List[string]
 $stills = New-Object System.Collections.Generic.List[object]
@@ -328,10 +353,14 @@ foreach ($sys in $pickedSystems) {
 
   if (-not $newPng) {
     $tree = Get-SavedTreeSnippet -SavedRoot (Join-Path $ProjectDir "Saved")
+    $shotLog = Get-LogShotSnippet -LogPath $GameLog
     $allErrors.Add("no_png:$systemName`:exit=$gameExit")
     $allErrors.Add("saved_images:`n$tree")
+    $allErrors.Add("shot_log:`n$shotLog")
     Write-Host "Phase B [$slotIndex] FAIL: no PNG after game still. Recent Saved/ images:"
     Write-Host $tree
+    Write-Host "---- shot log snippet ----"
+    Write-Host $shotLog
     Write-Host "Failing fast — not baking remaining systems until one still works."
     break
   }
