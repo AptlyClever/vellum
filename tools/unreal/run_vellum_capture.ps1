@@ -377,21 +377,30 @@ function Get-LookdevOutputs {
 }
 
 function Get-VaultCoveredSystemSet {
-  # Fast set of system names that already have niagara-render on every required lane.
+  # Only treat Capture runner provenance as done. Recover / pre-harden afternoon
+  # MRP rows must NOT satisfy skip (they were recorded under broken host paths).
   param(
     [object[]]$Outputs,
-    [string[]]$Lanes
+    [string[]]$Lanes,
+    [datetime]$TrustedAfterUtc,
+    [string]$TrustedNoteNeedle = "via mrq-batch"
   )
   $bySystem = @{}
   foreach ($o in @($Outputs)) {
     if ([string]$o.kind -ne "niagara-render") { continue }
     $lane = [string]$o.lane
     if ($Lanes -notcontains $lane) { continue }
+    $note = [string]$o.note
+    if ($TrustedNoteNeedle -and ($note -notlike "*$TrustedNoteNeedle*")) { continue }
+    $created = $null
+    try { $created = [datetime]::Parse([string]$o.created_at, $null, [System.Globalization.DateTimeStyles]::RoundtripKind) } catch { $created = $null }
+    if ($null -eq $created) { continue }
+    if ($created.ToUniversalTime() -lt $TrustedAfterUtc) { continue }
     $exact = [string]$o.system_name
     if ($exact -and $exact.StartsWith("NS_")) {
       $names = @($exact)
     } else {
-      $blob = ("{0} {1} {2}" -f [string]$o.path, [string]$o.note, [string]$o.system_name)
+      $blob = ("{0} {1} {2}" -f [string]$o.path, $note, [string]$o.system_name)
       $names = @([regex]::Matches($blob, 'NS_[A-Za-z0-9_]+') | ForEach-Object { $_.Value })
     }
     foreach ($name in $names) {
@@ -409,6 +418,15 @@ function Get-VaultCoveredSystemSet {
     }
   }
   return $covered
+}
+
+function Test-LocalMrqTrusted {
+  # ingest_only only when on-disk frames are from the hardened Capture era.
+  param([string]$SeqOutDir, [datetime]$TrustedAfterUtc, [int]$MinFrames = 30)
+  $files = @(Get-ImageFiles -Root $SeqOutDir)
+  if ($files.Count -lt $MinFrames) { return $false }
+  $newest = ($files | Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1).LastWriteTimeUtc
+  return ($newest -ge $TrustedAfterUtc)
 }
 
 function Test-VaultHasSystemLookdev {
@@ -456,6 +474,14 @@ $OutDirUe = ConvertTo-UePath $OutDir
 $FrameCount = 120
 $FrameRate = 30
 $IngestLanes = @("slots", "hail-overlay")
+# Vault/local skip only trusts Capture outputs after the Cmd hang fixes + AbsLog harden.
+# Override: VELLUM_TRUSTED_CAPTURE_AFTER=2026-07-13T23:15:00Z
+$TrustedAfterUtc = [datetime]::Parse(
+  $(if ($env:VELLUM_TRUSTED_CAPTURE_AFTER) { $env:VELLUM_TRUSTED_CAPTURE_AFTER } else { "2026-07-13T23:15:00Z" }),
+  $null,
+  [System.Globalization.DateTimeStyles]::RoundtripKind
+).ToUniversalTime()
+Write-Host "TrustedCaptureAfterUtc=$TrustedAfterUtc (skip ignores recover/pre-harden vault)"
 $Ue = $null
 
 function Ensure-UeCmd {
@@ -665,7 +691,7 @@ $skipSw = [System.Diagnostics.Stopwatch]::StartNew()
 if (-not $ForceCapture -and $pickedSystems.Count -gt 0) {
   Send-VellumProgress -Message "Skip check: fetching vault lookdev..."
   $vaultOutputs = Get-LookdevOutputs -VellumBase $VellumBase -AssetId $AssetId -Required
-  $vaultCovered = Get-VaultCoveredSystemSet -Outputs $vaultOutputs -Lanes $IngestLanes
+  $vaultCovered = Get-VaultCoveredSystemSet -Outputs $vaultOutputs -Lanes $IngestLanes -TrustedAfterUtc $TrustedAfterUtc
   Write-Host "Skip check: vault outputs=$(@($vaultOutputs).Count) covered=$($vaultCovered.Count) force=$ForceCapture"
 }
 foreach ($sys in $pickedSystems) {
@@ -688,9 +714,9 @@ foreach ($sys in $pickedSystems) {
     [void]$skippedVault.Add($skipEntry)
     continue
   }
-  $localFrames = @(Get-ImageFiles -Root $seqOutDir).Count
-  if ($localFrames -ge 30) {
-    $skipEntry.reason = "ingest_only_local_frames:$localFrames"
+  if (Test-LocalMrqTrusted -SeqOutDir $seqOutDir -TrustedAfterUtc $TrustedAfterUtc -MinFrames 30) {
+    $localFrames = @(Get-ImageFiles -Root $seqOutDir).Count
+    $skipEntry.reason = "ingest_only_trusted_local_frames:$localFrames"
     $skipEntry.sys = $sys
     [void]$toIngestOnly.Add($skipEntry)
     continue
@@ -1103,7 +1129,7 @@ $man = @{
   ok                    = (($coverageOk -and $allErrors.Count -eq 0) -or $vaultSkipOk)
   partial               = ((-not $coverageOk) -and ($gotNames.Count -gt 0))
   ingest_policy         = "per_system"
-  skip_policy           = "vault_hashset+ingest_only"
+  skip_policy           = "trusted_mrq_batch_after_cutoff+trusted_ingest_only"
 }
 ($man | ConvertTo-Json -Depth 8) | Set-Content -Path $Manifest -Encoding utf8
 
