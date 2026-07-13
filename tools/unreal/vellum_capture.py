@@ -5,11 +5,13 @@
 #
 # Config via env (preferred) or --key=value:
 #   VELLUM_ASSET_ID, VELLUM_CONTENT_ROOT, VELLUM_OUT_DIR
-#   VELLUM_CAPTURE_STILLS=1 (default) — framed Niagara spawn + console HighResShot
+#   VELLUM_CAPTURE_STILLS=1 (default) — framed Niagara + SceneCapture2D PNG
 #   VELLUM_MAX_SYSTEMS — how many systems to frame/shoot (default 3)
 #
-# Never call AutomationLibrary.take_high_res_screenshot under UnrealEditor-Cmd:
-# it AVs in FunctionalTesting.dll.
+# Prefer SceneCapture2D → render target → PNG under UnrealEditor-Cmd.
+# HighResShot is fallback only (often empty with -unattended).
+# Never call AutomationLibrary.take_high_res_screenshot (AV in FunctionalTesting).
+
 
 from __future__ import annotations
 
@@ -203,48 +205,39 @@ def _prepare_capture_stage(unreal_mod) -> list[str]:
     return notes
 
 
-def _set_viewport_camera(unreal_mod, location, rotation) -> None:
-    try:
-        unreal_mod.EditorLevelLibrary.set_level_viewport_camera_info(location, rotation)
-        return
-    except Exception:  # noqa: BLE001
-        pass
-    try:
-        # Some builds expose this on LevelEditorSubsystem helpers via EditorLevelLibrary only.
-        unreal_mod.SystemLibrary.execute_console_command(
-            _editor_world(unreal_mod),
-            f"BugItGo {location.x} {location.y} {location.z} {rotation.pitch} {rotation.yaw} {rotation.roll}",
-        )
-    except Exception:  # noqa: BLE001
-        pass
-
-
-def _frame_actor(unreal_mod, actor, upward_bias: float = 0.35) -> None:
-    """Place perspective camera to look at actor bounds (fireworks favor upward framing)."""
+def _camera_pose_for_actor(unreal_mod, actor, upward_bias: float = 0.45):
+    """Return (cam_location, cam_rotation, look_at, radius) for fireworks framing."""
     try:
         origin, extent = actor.get_actor_bounds(True)
     except Exception:  # noqa: BLE001
         origin = actor.get_actor_location()
-        extent = unreal_mod.Vector(200.0, 200.0, 200.0)
+        extent = unreal_mod.Vector(200.0, 200.0, 400.0)
 
-    radius = max(float(extent.x), float(extent.y), float(extent.z), 150.0)
-    # Pull back; raise camera so bursts sit in upper 2/3 of frame.
-    dist = max(radius * 4.0, 600.0)
+    radius = max(float(extent.x), float(extent.y), float(extent.z), 200.0)
+    # Fireworks expand upward — pull back and look slightly up into the burst.
+    dist = max(radius * 5.0, 900.0)
     cam = unreal_mod.Vector(
-        float(origin.x) - dist * 0.75,
-        float(origin.y) - dist * 0.75,
+        float(origin.x) - dist * 0.85,
+        float(origin.y) - dist * 0.55,
         float(origin.z) + dist * upward_bias,
     )
     look_at = unreal_mod.Vector(
         float(origin.x),
         float(origin.y),
-        float(origin.z) + radius * 0.6,
+        float(origin.z) + radius * 1.2,
     )
     try:
         rot = unreal_mod.MathLibrary.find_look_at_rotation(cam, look_at)
     except Exception:  # noqa: BLE001
-        rot = unreal_mod.Rotator(-20.0, 45.0, 0.0)
-    _set_viewport_camera(unreal_mod, cam, rot)
+        rot = unreal_mod.Rotator(-25.0, 40.0, 0.0)
+    return cam, rot, look_at, radius
+
+
+def _set_viewport_camera(unreal_mod, location, rotation) -> None:
+    try:
+        unreal_mod.EditorLevelLibrary.set_level_viewport_camera_info(location, rotation)
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def _get_niagara_component(unreal_mod, actor):
@@ -273,7 +266,6 @@ def _activate_and_advance(unreal_mod, component, sim_seconds: float) -> list[str
     except Exception as exc:  # noqa: BLE001
         notes.append(f"activate_failed:{exc}")
 
-    # Advance simulation so particles exist before the shot (editor may not tick).
     try:
         dt = 1.0 / 30.0
         ticks = max(1, int(math.ceil(sim_seconds / dt)))
@@ -292,32 +284,187 @@ def _activate_and_advance(unreal_mod, component, sim_seconds: float) -> list[str
     return notes
 
 
-def _screenshot_pngs(unreal_mod, before: set[Path]) -> list[Path]:
+def _export_render_target(unreal_mod, world, rt, dest: Path) -> tuple[bool, str]:
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    if dest.exists():
+        try:
+            dest.unlink()
+        except Exception:  # noqa: BLE001
+            pass
+
+    # Preferred: RenderingLibrary writes PNG beside the project.
+    try:
+        unreal_mod.RenderingLibrary.export_render_target(
+            world,
+            rt,
+            str(dest.parent).replace("\\", "/"),
+            dest.name,
+        )
+        if dest.is_file() and dest.stat().st_size > 64:
+            return True, "export_render_target"
+    except Exception as exc:  # noqa: BLE001
+        last = f"export_render_target:{exc}"
+    else:
+        last = "export_render_target_empty"
+
+    try:
+        opts = unreal_mod.ImageWriteOptions()
+        opts.set_editor_property("format", unreal_mod.DesiredImageFormat.PNG)
+        opts.set_editor_property("overwrite_file", True)
+        opts.set_editor_property("async", False)
+        unreal_mod.ImageWriteBlueprintLibrary.export_to_disk(
+            rt, str(dest).replace("\\", "/"), opts
+        )
+        time.sleep(0.5)
+        if dest.is_file() and dest.stat().st_size > 64:
+            return True, "image_write_blueprint"
+        last = "image_write_empty"
+    except Exception as exc:  # noqa: BLE001
+        last = f"image_write:{exc}"
+    return False, last
+
+
+def _capture_scene_to_png(
+    unreal_mod,
+    subject_actor,
+    dest: Path,
+    width: int,
+    height: int,
+) -> tuple[bool, list[str]]:
+    """
+    Headless-safe still: SceneCapture2D → render target → PNG.
+    HighResShot needs a live editor viewport and usually yields nothing under
+    UnrealEditor-Cmd -unattended.
+    """
+    notes: list[str] = []
+    world = _editor_world(unreal_mod)
+    actor_sub = _actor_subsystem(unreal_mod)
+    if world is None or actor_sub is None:
+        return False, ["no_world_or_actor_subsystem"]
+
+    cam, rot, _look, _radius = _camera_pose_for_actor(unreal_mod, subject_actor)
+    _set_viewport_camera(unreal_mod, cam, rot)  # best-effort; SceneCapture is authoritative
+
+    sc_actor = None
+    try:
+        sc_actor = actor_sub.spawn_actor_from_class(
+            unreal_mod.SceneCapture2D,
+            cam,
+            rot,
+            True,
+        )
+        if sc_actor is None:
+            return False, ["spawn_scenecapture_failed"]
+
+        sc = None
+        if hasattr(sc_actor, "capture_component2d") and sc_actor.capture_component2d:
+            sc = sc_actor.capture_component2d
+        else:
+            try:
+                sc = sc_actor.get_component_by_class(unreal_mod.SceneCaptureComponent2D)
+            except Exception:  # noqa: BLE001
+                sc = None
+        if sc is None:
+            return False, ["no_scenecapture_component"]
+
+        rt = unreal_mod.RenderingLibrary.create_render_target2D(
+            world,
+            int(width),
+            int(height),
+            unreal_mod.TextureRenderTargetFormat.RTF_RGBA8,
+        )
+        if rt is None:
+            return False, ["create_rt_failed"]
+
+        sc.set_editor_property("texture_target", rt)
+        try:
+            sc.set_editor_property("fov_angle", 70.0)
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            sc.set_editor_property("capture_every_frame", False)
+            sc.set_editor_property("capture_on_movement", False)
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            sc.set_editor_property(
+                "capture_source",
+                unreal_mod.SceneCaptureSource.SCS_FINAL_COLOR_LDR,
+            )
+        except Exception:  # noqa: BLE001
+            try:
+                sc.capture_source = unreal_mod.SceneCaptureSource.SCS_FINAL_COLOR_LDR
+            except Exception:  # noqa: BLE001
+                notes.append("capture_source_default")
+        try:
+            sc.set_editor_property(
+                "primitive_render_mode",
+                unreal_mod.SceneCapturePrimitiveRenderMode.PRM_RENDER_SCENE_PRIMITIVES,
+            )
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            sc.set_editor_property(
+                "clear_color",
+                unreal_mod.LinearColor(0.01, 0.02, 0.05, 1.0),
+            )
+        except Exception:  # noqa: BLE001
+            pass
+
+        # Ensure transform stuck after spawn.
+        try:
+            sc_actor.set_actor_location_and_rotation(cam, rot, False, True)
+        except Exception:  # noqa: BLE001
+            try:
+                sc_actor.set_actor_location(cam, False, True)
+                sc_actor.set_actor_rotation(rot, True)
+            except Exception:  # noqa: BLE001
+                pass
+
+        sc.capture_scene()
+        notes.append("capture_scene")
+        # Second capture after a short settle helps Niagara GPU systems.
+        time.sleep(0.25)
+        sc.capture_scene()
+        notes.append("capture_scene_2")
+
+        ok, how = _export_render_target(unreal_mod, world, rt, dest)
+        notes.append(how)
+        return ok, notes
+    except Exception as exc:  # noqa: BLE001
+        notes.append(f"scenecapture_exc:{exc}")
+        notes.append(traceback.format_exc()[-600:])
+        return False, notes
+    finally:
+        _destroy_actor(unreal_mod, sc_actor)
+
+
+def _console_highresshot_fallback(
+    unreal_mod, stills_dir: Path, dest: Path, width: int, height: int
+) -> tuple[bool, list[str]]:
+    notes: list[str] = []
     shot_root = Path(unreal_mod.Paths.project_saved_dir()) / "Screenshots"
+    before = set()
+    if shot_root.is_dir():
+        before = {p.resolve() for p in shot_root.rglob("*.png")}
+    world = _editor_world(unreal_mod)
+    try:
+        unreal_mod.SystemLibrary.execute_console_command(world, f"HighResShot {width}x{height}")
+        notes.append("highresshot_console")
+        time.sleep(2.5)
+    except Exception as exc:  # noqa: BLE001
+        return False, [f"highresshot_failed:{exc}"]
     if not shot_root.is_dir():
-        return []
-    return sorted(
+        return False, notes + ["no_screenshots_dir"]
+    new_pngs = sorted(
         (p for p in shot_root.rglob("*.png") if p.resolve() not in before),
         key=lambda p: p.stat().st_mtime,
     )
-
-
-def _console_highresshot(unreal_mod, width: int, height: int) -> list[str]:
-    notes: list[str] = []
-    world = _editor_world(unreal_mod)
-    try:
-        # Invalidate so the framed view is current.
-        try:
-            unreal_mod.EditorLevelLibrary.editor_invalidate_viewports()
-        except Exception:  # noqa: BLE001
-            pass
-        unreal_mod.SystemLibrary.execute_console_command(world, f"HighResShot {width}x{height}")
-        notes.append("highresshot_console")
-        # Allow ImageWriteQueue / slate to flush.
-        time.sleep(2.5)
-    except Exception as exc:  # noqa: BLE001
-        notes.append(f"highresshot_failed:{exc}")
-    return notes
+    if not new_pngs:
+        return False, notes + ["highresshot_no_file"]
+    dest.write_bytes(new_pngs[-1].read_bytes())
+    notes.append("highresshot_copied")
+    return True, notes
 
 
 def _destroy_actor(unreal_mod, actor) -> None:
@@ -337,7 +484,6 @@ def _spawn_niagara(unreal_mod, system_asset, location):
     """Spawn a NiagaraActor with the given system. Prefer spawn_from_object."""
     actor_sub = _actor_subsystem(unreal_mod)
     actor = None
-    # Best: spawn from the NiagaraSystem asset (engine places NiagaraActor).
     if actor_sub:
         try:
             actor = actor_sub.spawn_actor_from_object(
@@ -401,11 +547,6 @@ def _capture_framed_stills(
         errors.append("no_systems_to_frame")
         return stills, errors
 
-    shot_root = Path(unreal_mod.Paths.project_saved_dir()) / "Screenshots"
-    before_all = set()
-    if shot_root.is_dir():
-        before_all = {p.resolve() for p in shot_root.rglob("*.png")}
-
     for idx, asset_data in enumerate(picked):
         name = str(asset_data.asset_name)
         obj_path = _asset_object_path(asset_data)
@@ -417,7 +558,6 @@ def _capture_framed_stills(
                 errors.append(f"load_failed:{name}")
                 continue
 
-            # Space systems along X so leftovers don't stack if destroy fails.
             loc = unreal_mod.Vector(float(idx) * 2500.0, 0.0, 0.0)
             actor = _spawn_niagara(unreal_mod, system_asset, loc)
             if actor is None:
@@ -428,36 +568,35 @@ def _capture_framed_stills(
             adv_notes = _activate_and_advance(unreal_mod, comp, sim_seconds)
             unreal_mod.log(f"Vellum capture sim {name}: {', '.join(adv_notes)}")
 
-            _frame_actor(unreal_mod, actor)
-            time.sleep(0.35)
-
-            before = set(before_all)
-            if shot_root.is_dir():
-                before = {p.resolve() for p in shot_root.rglob("*.png")}
-
-            shot_notes = _console_highresshot(unreal_mod, width, height)
-            unreal_mod.log(f"Vellum capture shot {name}: {', '.join(shot_notes)}")
-
-            new_pngs = _screenshot_pngs(unreal_mod, before)
-            if not new_pngs:
-                errors.append(f"no_png:{name}")
-                continue
-
-            newest = new_pngs[-1]
             stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
             safe = "".join(c if c.isalnum() or c in "-_" else "_" for c in name)[:80]
             dest = stills_dir / f"{asset_id}-{safe}-{stamp}.png"
-            dest.write_bytes(newest.read_bytes())
+
+            ok, shot_notes = _capture_scene_to_png(unreal_mod, actor, dest, width, height)
+            unreal_mod.log(f"Vellum capture scenecapture {name}: {', '.join(shot_notes)}")
+
+            if not ok:
+                ok2, fb_notes = _console_highresshot_fallback(
+                    unreal_mod, stills_dir, dest, width, height
+                )
+                shot_notes.extend(fb_notes)
+                unreal_mod.log(f"Vellum capture fallback {name}: {', '.join(fb_notes)}")
+                ok = ok2
+
+            if not ok or not dest.is_file():
+                errors.append(f"no_png:{name}:{'|'.join(shot_notes)}")
+                continue
+
             stills.append(
                 {
                     "path": str(dest),
                     "kind": "niagara-render",
                     "system": name,
                     "object_path": obj_path,
+                    "method": "|".join(shot_notes),
                 }
             )
-            before_all.add(newest.resolve())
-            unreal_mod.log(f"Vellum capture saved still {dest}")
+            unreal_mod.log(f"Vellum capture saved still {dest} bytes={dest.stat().st_size}")
         except Exception as exc:  # noqa: BLE001
             errors.append(f"frame:{name}:{exc}")
             errors.append(traceback.format_exc()[-800:])

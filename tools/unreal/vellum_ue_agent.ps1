@@ -73,6 +73,8 @@ function Invoke-CaptureJob {
     $man = Get-Content $manifestPath -Raw | ConvertFrom-Json
   }
 
+  $errs = @()
+  if ($man -and $man.errors) { $errs = @($man.errors) }
   $result = @{
     project_path       = (Split-Path $uproject -Parent)
     engine_version     = $engineVersion
@@ -80,7 +82,11 @@ function Invoke-CaptureJob {
     niagara_systems    = if ($man) { $man.niagara_systems_found } else { 0 }
     stills             = if ($man) { @($man.stills).Count } else { 0 }
     manifest_ok        = [bool]$man.ok
+    stills_attempted   = if ($man) { [bool]$man.stills_attempted } else { $false }
+    mode               = if ($man) { [string]$man.mode } else { "" }
+    errors             = $errs
   }
+  Write-Host "Report stills=$($result.stills) attempted=$($result.stills_attempted) errors=$($errs -join '; ')"
 
   $report = @{
     result               = $result

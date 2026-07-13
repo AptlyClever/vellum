@@ -104,7 +104,8 @@ Write-Host "ExecutePythonScript: $CapturePyUe"
 Write-Host "VELLUM_OUT_DIR=$OutDirUe"
 Write-Host "VELLUM_CAPTURE_STILLS=$($env:VELLUM_CAPTURE_STILLS)"
 Write-Host "VELLUM_MAX_SYSTEMS=$($env:VELLUM_MAX_SYSTEMS)"
-Write-Host "Runner version: framed-niagara-spawn (2026-07-13)"
+Write-Host "Runner version: scenecapture-framed-niagara (2026-07-13)"
+
 
 
 $ueExit = 0
@@ -135,7 +136,11 @@ $logTail
 }
 
 $man = Get-Content $Manifest -Raw | ConvertFrom-Json
-$notes = "auto-capture systems=$($man.niagara_systems_found); stills=$($man.stills.Count); errors=$($man.errors -join ',')"
+$errJoin = ""
+if ($man.errors) { $errJoin = ($man.errors -join "; ") }
+$notes = "auto-capture systems=$($man.niagara_systems_found); stills=$($man.stills.Count); errors=$errJoin"
+Write-Host "Manifest mode=$($man.mode) stills_attempted=$($man.stills_attempted) stills=$($man.stills.Count)"
+if ($errJoin) { Write-Host "Manifest errors: $errJoin" }
 
 $scratchBody = @{
   asset_id             = $AssetId
