@@ -2,14 +2,8 @@
 # (Python Editor Script Plugin), via:
 #   UnrealEditor-Cmd.exe <uproject> -ExecutePythonScript=<staged script>
 #
-# Stills are NOT attempted here anymore. UnrealEditor-Cmd has no live viewport
-# under -unattended, so HighResShot and editor SceneCapture2D both returned
-# empty/zero PNGs no matter how the scene was staged. See
-# docs/scratch-inspect-niagara.md for the game-mode capture map that replaced
-# that dead end (tools/unreal/vellum_capture_bake_map.py + a `-game` launch).
-#
-# Config via env (preferred) or --key=value:
-#   VELLUM_ASSET_ID, VELLUM_CONTENT_ROOT, VELLUM_OUT_DIR, VELLUM_MAX_SYSTEMS
+# Finds NiagaraSystem assets for MRQ capture (docs/ue-mrq-capture.md).
+# Remote Desktop does NOT affect this step (Asset Registry / filesystem only).
 
 from __future__ import annotations
 
@@ -63,38 +57,112 @@ def _write_manifest(path: Path, payload: dict) -> None:
     tmp.replace(path)
 
 
-def _list_niagara(unreal_mod, registry, content_root: str) -> list:
+def _prime_asset_registry(unreal_mod, registry, notes: list[str]) -> None:
+    # Do NOT time.sleep on the game thread — it stalls registry completion under
+    # -ExecutePythonScript. Prefer synchronous scan + search_all_assets.
+    try:
+        registry.search_all_assets(True)
+        notes.append("search_all_assets")
+    except Exception as exc:  # noqa: BLE001
+        notes.append(f"search_all_assets_failed:{exc}")
+    try:
+        loading = bool(registry.is_loading_assets())
+        notes.append(f"is_loading_assets={loading}")
+    except Exception as exc:  # noqa: BLE001
+        notes.append(f"is_loading_assets_failed:{exc}")
+
+
+def _is_niagara_system_data(asset_data) -> bool:
+    for attr in ("asset_class_path", "asset_class"):
+        try:
+            val = str(getattr(asset_data, attr))
+            if "NiagaraSystem" in val:
+                return True
+        except Exception:  # noqa: BLE001
+            continue
+    try:
+        cls_path = asset_data.asset_class_path
+        if str(getattr(cls_path, "asset_name", "")) == "NiagaraSystem":
+            return True
+        if str(cls_path).endswith("NiagaraSystem"):
+            return True
+    except Exception:  # noqa: BLE001
+        pass
+    return False
+
+
+def _list_niagara_ar(unreal_mod, registry, content_root: str, notes: list[str]) -> list:
+    found: list = []
     try:
         ar_filter = unreal_mod.ARFilter(
             class_paths=[unreal_mod.TopLevelAssetPath("/Script/Niagara", "NiagaraSystem")],
             package_paths=[content_root],
             recursive_paths=True,
         )
-        return list(registry.get_assets(ar_filter) or [])
-    except Exception:  # noqa: BLE001
+        found = list(registry.get_assets(ar_filter) or [])
+        notes.append(f"ar_class_paths:{content_root}:{len(found)}")
+    except Exception as exc:  # noqa: BLE001
+        notes.append(f"ar_class_paths_failed:{content_root}:{exc}")
+    if found:
+        return found
+    try:
         ar_filter = unreal_mod.ARFilter(
             class_names=["NiagaraSystem"],
             package_paths=[content_root],
             recursive_paths=True,
         )
-        return list(registry.get_assets(ar_filter) or [])
+        found = list(registry.get_assets(ar_filter) or [])
+        notes.append(f"ar_class_names:{content_root}:{len(found)}")
+    except Exception as exc:  # noqa: BLE001
+        notes.append(f"ar_class_names_failed:{content_root}:{exc}")
+    return found
 
 
-def _resolve_content_root(unreal_mod, registry, preferred: str) -> tuple[str, list]:
-    """Try preferred root, then /Game (§12.4 = C)."""
-    roots: list[str] = []
-    for root in (preferred, "/Game"):
-        if root and root not in roots:
-            roots.append(root)
-    for root in roots:
+def _object_path_from_soft(path: str) -> str:
+    p = str(path).strip()
+    if not p:
+        return p
+    if "." in p.rsplit("/", 1)[-1]:
+        return p
+    name = p.rsplit("/", 1)[-1]
+    return f"{p}.{name}"
+
+
+def _list_niagara_library(unreal_mod, content_root: str, notes: list[str]) -> list[str]:
+    """Return soft object paths for Niagara systems via EditorAssetLibrary."""
+    paths: list[str] = []
+    try:
+        listed = unreal_mod.EditorAssetLibrary.list_assets(content_root, True, False) or []
+    except Exception as exc:  # noqa: BLE001
+        notes.append(f"list_assets_failed:{content_root}:{exc}")
+        return []
+    notes.append(f"list_assets:{content_root}:{len(listed)}")
+    for path in listed:
+        p = str(path)
         try:
-            registry.scan_paths_synchronous([root], True)
+            data = unreal_mod.EditorAssetLibrary.find_asset_data(p)
+            if data and _is_niagara_system_data(data):
+                pkg = str(getattr(data, "package_name", "") or p.split(".", 1)[0])
+                name = str(getattr(data, "asset_name", "") or pkg.rsplit("/", 1)[-1])
+                paths.append(f"{pkg}.{name}")
+                continue
         except Exception:  # noqa: BLE001
             pass
-        assets = _list_niagara(unreal_mod, registry, root)
-        if assets:
-            return root, assets
-    return preferred or "/Game", []
+        # Name heuristic when class metadata is missing during early registry
+        leaf = p.rsplit("/", 1)[-1]
+        name = leaf.split(".", 1)[0]
+        low = name.lower()
+        if low.startswith("ns_") or "niagara" in low:
+            paths.append(_object_path_from_soft(p))
+    # de-dupe preserve order
+    seen: set[str] = set()
+    uniq: list[str] = []
+    for op in paths:
+        if op not in seen:
+            seen.add(op)
+            uniq.append(op)
+    notes.append(f"list_assets_niagaraish:{content_root}:{len(uniq)}")
+    return uniq
 
 
 def _asset_object_path(asset_data) -> str:
@@ -103,8 +171,20 @@ def _asset_object_path(asset_data) -> str:
     return f"{pkg}.{name}"
 
 
+class _PathAsset:
+    """Minimal stand-in when we only have a soft path string."""
+
+    def __init__(self, object_path: str):
+        self._object_path = _object_path_from_soft(object_path)
+        if "." in self._object_path:
+            pkg, name = self._object_path.rsplit(".", 1)
+        else:
+            pkg, name = self._object_path, self._object_path.rsplit("/", 1)[-1]
+        self.package_name = pkg
+        self.asset_name = name
+
+
 def _pick_systems(assets: list, max_n: int) -> list:
-    """Prefer firework-ish names; otherwise alphabetical."""
     keywords = (
         "finale",
         "burst",
@@ -121,16 +201,81 @@ def _pick_systems(assets: list, max_n: int) -> list:
     )
     scored: list[tuple[int, str, object]] = []
     for a in assets:
-        name = str(a.asset_name)
+        name = str(getattr(a, "asset_name", a))
         low = name.lower()
         score = sum(3 for k in keywords if k in low)
         if low.startswith("ns_") or low.startswith("fx_"):
             score += 1
         if "test" in low or "tmp" in low:
             score -= 5
-        scored.append((score, name.lower(), a))
+        scored.append((score, low, a))
     scored.sort(key=lambda t: (-t[0], t[1]))
     return [t[2] for t in scored[: max(0, max_n)]]
+
+
+def _disk_diagnostics(unreal_mod, notes: list[str]) -> dict:
+    diag: dict = {}
+    try:
+        content_dir = Path(str(unreal_mod.Paths.project_content_dir()))
+    except Exception as exc:  # noqa: BLE001
+        notes.append(f"project_content_dir_failed:{exc}")
+        return diag
+    diag["project_content_dir"] = str(content_dir)
+    candidates = [
+        content_dir / "FireworksV1",
+        content_dir / "Fireworks",
+        content_dir / "FX",
+    ]
+    for folder in candidates:
+        exists = folder.is_dir()
+        notes.append(f"disk:{folder.name}:{'yes' if exists else 'no'}")
+        if not exists:
+            continue
+        uassets = list(folder.rglob("*.uasset"))
+        ns_ish = [p for p in uassets if p.name.lower().startswith("ns_")]
+        diag[folder.name] = {
+            "path": str(folder),
+            "uasset_count": len(uassets),
+            "ns_prefix_count": len(ns_ish),
+            "sample": [p.name for p in ns_ish[:8] or uassets[:8]],
+        }
+    # Top-level Content folders for "where did Fab put it?"
+    try:
+        top = sorted([p.name for p in content_dir.iterdir() if p.is_dir()])[:40]
+        diag["content_top_dirs"] = top
+        notes.append(f"content_top_dirs:{','.join(top[:15])}")
+    except Exception as exc:  # noqa: BLE001
+        notes.append(f"content_list_failed:{exc}")
+    return diag
+
+
+def _resolve_systems(unreal_mod, registry, preferred: str, notes: list[str]) -> tuple[str, list]:
+    roots: list[str] = []
+    for root in (
+        preferred,
+        "/Game/FireworksV1",
+        "/Game/Fireworks",
+        "/Game",
+    ):
+        if root and root not in roots:
+            roots.append(root)
+
+    for root in roots:
+        try:
+            registry.scan_paths_synchronous([root], True)
+            notes.append(f"scan:{root}")
+        except Exception as exc:  # noqa: BLE001
+            notes.append(f"scan_failed:{root}:{exc}")
+
+        ar_hits = _list_niagara_ar(unreal_mod, registry, root, notes)
+        if ar_hits:
+            return root, ar_hits
+
+        lib_paths = _list_niagara_library(unreal_mod, root, notes)
+        if lib_paths:
+            return root, [_PathAsset(p if "." in p else f"{p}.{p.rsplit('/', 1)[-1]}") for p in lib_paths]
+
+    return preferred or "/Game", []
 
 
 def main() -> None:
@@ -152,7 +297,9 @@ def main() -> None:
     systems: list[dict[str, str]] = []
     picked_paths: list[str] = []
     errors: list[str] = []
+    notes: list[str] = []
     assets: list = []
+    disk = {}
 
     unreal.log(
         f"Vellum inventory start asset_id={asset_id} content_root={content_root} "
@@ -161,19 +308,33 @@ def main() -> None:
 
     try:
         registry = unreal.AssetRegistryHelpers.get_asset_registry()
-        content_root, assets = _resolve_content_root(unreal, registry, content_root)
-        unreal.log(f"Vellum inventory resolved content_root={content_root} count={len(assets)}")
+        _prime_asset_registry(unreal, registry, notes)
+        disk = _disk_diagnostics(unreal, notes)
+        content_root, assets = _resolve_systems(unreal, registry, content_root, notes)
+        unreal.log(
+            f"Vellum inventory resolved content_root={content_root} count={len(assets)} notes={','.join(notes[-8:])}"
+        )
         picked = _pick_systems(assets, max_systems)
         for a in picked:
-            obj_path = _asset_object_path(a)
+            if isinstance(a, _PathAsset):
+                obj_path = a._object_path
+                pkg, name = a.package_name, a.asset_name
+            else:
+                obj_path = _asset_object_path(a)
+                pkg, name = str(a.package_name), str(a.asset_name)
             systems.append(
                 {
                     "object_path": obj_path,
-                    "package_name": str(a.package_name),
-                    "asset_name": str(a.asset_name),
+                    "package_name": pkg,
+                    "asset_name": name,
                 }
             )
             picked_paths.append(obj_path)
+        if not assets:
+            errors.append(
+                "no_niagara_systems_found — check Fab Add-to-Project landed under "
+                "Content/FireworksV1 (see disk diagnostics). Not an RDP issue."
+            )
     except Exception as exc:  # noqa: BLE001
         errors.append(f"inventory:{exc}")
         errors.append(traceback.format_exc()[-1200:])
@@ -192,6 +353,8 @@ def main() -> None:
         "niagara_systems_found": len(assets),
         "niagara_systems": systems,
         "picked_object_paths": picked_paths,
+        "notes": notes,
+        "disk": disk,
         "errors": errors,
         "ok": True,
     }

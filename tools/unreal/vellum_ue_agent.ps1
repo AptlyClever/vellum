@@ -136,7 +136,7 @@ Write-Host "UI trigger: asset detail → Capture from Unreal"
 Write-Host "Host profile: $($UeHost.id) ($($UeHost.label), $($UeHost.role)) — config active=$($UeHost.active_in_config)"
 Write-Host "Agent scripts: $Runner"
 Write-Host "Repo root: $RepoRoot"
-Write-Host "Agent fingerprint: mrq-sequencer (2026-07-13)"
+Write-Host "Agent fingerprint: mrq-sequencer-ue58 (2026-07-13)"
 $runnerVersionLine = (Get-Content $Runner | Where-Object { $_ -match "Runner version:" } | Select-Object -First 1)
 if (-not $runnerVersionLine) { $runnerVersionLine = "(no 'Runner version:' line found — old pull?)" }
 Write-Host "Runner fingerprint: $($runnerVersionLine.Trim())"

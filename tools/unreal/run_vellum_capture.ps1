@@ -233,7 +233,7 @@ $IngestLanes = @("slots", "hail-overlay")
 Write-Host "UE (Cmd): $Ue"
 Write-Host "Project: $ProjectUe"
 Write-Host "MaxSystems=$MaxSystems Width=$Width Height=$Height MapPath=$MapPath"
-Write-Host "Runner version: mrq-sequencer (2026-07-13)"
+Write-Host "Runner version: mrq-sequencer-ue58 (2026-07-13)"
 Write-Host "UE host: $($UeHost.id) ($($UeHost.label))"
 Write-Host "Ingest lanes: $($IngestLanes -join ', ')"
 if ($JobId) { Write-Host "JobId=$JobId (progress -> $VellumBase/api/jobs/$JobId/progress)" }
@@ -287,9 +287,19 @@ if ($inv.errors) { foreach ($e in @($inv.errors)) { [void]$allErrors.Add("invent
 if ($inv.content_root) { $ContentRoot = [string]$inv.content_root }
 $pickedSystems = @($inv.niagara_systems)
 Write-Host "Inventory systems_found=$($inv.niagara_systems_found) picked=$($pickedSystems.Count) content_root=$ContentRoot"
+if ($inv.notes) { Write-Host "Inventory notes: $((@($inv.notes) | Select-Object -First 12) -join ' | ')" }
+if ($inv.disk) {
+  try {
+    $diskJson = $inv.disk | ConvertTo-Json -Compress -Depth 5
+    Write-Host "Inventory disk: $diskJson"
+  } catch {
+    Write-Host "Inventory disk: (present)"
+  }
+}
 Send-VellumProgress -Message "Inventory done: found=$($inv.niagara_systems_found) picked=$($pickedSystems.Count) root=$ContentRoot"
 if ($pickedSystems.Count -eq 0) {
   [void]$allErrors.Add("no_systems_to_capture")
+  if ($inv.errors) { foreach ($e in @($inv.errors)) { [void]$allErrors.Add([string]$e) } }
 }
 
 # ---------------------------------------------------------------------------

@@ -228,6 +228,58 @@ def _camera_pose(unreal_mod, actor):
     return cam, rot
 
 
+def _list_root_tracks(unreal_mod, sequence):
+    ext = unreal_mod.MovieSceneSequenceExtensions
+    for getter in (
+        lambda: sequence.get_tracks(),
+        lambda: ext.get_tracks(sequence),
+        lambda: sequence.get_master_tracks(),
+        lambda: ext.get_master_tracks(sequence),
+    ):
+        try:
+            tracks = getter()
+            if tracks is not None:
+                return list(tracks)
+        except Exception:  # noqa: BLE001
+            continue
+    return []
+
+
+def _remove_root_track(unreal_mod, sequence, track) -> bool:
+    ext = unreal_mod.MovieSceneSequenceExtensions
+    for remover in (
+        lambda: sequence.remove_track(track),
+        lambda: ext.remove_track(sequence, track),
+        lambda: sequence.remove_master_track(track),
+        lambda: ext.remove_master_track(sequence, track),
+    ):
+        try:
+            remover()
+            return True
+        except Exception:  # noqa: BLE001
+            continue
+    return False
+
+
+def _add_root_track(unreal_mod, sequence, track_type):
+    """UE 5.2+ renamed add_master_track → add_track; 5.8 removed the old alias."""
+    ext = unreal_mod.MovieSceneSequenceExtensions
+    errors: list[str] = []
+    for adder, tag in (
+        (lambda: sequence.add_track(track_type), "add_track"),
+        (lambda: ext.add_track(sequence, track_type), "ext.add_track"),
+        (lambda: sequence.add_master_track(track_type), "add_master_track"),
+        (lambda: ext.add_master_track(sequence, track_type), "ext.add_master_track"),
+    ):
+        try:
+            track = adder()
+            if track is not None:
+                return track, tag
+        except Exception as exc:  # noqa: BLE001
+            errors.append(f"{tag}:{exc}")
+    raise RuntimeError("add_root_track_failed:" + ";".join(errors[-4:]))
+
+
 def _configure_sequence(unreal_mod, sequence, camera_actor, frame_count: int, fps: int, notes: list[str]) -> None:
     try:
         sequence.set_playback_start(0)
@@ -242,12 +294,12 @@ def _configure_sequence(unreal_mod, sequence, camera_actor, frame_count: int, fp
     except Exception as exc:  # noqa: BLE001
         notes.append(f"display_rate_failed:{exc}")
 
-    # Clear old master tracks if re-authoring
-    try:
-        for track in list(sequence.get_master_tracks()):
-            sequence.remove_master_track(track)
-    except Exception:  # noqa: BLE001
-        pass
+    # Clear old root/master tracks if re-authoring
+    removed = 0
+    for track in _list_root_tracks(unreal_mod, sequence):
+        if _remove_root_track(unreal_mod, sequence, track):
+            removed += 1
+    notes.append(f"cleared_root_tracks:{removed}")
 
     cam_binding = None
     try:
@@ -261,7 +313,8 @@ def _configure_sequence(unreal_mod, sequence, camera_actor, frame_count: int, fp
             notes.append(f"camera_possessable_failed:{exc}/{exc2}")
             raise
 
-    cut_track = sequence.add_master_track(unreal_mod.MovieSceneCameraCutTrack)
+    cut_track, add_tag = _add_root_track(unreal_mod, sequence, unreal_mod.MovieSceneCameraCutTrack)
+    notes.append(f"camera_cut_track:{add_tag}")
     section = cut_track.add_section()
     try:
         section.set_range(0, int(frame_count))
@@ -283,8 +336,15 @@ def _configure_sequence(unreal_mod, sequence, camera_actor, frame_count: int, fp
             section.set_editor_property("camera_binding_id", binding_id)
             notes.append("camera_cut_bound_portable")
         except Exception as exc:  # noqa: BLE001
-            notes.append(f"camera_cut_bind_failed:{exc}")
-            raise
+            # Forum-proven path for 5.x: bind via Guid on MovieSceneObjectBindingID
+            try:
+                binding_id = unreal_mod.MovieSceneObjectBindingID()
+                binding_id.set_editor_property("guid", cam_binding.get_id())
+                section.set_editor_property("camera_binding_id", binding_id)
+                notes.append("camera_cut_bound_guid")
+            except Exception as exc2:  # noqa: BLE001
+                notes.append(f"camera_cut_bind_failed:{exc}/{exc2}")
+                raise
 
 
 def _configure_mrq_config(unreal_mod, config, output_dir: str, width: int, height: int, notes: list[str]) -> None:
