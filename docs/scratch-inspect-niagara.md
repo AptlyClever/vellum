@@ -43,7 +43,7 @@ $env:VELLUM_MAX_SYSTEMS = "1"
 pwsh -ExecutionPolicy Bypass -File .\tools\unreal\vellum_ue_agent.ps1
 ```
 
-Expect fingerprint **`mrq-adaptive-frames (2026-07-13)`**. Then Vellum → Fireworks → **Force** + **Capture entire pack** (Lookdev Studio; per-system length up to 4s).
+Expect fingerprint **`lookdev-worker`**. Warm once: `pwsh -File tools/unreal/vellum_ue_worker.ps1 -Ensure`. Then Vellum → Fireworks → **Force** + Capture (agent talks to warm UE on `:8771`).
 
 Until that fingerprint shows, you’re on an old pull.
 

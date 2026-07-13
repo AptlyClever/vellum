@@ -22,105 +22,78 @@ param(
   [string]$DefaultProject = $(if ($env:VELLUM_UE_PROJECT) { $env:VELLUM_UE_PROJECT } else { "" }),
   [string]$UeCmd = $env:VELLUM_UE_CMD,
   [switch]$RecoverOnly,
-  [switch]$ReportHostSpecs
+  [switch]$ReportHostSpecs,
+  # Disaster / debug only — cold-starts UnrealEditor-Cmd per phase.
+  [switch]$LegacyCmdRunner
 )
 
 $ErrorActionPreference = "Stop"
 $RepoRoot = Resolve-Path (Join-Path $PSScriptRoot "..\..")
 $Runner = Join-Path $PSScriptRoot "run_vellum_capture.ps1"
+$WorkerSupervisor = Join-Path $PSScriptRoot "vellum_ue_worker.ps1"
+$Recover = Join-Path $PSScriptRoot "recover_vellum_capture.ps1"
 . (Join-Path $PSScriptRoot "ue-hosts.ps1")
 
 $UeHost = Get-UeHostProfile -RepoRoot $RepoRoot -HostName $HostName
 if (-not $DefaultProject) { $DefaultProject = $UeHost.project }
+$WorkerPort = if ($UeHost.worker_port) { [int]$UeHost.worker_port } else { 8771 }
+$WorkerUrl = "http://127.0.0.1:$WorkerPort"
 
-function Invoke-CaptureJob {
+function Get-CaptureJobContext {
   param($Job)
   $payload = $Job.payload
   if (-not $payload) { $payload = @{} }
-  $assetId = [string]$Job.asset_id
-  $lane = if ($payload.lane) { [string]$payload.lane } else { "slots" }
   $projectPath = if ($payload.project_path) { [string]$payload.project_path } else { "" }
   $uproject = Resolve-UprojectFromHost -HostProfile $UeHost `
     -PayloadProjectPath $projectPath -FallbackUproject $DefaultProject
-  Write-Host "Using project: $uproject"
-  $contentRoot = if ($payload.content_root) {
-    [string]$payload.content_root
-  } elseif ($UeHost.content_root) {
-    [string]$UeHost.content_root
-  } else {
-    "/Game/FireworksV1"
-  }
-  $engineVersion = if ($payload.engine_version) {
-    [string]$payload.engine_version
-  } elseif ($UeHost.engine_version) {
-    [string]$UeHost.engine_version
-  } else {
-    "5.8"
-  }
-  $intakeRunId = [string]$Job.intake_run_id
-  # 0 = entire pack. Explicit payload.max_systems still allowed for rare debug.
-  $maxSystems = 0
-  if ($null -ne $payload.max_systems -and "$($payload.max_systems)" -ne "") {
-    $maxSystems = [int]$payload.max_systems
-  }
-  $width = if ($payload.width) { [int]$payload.width } else { 1920 }
-  $height = if ($payload.height) { [int]$payload.height } else { 1080 }
   $forceCapture = $false
   if ($null -ne $payload.force -and "$($payload.force)" -match '^(1|True|true|yes)$') {
     $forceCapture = $true
   }
-
-  $resolvedUe = Find-UeCmdFromHost -HostProfile $UeHost -Hint $UeCmd
-  Write-Host "Using UE Cmd: $resolvedUe"
-  Write-Host "Running capture for $assetId ($($Job.job_id)) on host $($UeHost.id) force=$forceCapture"
-  $env:VELLUM_JOB_ID = [string]$Job.job_id
-  $runnerArgs = @{
-    Project        = $uproject
-    AssetId        = $assetId
-    ContentRoot    = $contentRoot
-    VellumBase     = $VellumBase
-    Lane           = $lane
-    EngineVersion  = $engineVersion
-    IntakeRunId    = $intakeRunId
-    UeCmd          = $resolvedUe
+  $maxSystems = 0
+  if ($null -ne $payload.max_systems -and "$($payload.max_systems)" -ne "") {
+    $maxSystems = [int]$payload.max_systems
+  }
+  return @{
+    Job            = $Job
+    Payload        = $payload
+    AssetId        = [string]$Job.asset_id
+    Lane           = $(if ($payload.lane) { [string]$payload.lane } else { "slots" })
+    Uproject       = $uproject
+    ProjectDir     = (Split-Path $uproject -Parent)
+    ContentRoot    = $(if ($payload.content_root) { [string]$payload.content_root } elseif ($UeHost.content_root) { [string]$UeHost.content_root } else { "/Game/FireworksV1" })
+    EngineVersion  = $(if ($payload.engine_version) { [string]$payload.engine_version } elseif ($UeHost.engine_version) { [string]$UeHost.engine_version } else { "5.8" })
+    IntakeRunId    = [string]$Job.intake_run_id
     MaxSystems     = $maxSystems
-    Width          = $width
-    Height         = $height
+    Width          = $(if ($payload.width) { [int]$payload.width } else { 1920 })
+    Height         = $(if ($payload.height) { [int]$payload.height } else { 1080 })
+    ForceCapture   = $forceCapture
     JobId          = [string]$Job.job_id
-    HostName       = $UeHost.id
   }
-  if ($forceCapture) {
-    & $Runner @runnerArgs -ForceCapture
-  } else {
-    & $Runner @runnerArgs
-  }
+}
 
-  $outDir = Join-Path (Split-Path $uproject -Parent) "Saved\VellumCapture"
-  $manifestPath = Join-Path $outDir "manifest.json"
-  $man = $null
-  if (Test-Path $manifestPath) {
-    $man = Get-Content $manifestPath -Raw | ConvertFrom-Json
-  }
-
+function Send-JobReport {
+  param($Ctx, $Man, [string]$Notes)
   $errs = @()
-  if ($man -and $man.errors) { $errs = @($man.errors) }
+  if ($Man -and $Man.errors) { $errs = @($Man.errors) }
+  $stillsCount = 0
+  if ($Man -and $Man.stills) { $stillsCount = @($Man.stills).Count }
+  if ($Man -and $Man.frame_total) { $stillsCount = [Math]::Max($stillsCount, [int]$Man.frame_total) }
   $result = @{
-    project_path       = (Split-Path $uproject -Parent)
-    engine_version     = $engineVersion
-    notes              = "ue_agent capture host=$($UeHost.id) force=$forceCapture"
+    project_path       = $Ctx.ProjectDir
+    engine_version     = $Ctx.EngineVersion
+    notes              = $Notes
     ue_host            = $UeHost.id
-    niagara_systems    = if ($man) { $man.niagara_systems_found } else { 0 }
-    stills             = if ($man) { @($man.stills).Count } else { 0 }
-    skipped_vault      = if ($man -and $man.skipped_vault) { @($man.skipped_vault).Count } else { 0 }
-    manifest_ok        = [bool]$man.ok
-    stills_attempted   = if ($man) { [bool]$man.stills_attempted } else { $false }
-    mode               = if ($man) { [string]$man.mode } else { "" }
+    niagara_systems    = if ($Man) { $Man.niagara_systems_found } else { 0 }
+    stills             = $stillsCount
+    skipped_vault      = if ($Man -and $Man.skipped_vault) { @($Man.skipped_vault).Count } else { 0 }
+    manifest_ok        = [bool]($Man.ok)
+    stills_attempted   = if ($Man) { [bool]$Man.stills_attempted } else { $false }
+    mode               = if ($Man) { [string]$Man.mode } else { "" }
     errors             = $errs
   }
   Write-Host "Report stills=$($result.stills) vault_skip=$($result.skipped_vault) ok=$($result.manifest_ok) errors=$($errs -join '; ')"
-
-  # Success when new stills landed OR vault already covered all picked systems (skip path).
-  if (-not $man -or -not [bool]$man.ok) {
+  if (-not $Man -or -not [bool]$Man.ok) {
     $failMsg = "no_stills"
     if ($errs.Count -gt 0) {
       $failMsg = ([string]($errs | Select-Object -First 1))
@@ -129,24 +102,123 @@ function Invoke-CaptureJob {
     $fail = @{
       error                = $failMsg
       result               = $result
-      scratch_project_path = (Split-Path $uproject -Parent)
-      engine_version       = $engineVersion
+      scratch_project_path = $Ctx.ProjectDir
+      engine_version       = $Ctx.EngineVersion
     } | ConvertTo-Json -Depth 6
-    Invoke-RestMethod -Method Post -Uri "$VellumBase/api/jobs/$($Job.job_id)/report" `
+    Invoke-RestMethod -Method Post -Uri "$VellumBase/api/jobs/$($Ctx.JobId)/report" `
       -ContentType "application/json" -Body $fail | Out-Null
-    # Do not throw — already reported; avoids 409 double-report in the outer catch.
     Write-Host "Reported failure $failMsg"
     return
   }
-
   $report = @{
     result               = $result
-    scratch_project_path = (Split-Path $uproject -Parent)
-    engine_version       = $engineVersion
+    scratch_project_path = $Ctx.ProjectDir
+    engine_version       = $Ctx.EngineVersion
+  } | ConvertTo-Json -Depth 6
+  Invoke-RestMethod -Method Post -Uri "$VellumBase/api/jobs/$($Ctx.JobId)/report" `
+    -ContentType "application/json" -Body $report | Out-Null
+}
+
+function Invoke-CaptureViaWorker {
+  param($Ctx)
+  Write-Host "Ensure Lookdev Worker on $WorkerUrl …"
+  & $WorkerSupervisor -Ensure -HostName $UeHost.id -Port $WorkerPort
+  if ($LASTEXITCODE -ne 0) { throw "worker_ensure_failed" }
+
+  $progressUri = "$VellumBase/api/jobs/$($Ctx.JobId)/progress"
+  try {
+    $prog = @{ message = "Lookdev Worker capture starting…" } | ConvertTo-Json
+    Invoke-RestMethod -Method Post -Uri $progressUri -ContentType "application/json" -Body $prog | Out-Null
+  } catch { }
+
+  $body = @{
+    job_id         = $Ctx.JobId
+    asset_id       = $Ctx.AssetId
+    content_root   = $Ctx.ContentRoot
+    max_systems    = $Ctx.MaxSystems
+    width          = $Ctx.Width
+    height         = $Ctx.Height
+    frame_count    = 120
+    frame_rate     = 30
+    map_path       = "/Game/Vellum/Maps/VellumLookdevStudio"
+    force          = [bool]$Ctx.ForceCapture
+    force_studio   = $false
+    vellum_base    = $VellumBase
   } | ConvertTo-Json -Depth 6
 
-  Invoke-RestMethod -Method Post -Uri "$VellumBase/api/jobs/$($Job.job_id)/report" `
-    -ContentType "application/json" -Body $report | Out-Null
+  Write-Host "POST $WorkerUrl/v1/capture force=$($Ctx.ForceCapture)"
+  $capture = Invoke-RestMethod -Method Post -Uri "$WorkerUrl/v1/capture" `
+    -ContentType "application/json" -Body $body -TimeoutSec 21600
+
+  # Ingest heroes/sequences from MRQ dirs the worker wrote.
+  if (Test-Path $Recover) {
+    Write-Host "Worker capture returned — ingesting MRQ dirs"
+    if ($Ctx.ForceCapture) {
+      & $Recover -VellumBase $VellumBase -HostName $UeHost.id -AssetId $Ctx.AssetId -Force
+    } else {
+      & $Recover -VellumBase $VellumBase -HostName $UeHost.id -AssetId $Ctx.AssetId
+    }
+  }
+
+  $outDir = Join-Path $Ctx.ProjectDir "Saved\VellumCapture"
+  $manifestPath = Join-Path $outDir "manifest.json"
+  $man = $null
+  if (Test-Path $manifestPath) {
+    $man = Get-Content $manifestPath -Raw | ConvertFrom-Json
+  } elseif ($capture) {
+    $man = $capture
+  }
+  Send-JobReport -Ctx $Ctx -Man $man -Notes "ue_agent lookdev-worker host=$($UeHost.id) force=$($Ctx.ForceCapture)"
+}
+
+function Invoke-CaptureViaLegacyRunner {
+  param($Ctx)
+  $resolvedUe = Find-UeCmdFromHost -HostProfile $UeHost -Hint $UeCmd
+  Write-Host "Using UE Cmd (legacy): $resolvedUe"
+  Write-Host "Running legacy capture for $($Ctx.AssetId) ($($Ctx.JobId)) force=$($Ctx.ForceCapture)"
+  $env:VELLUM_JOB_ID = $Ctx.JobId
+  $runnerArgs = @{
+    Project        = $Ctx.Uproject
+    AssetId        = $Ctx.AssetId
+    ContentRoot    = $Ctx.ContentRoot
+    VellumBase     = $VellumBase
+    Lane           = $Ctx.Lane
+    EngineVersion  = $Ctx.EngineVersion
+    IntakeRunId    = $Ctx.IntakeRunId
+    UeCmd          = $resolvedUe
+    MaxSystems     = $Ctx.MaxSystems
+    Width          = $Ctx.Width
+    Height         = $Ctx.Height
+    JobId          = $Ctx.JobId
+    HostName       = $UeHost.id
+  }
+  if ($Ctx.ForceCapture) {
+    & $Runner @runnerArgs -ForceCapture
+  } else {
+    & $Runner @runnerArgs
+  }
+  $outDir = Join-Path $Ctx.ProjectDir "Saved\VellumCapture"
+  $manifestPath = Join-Path $outDir "manifest.json"
+  $man = $null
+  if (Test-Path $manifestPath) {
+    $man = Get-Content $manifestPath -Raw | ConvertFrom-Json
+  }
+  Send-JobReport -Ctx $Ctx -Man $man -Notes "ue_agent legacy_cmd host=$($UeHost.id) force=$($Ctx.ForceCapture)"
+}
+
+function Invoke-CaptureJob {
+  param($Job)
+  $ctx = Get-CaptureJobContext -Job $Job
+  Write-Host "Using project: $($ctx.Uproject)"
+  if (-not $LegacyCmdRunner) {
+    try {
+      Invoke-CaptureViaWorker -Ctx $ctx
+      return
+    } catch {
+      Write-Host "Worker capture failed ($($_.Exception.Message)) — falling back to legacy Cmd runner"
+    }
+  }
+  Invoke-CaptureViaLegacyRunner -Ctx $ctx
 }
 
 Write-Host "Vellum UE agent polling $VellumBase every ${PollSeconds}s"
@@ -154,10 +226,11 @@ Write-Host "UI trigger: asset detail → Capture from Unreal"
 Write-Host "Host profile: $($UeHost.id) ($($UeHost.label), $($UeHost.role)) — config active=$($UeHost.active_in_config)"
 Write-Host "Agent scripts: $Runner"
 Write-Host "Repo root: $RepoRoot"
-Write-Host "Agent fingerprint: mrq-adaptive-frames (2026-07-13)"
+Write-Host "Agent fingerprint: lookdev-worker (2026-07-13)"
+Write-Host "Capture mode: $(if ($LegacyCmdRunner) { 'legacy Cmd-per-phase' } else { "Lookdev Worker $WorkerUrl (fallback=legacy)" })"
 $runnerVersionLine = (Get-Content $Runner | Where-Object { $_ -match "Runner version:" } | Select-Object -First 1)
 if (-not $runnerVersionLine) { $runnerVersionLine = "(no 'Runner version:' line found — old pull?)" }
-Write-Host "Runner fingerprint: $($runnerVersionLine.Trim())"
+Write-Host "Legacy runner fingerprint: $($runnerVersionLine.Trim())"
 try {
   Write-Host "Resolved UE Cmd (preflight): $(Find-UeCmdFromHost -HostProfile $UeHost -Hint $UeCmd)"
 } catch {

@@ -12,7 +12,8 @@
       "project": "F:\\Games\\AuroraVellum\\AuroraVellum.uproject",
       "project_dir": "F:\\Games\\AuroraVellum",
       "content_root": "/Game/FireworksV1",
-      "engine_version": "5.8"
+      "engine_version": "5.8",
+      "worker_port": 8771
     },
     "borealis": {
       "label": "Borealis",
@@ -23,7 +24,8 @@
       "project": "C:\\epic\\VellumImport\\VellumImport.uproject",
       "project_dir": "C:\\epic\\VellumImport",
       "content_root": "/Game/FireworksV1",
-      "engine_version": "5.8"
+      "engine_version": "5.8",
+      "worker_port": 8771
     }
   }
 }

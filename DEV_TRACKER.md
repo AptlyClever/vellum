@@ -3,7 +3,7 @@
 > **Current Active Issue:** Fireworks pack — **full automated lookdev** (all effects), then next purchased packs
 > **Governing CFD:** `cfd-inspiration-20260713-015950-vellum-control-alt-games-asset-vault-register-in` (slices A–F met; this is the post-CFD track)
 > **Capability spec:** `docs/ue-mrq-capture.md` (SoT — full fidelity; SceneCapture/HighResShot retired)
-> **Next Immediate Step:** Pull `mrq-adaptive-frames` on Aurora → restart agent → **Force** + **Capture entire pack** (per-system length, max 4s).
+> **Next Immediate Step:** Aurora: `git pull` → `pwsh -File tools/unreal/vellum_ue_worker.ps1 -Ensure` → restart agent (`lookdev-worker`) → **Force** + Capture. SoT: `docs/ue-lookdev-worker.md`.
 
 ---
 
@@ -14,6 +14,8 @@
 * **Axiom Read:** http://192.168.68.93:7895/#/axiom/vellum
 * **Scratch / hosts:** `docs/scratch-inspect-niagara.md`
 * **UE MRQ capture capability (SoT):** `docs/ue-mrq-capture.md`
+* **UE Lookdev Worker (hosting SoT):** `docs/ue-lookdev-worker.md`
+* **Warm worker:** `pwsh -File tools/unreal/vellum_ue_worker.ps1 -Ensure`
 * **Recover interrupted MRQ dirs:** `pwsh -File tools/unreal/vellum_ue_agent.ps1 -RecoverOnly`
 * **Record scratch:** `POST /api/scratch/record`
 * **Upload Niagara still:** `POST /api/lookdev/ingest-render` (multipart)
@@ -51,6 +53,7 @@
   - [x] Inventory cache + vault-only skip without UE; soft-fail per system (`mrq-pack-resilient`)
   - [x] Host specs report from UE agent → `GET /api/ue/hosts`
   - [x] Lookdev Studio map (permanent photo stage) + capture wiring (`mrq-lookdev-studio`)
+  - [x] Aurora **Lookdev Worker** (Option 1): warm UE + loopback capture API (`docs/ue-lookdev-worker.md`)
   - [ ] Fireworks pack lookdev complete in vault (all unique systems; skip already-done)
   - [ ] Next purchased Unreal packs through the same Capture path (no operator digging)
 
@@ -94,3 +97,5 @@
 * **2026-07-13** — Live import panel on asset detail (job progress + lookdev refresh).
 * **2026-07-13** — `mrq-pack-resilient`: inventory cache (skip UE cold start), continue on black/ingest failure, host specs POST from agent.
 * **2026-07-13** — **Lookdev Studio** (`mrq-lookdev-studio`): permanent photo-studio map (`VellumLookdevStudio`) with center slot + lights + mid cam; capture defaults to 60 frames (~2s); Phase 0 builds studio once. Old void stills inconsistent — Force re-render for pack.
+* **2026-07-13** — Adaptive per-system frame estimate (`mrq-adaptive-frames`), max 4s / 120 frames.
+* **2026-07-13** — **Option 1 locked:** Aurora **Lookdev Worker** — warm UnrealEditor on studio map + loopback HTTP `127.0.0.1:8771`; agent primary path (legacy Cmd runner = `-LegacyCmdRunner` only). Docs: `docs/ue-lookdev-worker.md`.

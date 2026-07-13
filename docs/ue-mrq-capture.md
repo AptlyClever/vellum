@@ -3,9 +3,9 @@
 **Status:** implemented (scripted batch) / Aurora proof via recover ingest  
 **Pilot asset:** `fireworks-vol-1-niagara`  
 **Primary host:** Aurora (`config/ue-hosts.json` → `active: aurora`)  
-**Related:** host runbook `docs/scratch-inspect-niagara.md`, lookdev API `docs/api-lookdev.md`  
+**Related:** host runbook `docs/scratch-inspect-niagara.md`, lookdev API `docs/api-lookdev.md`, **hosting SoT** [`docs/ue-lookdev-worker.md`](./ue-lookdev-worker.md)  
 **Decisions:** §12 locked 2026-07-13 (B / C / C / C / B)  
-**Runner fingerprint:** `mrq-adaptive-frames (2026-07-13)`
+**Runner fingerprint:** `lookdev-worker` (primary); legacy `mrq-adaptive-frames` via `-LegacyCmdRunner` only
 
 This is **new Vellum functionality**: turn a purchased Unreal Niagara pack into
 **full-fidelity lookdev renders** in the vault, driven from the Vellum UI, without
