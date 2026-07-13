@@ -80,6 +80,43 @@ function Get-ImageFiles {
   return @($found.ToArray())
 }
 
+function Wait-MrqOutputFrames {
+  <#
+    Artifact gate: UnrealEditor -game often exits (or HasExited flaps) while MRQ
+    is still writing PNGs. Done = stable frame count on disk, not process exit.
+  #>
+  param(
+    [string]$SeqOutDir,
+    [int]$ExpectFrames = 1,
+    [int]$TimeoutSec = 1800,
+    [int]$StableSeconds = 8,
+    [string]$Phase = "MRQ frames"
+  )
+  if ($ExpectFrames -lt 1) { $ExpectFrames = 1 }
+  $deadline = (Get-Date).AddSeconds($TimeoutSec)
+  $lastCount = -1
+  $stableSince = $null
+  while ((Get-Date) -lt $deadline) {
+    $n = @(Get-ImageFiles -Root $SeqOutDir).Count
+    if ($n -ne $lastCount) {
+      $lastCount = $n
+      $stableSince = Get-Date
+      Send-VellumProgress -Message "$Phase frames=$n (want>=$ExpectFrames)"
+    } elseif ($n -ge $ExpectFrames -and $null -ne $stableSince) {
+      $stableFor = ((Get-Date) - $stableSince).TotalSeconds
+      if ($stableFor -ge $StableSeconds) {
+        Send-VellumProgress -Message "$Phase ready frames=$n"
+        return $n
+      }
+    }
+    # Also treat MoviePipeline log "Finished rendering" + any frames as success
+    # when ExpectFrames is approximate (warm-up frames etc.).
+    Start-Sleep -Seconds 3
+  }
+  Send-VellumProgress -Message "$Phase timeout frames=$lastCount want>=$ExpectFrames"
+  return [Math]::Max(0, $lastCount)
+}
+
 function Find-RecentImages {
   param(
     [string[]]$Roots,
@@ -699,7 +736,6 @@ if ($batchSystems.Count -gt 0) {
       $UeMrq = Find-UeEditor -CmdPath $Ue
       Write-Host "Phase C UE binary: $UeMrq"
 
-      $renderedOk = $false
       if ($queueSoft) {
         Write-Host "Phase C queue MRQ queue=$queueSoft map=$mapSoft jobs=$($authoredJobs.Count)"
         $MrqLog = Join-Path $OutDir "ue-mrq-batch.log"
@@ -727,18 +763,14 @@ if ($batchSystems.Count -gt 0) {
           $mrqExit = 1
           $_ | Out-File -FilePath $MrqLog -Append
         }
-        Write-Host "Phase C batch MRQ exit=$mrqExit"
-        $renderedOk = ($mrqExit -eq 0)
-        if (-not $renderedOk) {
-          $mrqSnippet = Get-LogMrqSnippet -LogPath $MrqLog
-          Write-Host "MRQ log snippet:`n$mrqSnippet"
-          [void]$allErrors.Add("mrq_batch_failed:exit=$mrqExit")
-        }
+        Write-Host "Phase C batch MRQ process exit=$mrqExit (artifacts are the gate)"
+        # Do NOT trust exit code — wait for frames for each authored system next.
+        $renderedOk = $true
       } else {
         Write-Host "Phase C: no queue_path from author — falling back to per-system MRQ"
       }
 
-      # Per-system fallback render if queue missing or produced no frames for a system
+      # Per-system: wait for MRQ artifacts, then hero + ingest. Re-render only if zero frames.
       $slotIndex = 0
       foreach ($ajob in $authoredJobs) {
         $systemName = [string]$ajob.system_name
@@ -747,12 +779,21 @@ if ($batchSystems.Count -gt 0) {
         $seqOutDir = Join-Path $MrqRoot $safeHint
         if (-not $ajob.output_dir) { }
         else { $seqOutDir = ([string]$ajob.output_dir) -replace '/', '\' }
+        New-Item -ItemType Directory -Force -Path $seqOutDir | Out-Null
 
+        $expect = 30
+        if ($null -ne $ajob.frame_count -and [int]$ajob.frame_count -gt 0) {
+          $expect = [int]$ajob.frame_count
+        }
+        # Parent -game process may already have exited; poll disk until stable.
+        $frameCount = Wait-MrqOutputFrames -SeqOutDir $seqOutDir -ExpectFrames $expect `
+          -Phase "Phase C[$slotIndex] $systemName" -TimeoutSec 900
         $frameFiles = @(Get-ImageFiles -Root $seqOutDir)
-        if ($frameFiles.Count -eq 0 -or -not $renderedOk -or -not $queueSoft) {
+
+        if ($frameFiles.Count -eq 0 -or -not $queueSoft) {
           $seqSoft = ConvertTo-UeSoftPath $(if ($ajob.sequence_path) { [string]$ajob.sequence_path } else { [string]$ajob.sequence_asset })
           $cfgSoft = ConvertTo-UeSoftPath $(if ($ajob.config_path) { [string]$ajob.config_path } else { [string]$ajob.config_asset })
-          Write-Host "Phase C[$slotIndex] per-system MRQ $systemName"
+          Write-Host "Phase C[$slotIndex] per-system MRQ $systemName (no batch frames yet)"
           $MrqLog = Join-Path $OutDir "ue-mrq-$slotIndex.log"
           if (Test-Path $MrqLog) { Remove-Item -Force $MrqLog }
           $mrqArgs = @(
@@ -777,6 +818,8 @@ if ($batchSystems.Count -gt 0) {
           } catch {
             $_ | Out-File -FilePath $MrqLog -Append
           }
+          [void](Wait-MrqOutputFrames -SeqOutDir $seqOutDir -ExpectFrames $expect `
+            -Phase "Phase C[$slotIndex] $systemName retry" -TimeoutSec 900)
           $frameFiles = @(Get-ImageFiles -Root $seqOutDir)
         }
         if ($frameFiles.Count -eq 0) {
@@ -802,6 +845,7 @@ if ($batchSystems.Count -gt 0) {
         $py = Get-Command python -ErrorAction SilentlyContinue
         if (-not $py) { $py = Get-Command py -ErrorAction SilentlyContinue }
         if (-not $py) { throw "python/py not found on PATH for pick_heroes.py" }
+        Send-VellumProgress -Message "Phase C[$slotIndex] pick heroes $systemName"
         & $py.Source $StagedPickHeroesPy $seqOutDir --json-out $HeroJson *> $null
         if ($LASTEXITCODE -ne 0 -or -not (Test-Path $HeroJson)) {
           [void]$allErrors.Add("hero_pick_failed:$systemName")
@@ -840,10 +884,16 @@ if ($batchSystems.Count -gt 0) {
             frames = [int]$heroDoc.frame_count
           })
         $sysHeroes = @($stills | Where-Object { $_.system -eq $systemName })
+        Send-VellumProgress -Message "Phase C[$slotIndex] ingest $systemName"
         $nUp = Ingest-CapturedSystem -AssetId $AssetId -SystemName $systemName `
           -HeroStills $sysHeroes -SeqDir $seqOutDir -OutDir $OutDir `
           -VellumBase $VellumBase -Lanes $IngestLanes -Errors $allErrors
-        Send-VellumProgress -Message "Captured $systemName heroes=$($heroDoc.heroes.Count) frames=$($heroDoc.frame_count) ingested=$nUp"
+        if ($nUp -lt 1) {
+          [void]$allErrors.Add("ingest_zero:$systemName")
+          Send-VellumProgress -Message "FAIL ingest produced 0 uploads for $systemName"
+        } else {
+          Send-VellumProgress -Message "Captured $systemName heroes=$($heroDoc.heroes.Count) frames=$($heroDoc.frame_count) ingested=$nUp"
+        }
         $slotIndex++
       }
     }
