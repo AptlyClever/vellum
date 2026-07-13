@@ -237,9 +237,10 @@ function Invoke-UeLogged {
       } catch { }
       break
     }
-    Send-VellumProgress -Message "$Phase still running (${elapsed}s)" -LogPath $LogPath
+    # Never attach AbsLog here - Get-Content/share-read still blocked mid-shutdown.
+    Send-VellumProgress -Message "$Phase still running (${elapsed}s)"
   }
-  Send-VellumProgress -Message "$Phase process gone" -LogPath $LogPath
+  Send-VellumProgress -Message "$Phase process gone"
   return 0
 }
 
