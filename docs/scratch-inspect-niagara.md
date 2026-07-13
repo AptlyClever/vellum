@@ -31,7 +31,11 @@ flowchart LR
   D --> E[lookdev ingest]
 ```
 
-Fingerprint: `editor-scenecapture (2026-07-13)`.
+Fingerprint: `editor-scenecapture-noblack (2026-07-13)`.
+
+Pure-black PNGs are rejected (`still_pure_black`). The previous “3 stills
+succeeded” run exported 1920×1080 frames with max RGB 0 — not usable Niagara
+lookdev.
 
 ## One-time Windows setup
 

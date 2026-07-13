@@ -223,6 +223,16 @@ def _activate_niagara(unreal_mod, comp, notes: list[str]) -> None:
             break
         except Exception:  # noqa: BLE001
             continue
+    # Ensure the system is visible to SceneCapture (not hidden / exclusive).
+    for prop, val in (
+        ("hidden_in_scene_capture", False),
+        ("visible_in_scene_capture_only", False),
+        ("visible", True),
+    ):
+        try:
+            comp.set_editor_property(prop, val)
+        except Exception:  # noqa: BLE001
+            pass
     try:
         comp.activate(True)
         notes.append("niagara_activate")
@@ -236,18 +246,126 @@ def _activate_niagara(unreal_mod, comp, notes: list[str]) -> None:
                 break
             except Exception:  # noqa: BLE001
                 continue
-    # Advance simulation so particles exist without PIE / -game.
+    # Fireworks blooms need real simulated time. Prefer tick-count advance
+    # (Epic NiagaraComponent API) over a short by-time call.
+    advanced = False
     for meth, args in (
-        ("advance_simulation_by_time", (2.0, 1.0 / 60.0)),
-        ("AdvanceSimulationByTime", (2.0, 1.0 / 60.0)),
+        ("advance_simulation", (180, 1.0 / 60.0)),  # ~3s
+        ("AdvanceSimulation", (180, 1.0 / 60.0)),
+        ("advance_simulation_by_time", (3.0, 1.0 / 60.0)),
+        ("AdvanceSimulationByTime", (3.0, 1.0 / 60.0)),
     ):
         if hasattr(comp, meth):
             try:
                 getattr(comp, meth)(*args)
-                notes.append(f"niagara_{meth}")
+                notes.append(f"niagara_{meth}:{args}")
+                advanced = True
                 break
             except Exception as exc:  # noqa: BLE001
                 notes.append(f"niagara_{meth}_failed:{exc}")
+    if not advanced:
+        notes.append("niagara_advance_unavailable")
+
+
+def _spawn_debug_marker(unreal_mod, actor_sub, location, notes: list[str]):
+    """Bright cube so a working SceneCapture cannot export a pure-black frame."""
+    try:
+        cube = actor_sub.spawn_actor_from_class(
+            unreal_mod.StaticMeshActor,
+            location,
+            unreal_mod.Rotator(0.0, 0.0, 0.0),
+            True,
+        )
+    except Exception as exc:  # noqa: BLE001
+        notes.append(f"debug_marker_spawn_failed:{exc}")
+        return None
+    if cube is None:
+        return None
+    try:
+        cube.set_actor_label(f"{ACTOR_LABEL_PREFIX}DebugMarker")
+        cube.set_actor_scale3d(unreal_mod.Vector(1.5, 1.5, 1.5))
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        mesh = unreal_mod.EditorAssetLibrary.load_asset("/Engine/BasicShapes/Cube")
+        smc = cube.static_mesh_component
+        if mesh is not None and smc is not None:
+            smc.set_static_mesh(mesh)
+        notes.append("debug_marker_cube")
+    except Exception as exc:  # noqa: BLE001
+        notes.append(f"debug_marker_mesh_failed:{exc}")
+    return cube
+
+
+def _png_max_rgb(path: Path) -> int:
+    """Return max RGB channel in a PNG (0 => pure black). Stdlib only."""
+    import struct
+    import zlib
+
+    data = path.read_bytes()
+    if data[:8] != b"\x89PNG\r\n\x1a\n":
+        return -1
+    i = 8
+    idat = b""
+    width = height = color = None
+    while i < len(data):
+        ln = struct.unpack(">I", data[i : i + 4])[0]
+        i += 4
+        typ = data[i : i + 4]
+        i += 4
+        chunk = data[i : i + ln]
+        i += ln + 4
+        if typ == b"IHDR":
+            width, height, _bit, color = struct.unpack(">IIBB", chunk[:10])
+        elif typ == b"IDAT":
+            idat += chunk
+        elif typ == b"IEND":
+            break
+    if not width or color not in (2, 6):
+        return -1
+    raw = zlib.decompress(idat)
+    bpp = 4 if color == 6 else 3
+    stride = width * bpp
+    mx = 0
+    o = 0
+    prev = bytearray(stride)
+    step_y = max(1, height // 80)
+    for y in range(height):
+        f = raw[o]
+        o += 1
+        row = bytearray(raw[o : o + stride])
+        o += stride
+        if f == 1:
+            for x in range(stride):
+                row[x] = (row[x] + (row[x - bpp] if x >= bpp else 0)) & 255
+        elif f == 2:
+            for x in range(stride):
+                row[x] = (row[x] + prev[x]) & 255
+        elif f == 3:
+            for x in range(stride):
+                left = row[x - bpp] if x >= bpp else 0
+                row[x] = (row[x] + ((left + prev[x]) // 2)) & 255
+        elif f == 4:
+            for x in range(stride):
+                a = row[x - bpp] if x >= bpp else 0
+                b = prev[x]
+                c = prev[x - bpp] if x >= bpp else 0
+                p = a + b - c
+                pa, pb, pc = abs(p - a), abs(p - b), abs(p - c)
+                pr = a if pa <= pb and pa <= pc else (b if pb <= pc else c)
+                row[x] = (row[x] + pr) & 255
+        elif f != 0:
+            return -1
+        if y % step_y == 0:
+            for x in range(0, width, max(1, width // 80)):
+                r = row[x * bpp]
+                g = row[x * bpp + 1]
+                b = row[x * bpp + 2]
+                mx = max(mx, r, g, b)
+                if mx >= 32:
+                    return mx
+        prev = row
+    return mx
 
 
 def _capture_still(
@@ -261,8 +379,9 @@ def _capture_still(
     still_path: Path,
     notes: list[str],
     errors: list[str],
+    show_only_actors=None,
 ) -> bool:
-    """Render via SceneCapture2D and write a PNG. Returns True on non-empty file."""
+    """SceneCapture2D → PNG. Rejects pure-black frames (known empty export)."""
     still_path.parent.mkdir(parents=True, exist_ok=True)
     if still_path.is_file():
         try:
@@ -270,15 +389,22 @@ def _capture_still(
         except Exception:  # noqa: BLE001
             pass
 
-    rt = None
     capture_actor = None
     try:
+        # Clear color with alpha=1 — UE 5.6+ black PNG exports are often alpha-related
+        # (Epic forums: export black despite valid RT preview when alpha defaults wrong).
         rt = unreal_mod.RenderingLibrary.create_render_target2d(
             world, int(width), int(height), unreal_mod.TextureRenderTargetFormat.RTF_RGBA8
         )
         if rt is None:
             errors.append("create_render_target_failed")
             return False
+        try:
+            rt.set_editor_property(
+                "clear_color", unreal_mod.LinearColor(0.015, 0.02, 0.04, 1.0)
+            )
+        except Exception:  # noqa: BLE001
+            pass
         notes.append(f"rt_{width}x{height}")
 
         capture_actor = actor_sub.spawn_actor_from_class(
@@ -317,7 +443,7 @@ def _capture_still(
 
         for prop, val in (
             ("capture_every_frame", False),
-            ("b_capture_every_frame", False),
+            ("capture_on_movement", False),
             ("always_persist_rendering_state", True),
             ("b_always_persist_rendering_state", True),
         ):
@@ -332,9 +458,27 @@ def _capture_still(
             notes.append("capture_source_final_color_ldr")
         except Exception as exc:  # noqa: BLE001
             notes.append(f"capture_source_failed:{exc}")
+        try:
+            # Legacy primitive mode renders the full scene (incl. translucency/Niagara).
+            comp.set_editor_property(
+                "primitive_render_mode",
+                unreal_mod.SceneCapturePrimitiveRenderMode.PRM_RENDER_SCENE_PRIMITIVES,
+            )
+            notes.append("primitive_render_mode_legacy")
+        except Exception as exc:  # noqa: BLE001
+            notes.append(f"primitive_render_mode_failed:{exc}")
+        if show_only_actors:
+            try:
+                comp.set_editor_property(
+                    "primitive_render_mode",
+                    unreal_mod.SceneCapturePrimitiveRenderMode.PRM_USE_SHOW_ONLY_LIST,
+                )
+                comp.set_editor_property("show_only_actors", list(show_only_actors))
+                notes.append(f"show_only_actors:{len(show_only_actors)}")
+            except Exception as exc:  # noqa: BLE001
+                notes.append(f"show_only_failed:{exc}")
 
-        # Warm + capture twice (first frame often black before RT settles).
-        for i in range(2):
+        for i in range(3):
             try:
                 comp.capture_scene()
                 notes.append(f"capture_scene_{i}")
@@ -342,15 +486,12 @@ def _capture_still(
                 errors.append(f"capture_scene_failed:{exc}")
                 return False
             try:
-                unreal_mod.SystemLibrary.execute_console_command(
-                    world, "r.FlushRenderingCommands 1"
-                )
+                unreal_mod.SystemLibrary.execute_console_command(world, "r.FlushRenderingCommands")
             except Exception:  # noqa: BLE001
                 pass
 
         export_dir = str(still_path.parent).replace("\\", "/")
         export_name = still_path.name
-        # export_render_target writes <directory>/<filename>
         try:
             unreal_mod.RenderingLibrary.export_render_target(world, rt, export_dir, export_name)
             notes.append(f"export_render_target:{export_dir}/{export_name}")
@@ -358,16 +499,11 @@ def _capture_still(
             errors.append(f"export_render_target_failed:{exc}")
             return False
 
-        # UE sometimes appends nothing; confirm bytes on disk.
         if not still_path.is_file():
-            # Some versions write without expecting extension handling — probe.
-            alt = still_path.with_suffix("")
             candidates = list(still_path.parent.glob(still_path.stem + ".*"))
             if candidates:
                 candidates[0].replace(still_path)
                 notes.append(f"renamed_export:{candidates[0].name}")
-            elif alt.is_file():
-                alt.replace(still_path)
             else:
                 errors.append(f"export_missing_file:{still_path}")
                 return False
@@ -376,6 +512,17 @@ def _capture_still(
         notes.append(f"still_bytes:{size}")
         if size < 64:
             errors.append(f"still_too_small:{size}")
+            return False
+
+        # Hard quality gate: previous "success" stills were 1920x1080 pure black.
+        mx = _png_max_rgb(still_path)
+        notes.append(f"still_max_rgb:{mx}")
+        if mx < 8:
+            errors.append(f"still_pure_black:max_rgb={mx}")
+            try:
+                still_path.unlink()
+            except Exception:  # noqa: BLE001
+                pass
             return False
         return True
     except Exception as exc:  # noqa: BLE001
@@ -477,7 +624,12 @@ def main() -> None:
         if niagara_actor is None:
             raise RuntimeError("spawn_niagara_failed")
 
+        # Simulate BEFORE framing — empty Niagara bounds put the camera in the wrong place.
         _activate_niagara(unreal, _get_niagara_component(unreal, niagara_actor), notes)
+
+        marker = _spawn_debug_marker(
+            unreal, actor_sub, unreal.Vector(0.0, 0.0, 50.0), notes
+        )
 
         cam_loc, cam_rot = _camera_pose_for_actor(unreal, niagara_actor)
         camera = actor_sub.spawn_actor_from_class(unreal.CameraActor, cam_loc, cam_rot, True)
@@ -500,6 +652,19 @@ def main() -> None:
             safe = "".join(c if c.isalnum() or c in "-_" else "_" for c in baked_system) or "system"
             still_path = job_path.parent / "stills" / f"{job.get('asset_id') or 'asset'}-{safe}.png"
 
+        show_only = [a for a in (niagara_actor, marker, camera) if a is not None]
+        # Include lights already labeled in the level.
+        try:
+            for actor in actor_sub.get_all_level_actors():
+                try:
+                    label = actor.get_actor_label()
+                except Exception:  # noqa: BLE001
+                    continue
+                if label.startswith(ACTOR_LABEL_PREFIX) and actor not in show_only:
+                    show_only.append(actor)
+        except Exception:  # noqa: BLE001
+            pass
+
         captured = _capture_still(
             unreal,
             actor_sub,
@@ -511,6 +676,7 @@ def main() -> None:
             still_path,
             notes,
             errors,
+            show_only_actors=None,  # full scene; show-only can hide skylight contribution
         )
         if captured:
             still_path_out = str(still_path).replace("\\", "/")
