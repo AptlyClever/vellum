@@ -142,11 +142,20 @@ function Invoke-UeLogged {
     -RedirectStandardOutput $LogPath `
     -RedirectStandardError $errPath
   $started = Get-Date
-  while (-not $proc.HasExited) {
-    Start-Sleep -Seconds $HeartbeatSeconds
+  while ($true) {
+    # Process.HasExited is stale until Refresh — without this the runner
+    # can sit forever after Unreal exits (nothing visible on the host).
+    try { $proc.Refresh() } catch { }
     if ($proc.HasExited) { break }
+    $exited = $false
+    try {
+      $exited = $proc.WaitForExit([Math]::Max(1000, $HeartbeatSeconds * 1000))
+    } catch {
+      Start-Sleep -Seconds $HeartbeatSeconds
+    }
+    try { $proc.Refresh() } catch { }
+    if ($exited -or $proc.HasExited) { break }
     $elapsed = [int]((Get-Date) - $started).TotalSeconds
-    # Merge stderr into main log so Select-String / Tee readers see everything.
     if (Test-Path $errPath) {
       Get-Content $errPath -ErrorAction SilentlyContinue | Add-Content -Path $LogPath -ErrorAction SilentlyContinue
       Clear-Content $errPath -ErrorAction SilentlyContinue
@@ -157,7 +166,10 @@ function Invoke-UeLogged {
     Get-Content $errPath -ErrorAction SilentlyContinue | Add-Content -Path $LogPath -ErrorAction SilentlyContinue
   }
   $code = 0
-  try { $code = $proc.ExitCode } catch { $code = 0 }
+  try {
+    $proc.Refresh()
+    $code = $proc.ExitCode
+  } catch { $code = 0 }
   if ($null -eq $code) { $code = 0 }
   Send-VellumProgress -Message "$Phase exited code=$code" -LogPath $LogPath
   return $code
