@@ -13,6 +13,8 @@ pwsh -File tools\unreal\vellum_ue_agent.ps1
 2. In Vellum → Fireworks → **Capture from Unreal**
 3. Watch **Jobs** on the detail page (`ue_capture` → succeeded)
 4. Lookdev grid gains `niagara-render` stills when capture produces files
+   (framed Niagara spawn into a blank map + console `HighResShot`; up to
+   `VELLUM_MAX_SYSTEMS`, default 3)
 
 No navigating Unreal for screenshots. No PowerShell per asset.
 

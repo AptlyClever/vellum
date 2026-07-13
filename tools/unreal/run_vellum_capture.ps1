@@ -92,11 +92,10 @@ Write-Host "Staged script: $CapturePyUe"
 $env:VELLUM_ASSET_ID = $AssetId
 $env:VELLUM_CONTENT_ROOT = $ContentRoot
 $env:VELLUM_OUT_DIR = $OutDirUe
-$env:VELLUM_MAX_SYSTEMS = "3"
-# Default OFF: AutomationLibrary HighResShot AVs UnrealEditor-Cmd (FunctionalTesting).
-# Inventory/manifest is the scratch_inspect success path; enable later when framed.
+$env:VELLUM_MAX_SYSTEMS = if ($env:VELLUM_MAX_SYSTEMS) { $env:VELLUM_MAX_SYSTEMS } else { "3" }
+# Framed Niagara spawn + console HighResShot (never AutomationLibrary — AVs in Cmd).
 if (-not $env:VELLUM_CAPTURE_STILLS) {
-  $env:VELLUM_CAPTURE_STILLS = "0"
+  $env:VELLUM_CAPTURE_STILLS = "1"
 }
 
 # Path-only ExecutePythonScript (no trailing args / nested quotes).
@@ -104,7 +103,8 @@ $ExecFlag = "-ExecutePythonScript=$CapturePyUe"
 Write-Host "ExecutePythonScript: $CapturePyUe"
 Write-Host "VELLUM_OUT_DIR=$OutDirUe"
 Write-Host "VELLUM_CAPTURE_STILLS=$($env:VELLUM_CAPTURE_STILLS)"
-Write-Host "Runner version: stage-to-project + env-args + no-AutomationLibrary-shot (2026-07-13)"
+Write-Host "VELLUM_MAX_SYSTEMS=$($env:VELLUM_MAX_SYSTEMS)"
+Write-Host "Runner version: framed-niagara-spawn (2026-07-13)"
 
 
 $ueExit = 0
