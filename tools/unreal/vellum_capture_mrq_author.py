@@ -24,6 +24,18 @@ MIN_FRAMES = 24
 DEFAULT_FPS = 30
 # Frames before playback start used as camera-cut warm-up head.
 WARMUP_FRAMES = 30
+
+
+def _editor_world(unreal_mod):
+    """Prefer UnrealEditorSubsystem; fall back to deprecated EditorLevelLibrary."""
+    try:
+        sub = unreal_mod.get_editor_subsystem(unreal_mod.UnrealEditorSubsystem)
+        if sub is not None:
+            return sub.get_editor_world()
+    except Exception:  # noqa: BLE001
+        pass
+    return _editor_world(unreal_mod)
+
 # Extra frames after Niagara reports finished so trails decay into shot.
 TAIL_PAD_FRAMES = 8
 
@@ -896,12 +908,12 @@ def _configure_mrq_config(unreal_mod, config, output_dir: str, width: int, heigh
 def _force_save_map(unreal_mod, map_path: str, notes: list[str], errors: list[str], expect_actors: int) -> None:
     try:
         unreal_mod.EditorLevelLibrary.set_current_level_by_name(
-            unreal_mod.EditorLevelLibrary.get_editor_world().get_name()
+            _editor_world(unreal_mod).get_name()
         )
     except Exception:  # noqa: BLE001
         pass
     try:
-        world = unreal_mod.EditorLevelLibrary.get_editor_world()
+        world = _editor_world(unreal_mod)
         # Mark dirty so save_map is not a no-op.
         try:
             unreal_mod.EditorAssetLibrary.save_loaded_asset(world, only_if_is_dirty=False)

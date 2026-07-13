@@ -24,6 +24,18 @@ DEFAULT_PORT = 8771
 STUDIO_MAP = "/Game/Vellum/Maps/VellumLookdevStudio"
 STUDIO_BUILD_REQUIRED = 3  # match vellum_lookdev_studio_author.STUDIO_BUILD
 
+
+def _editor_world(unreal_mod):
+    """Prefer UnrealEditorSubsystem; fall back to deprecated EditorLevelLibrary."""
+    try:
+        sub = unreal_mod.get_editor_subsystem(unreal_mod.UnrealEditorSubsystem)
+        if sub is not None:
+            return sub.get_editor_world()
+    except Exception:  # noqa: BLE001
+        pass
+    return _editor_world(unreal_mod)
+
+
 _state_lock = threading.Lock()
 _state: dict[str, Any] = {
     "busy": False,
@@ -124,7 +136,7 @@ def _current_map_path() -> str:
     try:
         import unreal  # type: ignore
 
-        world = unreal.EditorLevelLibrary.get_editor_world()
+        world = _editor_world(unreal)
         if world is None:
             return ""
         return str(world.get_path_name() or world.get_name() or "")

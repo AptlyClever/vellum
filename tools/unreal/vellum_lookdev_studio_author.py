@@ -19,6 +19,18 @@ PREFIX = "VellumStudio_"
 STUDIO_BUILD = 3
 
 
+def _editor_world(unreal_mod):
+    """Prefer UnrealEditorSubsystem; fall back to deprecated EditorLevelLibrary."""
+    try:
+        sub = unreal_mod.get_editor_subsystem(unreal_mod.UnrealEditorSubsystem)
+        if sub is not None:
+            return sub.get_editor_world()
+    except Exception:  # noqa: BLE001
+        pass
+    return _editor_world(unreal_mod)
+
+
+
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -109,7 +121,7 @@ def _open_or_create_map(unreal_mod, map_path: str, notes: list[str]) -> bool:
 
 def _save_map(unreal_mod, map_path: str, notes: list[str], errors: list[str]) -> None:
     try:
-        world = unreal_mod.EditorLevelLibrary.get_editor_world()
+        world = _editor_world(unreal_mod)
         unreal_mod.EditorLoadingAndSavingUtils.save_map(world, map_path)
         notes.append("saved_map")
     except Exception as exc:  # noqa: BLE001
@@ -127,7 +139,7 @@ def _save_map(unreal_mod, map_path: str, notes: list[str], errors: list[str]) ->
     if not unreal_mod.EditorAssetLibrary.does_asset_exist(map_path):
         # new_blank_map may need an explicit save as asset path
         try:
-            world = unreal_mod.EditorLevelLibrary.get_editor_world()
+            world = _editor_world(unreal_mod)
             unreal_mod.EditorLoadingAndSavingUtils.save_map(world, map_path)
         except Exception as exc:  # noqa: BLE001
             errors.append(f"map_missing:{map_path}:{exc}")
