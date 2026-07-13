@@ -205,6 +205,21 @@ def _find_labeled_actor(actor_sub, label: str):
     return None
 
 
+def _count_vellum_actors(actor_sub) -> int:
+    """Count transient MRQ possessable labels only — never studio fixtures."""
+    n = 0
+    try:
+        for actor in actor_sub.get_all_level_actors():
+            try:
+                if actor.get_actor_label().startswith(ACTOR_PREFIX):
+                    n += 1
+            except Exception:  # noqa: BLE001
+                continue
+    except Exception:  # noqa: BLE001
+        return n
+    return n
+
+
 def _studio_slot_location(unreal_mod, actor_sub, notes: list[str]):
     for label in (f"{STUDIO_PREFIX}Slot_Center", f"{STUDIO_PREFIX}Pedestal"):
         actor = _find_labeled_actor(actor_sub, label)
