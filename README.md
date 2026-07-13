@@ -41,7 +41,8 @@ pytest -q
 - **C (shipped):** SQLite job queue + `vellum-worker`; enqueue automatable IntakeRun steps
 - **D (shipped):** Axiom Read `#/axiom/vellum` + `?embed=axiom`
 - **E (shipped):** Epic Add-to-Project → vault stage (Fireworks pilot); `PATCH /api/assets`; `docs/slice-e-epic-staging.md`
-- **Next:** F — lookdev derive into project lanes
+- **F (shipped):** lookdev derive into project lanes (`docs/api-lookdev.md`); Fireworks stills → slots + hail-overlay
+
 
 ## Boundaries
 

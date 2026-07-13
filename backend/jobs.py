@@ -16,12 +16,15 @@ from pathlib import Path
 from typing import Any, Iterator
 
 from . import intake as intake_mod
+from . import lookdev as lookdev_mod
 from . import register as register_mod
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_DB = ROOT / "data" / "jobs.sqlite3"
 
-AUTOMATABLE_STEP_IDS = frozenset({"stage_vault", "record_paths", "confirm_project_fit"})
+AUTOMATABLE_STEP_IDS = frozenset(
+    {"stage_vault", "record_paths", "confirm_project_fit", "derive_lookdev"}
+)
 
 
 def jobs_db_path() -> Path:
@@ -288,6 +291,35 @@ def _execute_confirm_fit(job: dict[str, Any]) -> dict[str, Any]:
     return {"project_fit": asset.get("project_fit") or "", "confirmed": True}
 
 
+def _execute_derive_lookdev(job: dict[str, Any]) -> dict[str, Any]:
+    asset_id = job.get("asset_id")
+    if not asset_id:
+        raise ValueError("asset_id required")
+    payload = job.get("payload") or {}
+    lanes = payload.get("lanes") if isinstance(payload, dict) else None
+    if lanes is not None and not isinstance(lanes, list):
+        lanes = None
+    try:
+        result = lookdev_mod.derive_stills_for_asset(
+            str(asset_id),
+            lanes=[str(x) for x in lanes] if lanes else None,
+        )
+    except ValueError as exc:
+        if "no_preview_stills" in str(exc) or "raw_location_missing" in str(exc):
+            return {
+                "asset_id": str(asset_id),
+                "skipped": True,
+                "reason": str(exc),
+            }
+        raise
+    return {
+        "asset_id": result["asset_id"],
+        "lanes": result["lanes"],
+        "created_count": result["created_count"],
+        "output_ids": [o["id"] for o in result["outputs"]],
+    }
+
+
 def run_job(job: dict[str, Any]) -> dict[str, Any]:
     kind = job.get("kind")
     if kind == "prepare_stage":
@@ -296,6 +328,8 @@ def run_job(job: dict[str, Any]) -> dict[str, Any]:
         result = _execute_record_paths(job)
     elif kind == "confirm_project_fit":
         result = _execute_confirm_fit(job)
+    elif kind == "derive_lookdev":
+        result = _execute_derive_lookdev(job)
     else:
         raise ValueError(f"unknown job kind: {kind}")
 
@@ -303,8 +337,11 @@ def run_job(job: dict[str, Any]) -> dict[str, Any]:
     step_id = job.get("step_id")
     if run_id and step_id:
         note = json.dumps(result)[:1500]
+        step_status = "skipped" if result.get("skipped") else "done"
         try:
-            intake_mod.patch_step(str(run_id), str(step_id), status="done", notes=note)
+            intake_mod.patch_step(
+                str(run_id), str(step_id), status=step_status, notes=note
+            )
         except Exception as exc:  # noqa: BLE001
             result = {**result, "intake_patch_error": str(exc)}
     return result
@@ -331,6 +368,7 @@ def enqueue_automatable_for_run(run_id: str) -> list[dict[str, Any]]:
         "stage_vault": "prepare_stage",
         "record_paths": "record_paths",
         "confirm_project_fit": "confirm_project_fit",
+        "derive_lookdev": "derive_lookdev",
     }
     for step in run.get("steps") or []:
         if not isinstance(step, dict):

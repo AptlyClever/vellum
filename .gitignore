@@ -22,6 +22,7 @@ venv/
 data/asset-register.yaml
 data/intake-runs.yaml
 data/jobs.sqlite3
+data/derived-outputs.yaml
 data/*.sqlite3
 
 # Never track vault raw assets (vault lives outside this repo)

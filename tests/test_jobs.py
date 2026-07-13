@@ -24,10 +24,10 @@ def test_worker_prepares_stage_and_updates_intake(tmp_path: Path, monkeypatch) -
 
     run = propose_intake("portal-vfx-enhanced")
     jobs = enqueue_automatable_for_run(run["run_id"])
-    assert len(jobs) == 3
+    assert len(jobs) == 4
     assert all(j["status"] == "queued" for j in jobs)
 
-    for _ in range(5):
+    for _ in range(8):
         done = process_one_job()
         if done is None:
             break
@@ -39,6 +39,7 @@ def test_worker_prepares_stage_and_updates_intake(tmp_path: Path, monkeypatch) -
     assert by_id["stage_vault"]["status"] == "done"
     assert by_id["record_paths"]["status"] == "done"
     assert by_id["confirm_project_fit"]["status"] == "done"
+    assert by_id["derive_lookdev"]["status"] == "skipped"
     assert by_id["download_epic"]["status"] == "needs-human"
 
     asset = get_asset("portal-vfx-enhanced")
@@ -70,7 +71,7 @@ def test_jobs_api(tmp_path: Path, monkeypatch) -> None:
     run_id = proposed.json()["run_id"]
     enq = client.post(f"/api/intake/{run_id}/enqueue-automatable")
     assert enq.status_code == 200
-    assert enq.json()["count"] == 3
+    assert enq.json()["count"] == 4
 
     # Drain queue in-process (worker not running in TestClient)
     while process_one_job() is not None:

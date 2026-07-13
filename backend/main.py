@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 
 from . import intake as intake_mod
 from . import jobs as jobs_mod
+from . import lookdev as lookdev_mod
 from . import register as register_mod
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -27,8 +28,8 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(
     title="Vellum",
-    description="Control Alt Games asset vault — register, intake propose, background jobs.",
-    version="0.3.0",
+    description="Control Alt Games asset vault — register, intake, jobs, lookdev derive.",
+    version="0.4.0",
     lifespan=lifespan,
 )
 
@@ -58,11 +59,18 @@ class AssetPatchRequest(BaseModel):
     intake_notes: str | None = Field(default=None, max_length=4000)
 
 
+class LookdevDeriveRequest(BaseModel):
+    asset_id: str = Field(min_length=1, max_length=200)
+    lanes: list[str] | None = None
+    intake_run_id: str | None = Field(default=None, max_length=200)
+
+
 @app.get("/api/health")
 def health() -> dict[str, Any]:
     summary = register_mod.register_summary()
     runs = intake_mod.list_runs(limit=5)
     queued = jobs_mod.list_jobs(status="queued", limit=20)
+    derived = lookdev_mod.list_outputs(limit=5)
     return {
         "ok": True,
         "app": "vellum",
@@ -70,6 +78,7 @@ def health() -> dict[str, Any]:
         "register": summary,
         "intake_runs_recent": len(runs),
         "jobs_queued": len(queued),
+        "derived_outputs_recent": len(derived),
     }
 
 
@@ -177,7 +186,7 @@ def api_intake_enqueue_automatable(run_id: str) -> dict[str, Any]:
 
 @app.post("/api/jobs")
 def api_jobs_enqueue(body: JobEnqueueRequest) -> dict[str, Any]:
-    allowed = {"prepare_stage", "record_paths", "confirm_project_fit"}
+    allowed = {"prepare_stage", "record_paths", "confirm_project_fit", "derive_lookdev"}
     if body.kind not in allowed:
         raise HTTPException(status_code=400, detail=f"kind must be one of {sorted(allowed)}")
     return jobs_mod.enqueue_job(
@@ -205,6 +214,62 @@ def api_jobs_get(job_id: str) -> dict[str, Any]:
     if not job:
         raise HTTPException(status_code=404, detail="job_not_found")
     return job
+
+
+@app.get("/api/lookdev/lanes")
+def api_lookdev_lanes() -> dict[str, Any]:
+    lanes = lookdev_mod.list_lanes()
+    return {"schema_version": 1, "count": len(lanes), "lanes": lanes}
+
+
+@app.get("/api/lookdev/outputs")
+def api_lookdev_outputs(
+    asset_id: str | None = Query(default=None),
+    lane: str | None = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=200),
+) -> dict[str, Any]:
+    outputs = lookdev_mod.list_outputs(asset_id=asset_id, lane=lane, limit=limit)
+    return {"schema_version": 1, "count": len(outputs), "outputs": outputs}
+
+
+@app.get("/api/lookdev/outputs/{output_id}")
+def api_lookdev_output_get(output_id: str) -> dict[str, Any]:
+    out = lookdev_mod.get_output(output_id)
+    if not out:
+        raise HTTPException(status_code=404, detail="derived_output_not_found")
+    return out
+
+
+@app.get("/api/lookdev/outputs/{output_id}/file")
+def api_lookdev_output_file(output_id: str) -> FileResponse:
+    out = lookdev_mod.get_output(output_id)
+    if not out:
+        raise HTTPException(status_code=404, detail="derived_output_not_found")
+    try:
+        path = lookdev_mod.resolve_safe_file(out)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="file_missing") from None
+    except PermissionError:
+        raise HTTPException(status_code=403, detail="path_outside_vault") from None
+    return FileResponse(path)
+
+
+@app.post("/api/lookdev/derive")
+def api_lookdev_derive(body: LookdevDeriveRequest) -> dict[str, Any]:
+    """Enqueue (preferred) or run derive_lookdev for an asset with raw_location."""
+    if register_mod.get_asset(body.asset_id) is None:
+        raise HTTPException(status_code=404, detail="asset_not_found")
+    payload: dict[str, Any] = {"source": "api_lookdev_derive"}
+    if body.lanes:
+        payload["lanes"] = body.lanes
+    job = jobs_mod.enqueue_job(
+        kind="derive_lookdev",
+        asset_id=body.asset_id,
+        intake_run_id=body.intake_run_id,
+        step_id="derive_lookdev" if body.intake_run_id else None,
+        payload=payload,
+    )
+    return {"schema_version": 1, "job": job}
 
 
 @app.get("/")

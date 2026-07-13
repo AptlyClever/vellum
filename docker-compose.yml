@@ -14,9 +14,11 @@ services:
       VELLUM_SEED_PATH: /app/config/humble-seed.yaml
       VELLUM_INTAKE_RUNS_PATH: /app/data/intake-runs.yaml
       VELLUM_JOBS_DB_PATH: /app/data/jobs.sqlite3
+      VELLUM_DERIVED_PATH: /app/data/derived-outputs.yaml
       VELLUM_VAULT_ROOT: /mnt/data/vault/vellum
       VELLUM_VAULT_REGISTER_PATH: /mnt/data/vault/vellum/02-index/asset-register.yaml
       VELLUM_VAULT_INTAKE_RUNS_PATH: /mnt/data/vault/vellum/02-index/intake-runs.yaml
+      VELLUM_VAULT_DERIVED_PATH: /mnt/data/vault/vellum/02-index/derived-outputs.yaml
     volumes:
       - ./data:/app/data
       - /mnt/data/vault/vellum:/mnt/data/vault/vellum
@@ -44,9 +46,11 @@ services:
       VELLUM_SEED_PATH: /app/config/humble-seed.yaml
       VELLUM_INTAKE_RUNS_PATH: /app/data/intake-runs.yaml
       VELLUM_JOBS_DB_PATH: /app/data/jobs.sqlite3
+      VELLUM_DERIVED_PATH: /app/data/derived-outputs.yaml
       VELLUM_VAULT_ROOT: /mnt/data/vault/vellum
       VELLUM_VAULT_REGISTER_PATH: /mnt/data/vault/vellum/02-index/asset-register.yaml
       VELLUM_VAULT_INTAKE_RUNS_PATH: /mnt/data/vault/vellum/02-index/intake-runs.yaml
+      VELLUM_VAULT_DERIVED_PATH: /mnt/data/vault/vellum/02-index/derived-outputs.yaml
     volumes:
       - ./data:/app/data
       - /mnt/data/vault/vellum:/mnt/data/vault/vellum
@@ -65,4 +69,5 @@ services:
       VELLUM_SEED_PATH: /app/config/humble-seed.yaml
       VELLUM_INTAKE_RUNS_PATH: /tmp/vellum-test-intake.yaml
       VELLUM_JOBS_DB_PATH: /tmp/vellum-test-jobs.sqlite3
+      VELLUM_DERIVED_PATH: /tmp/vellum-test-derived.yaml
       VELLUM_VAULT_ROOT: /tmp/vellum-test-vault

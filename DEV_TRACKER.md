@@ -1,8 +1,8 @@
 # Development Tracker: Vellum
 
-> **Current Active Issue:** Slice F — Lookdev derive into project lanes
+> **Current Active Issue:** *(none — slices A–F complete)*
 > **Governing CFD:** `cfd-inspiration-20260713-015950-vellum-control-alt-games-asset-vault-register-in`
-> **Next Immediate Step:** Link derived stills/clips from register to project lanes without copying raw packs into game repos (plan task `task-vellum-slice-f-lookdev`)
+> **Next Immediate Step:** Operator levelset / next Inspiration (Unity tier reconcile, scratch inspect, or deeper Niagara renders)
 
 ---
 
@@ -12,12 +12,10 @@
 * **UI:** http://192.168.68.93:8770/
 * **Axiom Read:** http://192.168.68.93:7895/#/axiom/vellum
 * **Health:** `curl -sS http://192.168.68.93:8770/api/health`
-* **Propose intake:** `curl -sS -X POST http://192.168.68.93:8770/api/intake/propose -H 'Content-Type: application/json' -d '{"asset_id":"portal-vfx-enhanced","requested_by":"agent"}'`
-* **Enqueue automatable:** `curl -sS -X POST http://192.168.68.93:8770/api/intake/{run_id}/enqueue-automatable`
-* **Patch asset:** `curl -sS -X PATCH http://192.168.68.93:8770/api/assets/{id} -H 'Content-Type: application/json' -d '{"redemption_status":"redeemed"}'`
+* **Derive lookdev:** `curl -sS -X POST http://192.168.68.93:8770/api/lookdev/derive -H 'Content-Type: application/json' -d '{"asset_id":"fireworks-vol-1-niagara","lanes":["slots","hail-overlay"]}'`
+* **Lookdev outputs:** `curl -sS 'http://192.168.68.93:8770/api/lookdev/outputs?asset_id=fireworks-vol-1-niagara'`
 * **Epic staging runbook:** `docs/slice-e-epic-staging.md`
-* **Jobs:** `curl -sS 'http://192.168.68.93:8770/api/jobs?asset_id=portal-vfx-enhanced'`
-* **Intake/jobs API docs:** `docs/api-intake.md`
+* **Lookdev API:** `docs/api-lookdev.md`
 * **Compose:** `docker compose up -d --build` (app + worker, port **8770**)
 * **Tests:** `PYTHONPATH=. pytest -q`
 * **Governing CFD:** `#/axiom/praxis-tracker?inspiration=cfd-inspiration-20260713-015950-vellum-control-alt-games-asset-vault-register-in`
@@ -26,11 +24,9 @@
 
 ## 2. The Active Issue (Do Not Add Steps Here!)
 
-* **What success looks like:** Derived lookdev outputs link from the register to project lanes; raw packs stay in the vault only.
+* **What success looks like:** *(plan A–F complete — pick next Inspiration)*
 * **Sub-Tasks:**
-  - [ ] Define DerivedOutput + lane link model
-  - [ ] Produce at least one still/clip from a staged pack (Fireworks pilot candidate)
-  - [ ] Register link without copying raw Content into game repos
+  - [x] Slices A–F shipped
 
 ---
 
@@ -38,7 +34,7 @@
 *Ideas deferred until the active issue completes.*
 
 * Unity tier contents unresolved until redemption / library inspection.
-* Scratch Unreal inspect project under vault `03-scratch-projects/`.
+* Scratch Unreal inspect + real Niagara viewport renders (beyond texture stills).
 * Optional deeper AI fit-tagging.
 
 ---
@@ -55,3 +51,4 @@
 * **2026-07-13** — **Slice C shipped:** SQLite jobs + `vellum-worker`; enqueue automatable steps; job status API/UI. Epic/Unity stay needs-human. Active issue → Slice D.
 * **2026-07-13** — **Slice D shipped:** Axiom Read nav `#/axiom/vellum` (Shell hardcode + registry embed); Vellum `?embed=axiom` chrome. Active issue → Slice E.
 * **2026-07-13** — **Slice E shipped:** Fireworks Vol. 1 Niagara Epic Add-to-Project → vault stage (~115 files / 609M); intake human gates marked done; `PATCH /api/assets`; runbook `docs/slice-e-epic-staging.md`. Active issue → Slice F.
+* **2026-07-13** — **Slice F shipped:** DerivedOutput + lanes; `derive_lookdev` job copies preview stills into `04-lookdev` / `05-derived-renders` (Fireworks → slots + hail-overlay); UI grid + `docs/api-lookdev.md`. Plan A–F complete.

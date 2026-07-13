@@ -329,6 +329,71 @@ async function openDetail(id) {
     console.error(err);
   }
 
+  const lookdevHead = document.createElement("h3");
+  lookdevHead.textContent = "Lookdev";
+  lookdevHead.style.marginTop = "1.5rem";
+  host.appendChild(lookdevHead);
+
+  const lookdevActions = document.createElement("div");
+  lookdevActions.className = "detail-actions";
+  const deriveBtn = document.createElement("button");
+  deriveBtn.type = "button";
+  deriveBtn.className = "btn";
+  deriveBtn.textContent = "Derive lookdev stills";
+  deriveBtn.addEventListener("click", async () => {
+    deriveBtn.disabled = true;
+    deriveBtn.textContent = "Queuing…";
+    try {
+      const res = await fetch("/api/lookdev/derive", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ asset_id: a.id }),
+      });
+      if (!res.ok) throw new Error(`derive ${res.status}`);
+      deriveBtn.textContent = "Queued";
+      setTimeout(() => openDetail(a.id), 1500);
+    } catch (err) {
+      deriveBtn.textContent = "Derive failed";
+      console.error(err);
+    }
+  });
+  lookdevActions.appendChild(deriveBtn);
+  host.appendChild(lookdevActions);
+
+  const lookdevHost = document.createElement("div");
+  lookdevHost.className = "lookdev-grid";
+  host.appendChild(lookdevHost);
+
+  try {
+    const derived = await fetchJson(
+      `/api/lookdev/outputs?asset_id=${encodeURIComponent(a.id)}`
+    );
+    const outputs = derived.outputs || [];
+    if (!outputs.length) {
+      const empty = document.createElement("p");
+      empty.className = "fit";
+      empty.textContent =
+        "No derived stills yet. Requires staged pack with png/jpg textures.";
+      lookdevHost.appendChild(empty);
+    } else {
+      for (const out of outputs.slice(0, 12)) {
+        const card = document.createElement("figure");
+        card.className = "lookdev-card";
+        const img = document.createElement("img");
+        img.src = `/api/lookdev/outputs/${encodeURIComponent(out.id)}/file`;
+        img.alt = `${out.lane} ${out.kind}`;
+        img.loading = "lazy";
+        card.appendChild(img);
+        const cap = document.createElement("figcaption");
+        cap.textContent = `${out.lane} · ${out.kind}`;
+        card.appendChild(cap);
+        lookdevHost.appendChild(card);
+      }
+    }
+  } catch (err) {
+    console.error(err);
+  }
+
   $("detail").hidden = false;
 }
 

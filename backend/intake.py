@@ -223,14 +223,14 @@ def build_proposed_steps(asset: dict[str, Any]) -> list[dict[str, Any]]:
             ),
             _step(
                 "derive_lookdev",
-                "Optional lookdev still / clip",
+                "Derive lookdev stills into project lanes",
                 status="pending",
                 kind="derive",
                 detail=(
-                    f"Later: write derived outputs under {vault}/04-lookdev/ "
-                    "(Slice F). Skip until inspect succeeds."
+                    f"Copy preview stills (png/jpg) from staged pack into {vault}/04-lookdev/ "
+                    "and 05-derived-renders/ lanes. Never copy raw .uasset packs into product repos."
                 ),
-                automatable=False,
+                automatable=True,
             ),
         ]
     )
