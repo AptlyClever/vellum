@@ -20,6 +20,7 @@ venv/
 
 # Runtime register (seeded from config/humble-seed.yaml)
 data/asset-register.yaml
+data/intake-runs.yaml
 data/*.sqlite3
 
 # Never track vault raw assets (vault lives outside this repo)

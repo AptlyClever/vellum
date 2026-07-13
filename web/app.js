@@ -121,6 +121,71 @@ function addDlRow(dl, term, value) {
   dl.append(dt, dd);
 }
 
+function makeStatusPill(status) {
+  const span = document.createElement("span");
+  const kind =
+    status === "done"
+      ? "open"
+      : status === "blocked"
+        ? "expired"
+        : status === "needs-human"
+          ? "needs"
+          : "unknown";
+  span.className = `pill ${kind}`;
+  span.textContent = status || "unknown";
+  return span;
+}
+
+function renderIntakeRun(host, run) {
+  const wrap = document.createElement("div");
+  wrap.className = "intake-run";
+
+  const head = document.createElement("div");
+  head.className = "intake-run-head";
+  const title = document.createElement("strong");
+  title.textContent = run.run_id;
+  head.appendChild(title);
+  head.appendChild(makeStatusPill(run.status));
+  wrap.appendChild(head);
+
+  const meta = document.createElement("p");
+  meta.className = "fit";
+  meta.textContent = `requested_by=${run.requested_by || "?"} · ${run.steps?.length || 0} steps`;
+  wrap.appendChild(meta);
+
+  const ol = document.createElement("ol");
+  ol.className = "intake-steps";
+  for (const step of run.steps || []) {
+    const li = document.createElement("li");
+    const row = document.createElement("div");
+    row.className = "intake-step-row";
+    const label = document.createElement("span");
+    label.textContent = step.title;
+    row.appendChild(label);
+    row.appendChild(makeStatusPill(step.status));
+    li.appendChild(row);
+    if (step.detail) {
+      const d = document.createElement("p");
+      d.className = "fit";
+      d.textContent = step.detail;
+      li.appendChild(d);
+    }
+    ol.appendChild(li);
+  }
+  wrap.appendChild(ol);
+  host.appendChild(wrap);
+}
+
+async function proposeIntake(assetId) {
+  const res = await fetch("/api/intake/propose", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ asset_id: assetId, requested_by: "operator-ui" }),
+  });
+  if (!res.ok) throw new Error(`propose failed ${res.status}`);
+  return res.json();
+}
+
 async function openDetail(id) {
   const a = await fetchJson(`/api/assets/${encodeURIComponent(id)}`);
   const host = $("detail-body");
@@ -130,6 +195,31 @@ async function openDetail(id) {
   h2.textContent = a.display_name || a.id;
   host.appendChild(h2);
   host.appendChild(makePill(a.redeem_window));
+
+  const actions = document.createElement("div");
+  actions.className = "detail-actions";
+  const proposeBtn = document.createElement("button");
+  proposeBtn.type = "button";
+  proposeBtn.className = "btn";
+  proposeBtn.textContent = "Propose intake";
+  proposeBtn.addEventListener("click", async () => {
+    proposeBtn.disabled = true;
+    proposeBtn.textContent = "Proposing…";
+    try {
+      const run = await proposeIntake(a.id);
+      await openDetail(a.id);
+      const anchor = document.getElementById("intake-latest");
+      if (anchor) {
+        clear(anchor);
+        renderIntakeRun(anchor, run);
+      }
+    } catch (err) {
+      proposeBtn.textContent = "Propose failed";
+      console.error(err);
+    }
+  });
+  actions.appendChild(proposeBtn);
+  host.appendChild(actions);
 
   const dl = document.createElement("dl");
   addDlRow(dl, "Id", a.id);
@@ -147,6 +237,32 @@ async function openDetail(id) {
   note.textContent =
     "Expired redeem window only means we may not re-fetch from the store — it does not invalidate staged assets.";
   host.appendChild(note);
+
+  const intakeHead = document.createElement("h3");
+  intakeHead.textContent = "Intake";
+  intakeHead.style.marginTop = "1.5rem";
+  host.appendChild(intakeHead);
+
+  const latest = document.createElement("div");
+  latest.id = "intake-latest";
+  host.appendChild(latest);
+
+  try {
+    const listed = await fetchJson(
+      `/api/intake?asset_id=${encodeURIComponent(a.id)}&limit=3`
+    );
+    const runs = listed.runs || [];
+    if (!runs.length) {
+      const empty = document.createElement("p");
+      empty.className = "fit";
+      empty.textContent = "No IntakeRuns yet. Propose one to get a step plan.";
+      latest.appendChild(empty);
+    } else {
+      for (const run of runs) renderIntakeRun(latest, run);
+    }
+  } catch (err) {
+    console.error(err);
+  }
 
   $("detail").hidden = false;
 }

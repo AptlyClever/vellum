@@ -1,8 +1,8 @@
 # Development Tracker: Vellum
 
-> **Current Active Issue:** Slice B — Intake propose (IntakeRun step plans)
+> **Current Active Issue:** Slice C — Worker stage jobs (API + background worker)
 > **Governing CFD:** `cfd-inspiration-20260713-015950-vellum-control-alt-games-asset-vault-register-in`
-> **Next Immediate Step:** Implement IntakeRun propose API + UI against existing register (plan task `task-vellum-slice-b-intake-propose`)
+> **Next Immediate Step:** Add Conduit-style worker for long stage/scan jobs (plan task `task-vellum-slice-c-worker`)
 
 ---
 
@@ -11,24 +11,22 @@
 
 * **UI:** http://192.168.68.93:8770/
 * **Health:** `curl -sS http://192.168.68.93:8770/api/health`
+* **Propose intake:** `curl -sS -X POST http://192.168.68.93:8770/api/intake/propose -H 'Content-Type: application/json' -d '{"asset_id":"portal-vfx-enhanced","requested_by":"agent"}'`
+* **Intake API docs:** `docs/api-intake.md`
 * **Compose:** `docker compose up -d --build` (port **8770**)
 * **Tests:** `PYTHONPATH=. pytest -q`
-* **Governing CFD (Axiom):** `#/axiom/praxis-tracker?inspiration=cfd-inspiration-20260713-015950-vellum-control-alt-games-asset-vault-register-in`
-* **CFD mirror:** `docs/cfd/README.md`
-* **Vault:** `/mnt/data/vault/vellum`
-* **GitHub:** https://github.com/AptlyClever/vellum
-* **Axiom registry id:** `vellum`
+* **Governing CFD:** `#/axiom/praxis-tracker?inspiration=cfd-inspiration-20260713-015950-vellum-control-alt-games-asset-vault-register-in`
 
 ---
 
 ## 2. The Active Issue (Do Not Add Steps Here!)
 
-* **What success looks like:** Human or agent can request an intake plan for a register asset; Vellum writes an IntakeRun with ordered steps and honest statuses (pending / blocked / needs-human), without pretending Epic/Unity downloads are fully automated yet.
+* **What success looks like:** Long vault work (stage/scan) leaves the HTTP request; job status is visible; agents use the same job API as the UI.
 * **Sub-Tasks:**
-  - [ ] IntakeRun model + persistence
-  - [ ] Propose endpoint (from asset id / humble source)
-  - [ ] Minimal UI to view proposed steps
-  - [ ] Agent-usable JSON shape documented
+  - [ ] Background worker process (Conduit-shaped)
+  - [ ] Enqueue stage/scan from IntakeRun steps that are automatable
+  - [ ] Job status API + UI surface
+  - [ ] Keep needs-human steps honest (no fake Epic autopilot)
 
 ---
 
@@ -36,8 +34,8 @@
 *Ideas deferred until the active issue completes.*
 
 * Unity tier contents unresolved until redemption / library inspection.
-* Slice C–F per governing CFD plan (workers, Axiom Read nav, drive imports, lookdev derive).
-* Optional deeper AI fit-tagging after intake propose exists.
+* Slice D–F (Axiom Read nav, drive imports, lookdev derive).
+* Optional deeper AI fit-tagging.
 
 ---
 
@@ -46,6 +44,7 @@
 * **2026-07-12** — Canonized as **Vellum** under Control Alt Games. Project root `/mnt/temp/config/vellum`; vault `/mnt/data/vault/vellum`. Registered in Axiom `apps.registry.yaml`. Handoff docs moved from Axiom `docs/control-alt-games/` salvage into this repo.
 * **2026-07-12** — Public GitHub repo [`AptlyClever/vellum`](https://github.com/AptlyClever/vellum); initial canon pushed to `main`.
 * **2026-07-12** — Architecture research completed (DAM layers, free lessons, Bandit+Conduit sibling pattern, slices A–F). Canvas + `docs/cfd/architecture-research.md`.
-* **2026-07-13** — Governing CFD Inspiration created and plan approved in Axiom: `cfd-inspiration-20260713-015950-vellum-control-alt-games-asset-vault-register-in`. Discovery + canon evidence attached. Active issue set to Slice A.
-* **2026-07-13** — Added `vellum` to handoff `registry/projects.yaml` so Axiom workbench/tracker/bind-cfd can resolve the project.
-* **2026-07-13** — **Slice A shipped:** `config/humble-seed.yaml` (37 items, no keys), FastAPI register API, browse UI with redeem-by green/red, Compose on `:8770`, tests green, vault register mirror. Active issue → Slice B.
+* **2026-07-13** — Governing CFD Inspiration created and plan approved in Axiom. Discovery + canon evidence attached.
+* **2026-07-13** — Added `vellum` to handoff `registry/projects.yaml`; Axiom mount + bind-cfd verified.
+* **2026-07-13** — **Slice A shipped:** register + browse + redeem-by lights on `:8770`.
+* **2026-07-13** — **Slice B shipped:** IntakeRun propose/list/get/patch-step API; honest needs-human/blocked steps; detail UI “Propose intake”; `docs/api-intake.md`. Active issue → Slice C.

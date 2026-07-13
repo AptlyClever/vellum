@@ -12,7 +12,9 @@ services:
     environment:
       VELLUM_REGISTER_PATH: /app/data/asset-register.yaml
       VELLUM_SEED_PATH: /app/config/humble-seed.yaml
+      VELLUM_INTAKE_RUNS_PATH: /app/data/intake-runs.yaml
       VELLUM_VAULT_REGISTER_PATH: /vault/02-index/asset-register.yaml
+      VELLUM_VAULT_INTAKE_RUNS_PATH: /vault/02-index/intake-runs.yaml
     volumes:
       - ./data:/app/data
       - /mnt/data/vault/vellum:/vault

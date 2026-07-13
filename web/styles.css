@@ -213,12 +213,71 @@ table.assets tbody tr:last-child td {
   background: var(--unknown-bg);
 }
 
+.pill.needs {
+  color: #8a5a12;
+  background: #f5e6c8;
+}
+
 .deadline {
   display: block;
   margin-top: 0.25rem;
   font-family: var(--mono);
   font-size: 0.72rem;
   color: var(--muted);
+}
+
+.detail-actions {
+  margin: 0.85rem 0 0.25rem;
+}
+
+.btn {
+  font: 600 0.9rem/1.2 var(--sans);
+  color: var(--panel);
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  padding: 0.5rem 0.85rem;
+  cursor: pointer;
+}
+
+.btn:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+
+.intake-run {
+  margin-top: 0.85rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid var(--line);
+}
+
+.intake-run-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.intake-run-head strong {
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  font-weight: 500;
+}
+
+.intake-steps {
+  margin: 0.5rem 0 0;
+  padding-left: 1.15rem;
+}
+
+.intake-steps li {
+  margin: 0.55rem 0;
+}
+
+.intake-step-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  align-items: center;
+  justify-content: space-between;
 }
 
 .detail {

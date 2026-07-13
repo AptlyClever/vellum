@@ -37,7 +37,8 @@ pytest -q
 ## Slice status
 
 - **A (shipped):** register + browse UI, redeem-by green/red, `/api/health`, Compose on `:8770`
-- **Next:** B — intake propose (`IntakeRun`)
+- **B (shipped):** IntakeRun propose API + UI (`docs/api-intake.md`)
+- **Next:** C — worker stage jobs
 
 ## Boundaries
 
