@@ -69,7 +69,7 @@ function Find-UeEditor {
 function Get-ImageFiles {
   # Windows PowerShell: -Include without a trailing \* often returns NOTHING.
   # Prefer -Filter (one extension per call) + -File.
-  # Use ArrayList — List[object].Add(FileInfo) throws "Argument types do not match" on PS 5.1.
+  # Use ArrayList - List[object].Add(FileInfo) throws "Argument types do not match" on PS 5.1.
   param([string]$Root, [string[]]$Extensions = @("*.png", "*.jpg", "*.jpeg", "*.bmp"))
   if (-not (Test-Path $Root)) { return @() }
   $found = New-Object System.Collections.ArrayList
@@ -180,7 +180,7 @@ function Invoke-UeLogged {
     -RedirectStandardError $errPath
   $started = Get-Date
   while ($true) {
-    # Process.HasExited is stale until Refresh — without this the runner
+    # Process.HasExited is stale until Refresh - without this the runner
     # can sit forever after Unreal exits (nothing visible on the host).
     try { $proc.Refresh() } catch { }
     if ($proc.HasExited) { break }
@@ -229,7 +229,7 @@ function Get-LogShotSnippet([string]$LogPath) {
     Where-Object { $_.Line -notmatch "commandline=|Command Line:|-ExecCmds=" } |
     Select-Object -Last 40 |
     ForEach-Object { $_.Line }
-  if (-not $lines) { return "(no screenshot/map-ready lines in log — cmdline HighResShot echo ignored)" }
+  if (-not $lines) { return "(no screenshot/map-ready lines in log - cmdline HighResShot echo ignored)" }
   return ($lines -join "`n")
 }
 
@@ -247,7 +247,7 @@ function ConvertTo-UePath([string]$Path) {
 }
 
 function ConvertTo-UeSoftPath([string]$PackageOrSoft) {
-  # Epic cmdline requires /Game/Path/Asset.Asset — package path alone often exits 0 with zero frames.
+  # Epic cmdline requires /Game/Path/Asset.Asset - package path alone often exits 0 with zero frames.
   $p = ConvertTo-UePath $PackageOrSoft
   if (-not $p) { return $p }
   $leaf = ($p -split "/")[-1]
@@ -462,7 +462,7 @@ if ($needStudio) {
   if (Test-Path $StudioLog) { Remove-Item -Force $StudioLog }
   $StudioExecFlag = "-ExecutePythonScript=" + (ConvertTo-UePath $StagedStudioPy)
   Write-Host "Phase 0 (lookdev studio): $StudioExecFlag"
-  Send-VellumProgress -Message "Building Lookdev Studio map…"
+  Send-VellumProgress -Message "Building Lookdev Studio map..."
   $studioExit = 0
   try {
     $studioExit = Invoke-UeLogged -Exe $Ue -ArgumentList @(
@@ -498,7 +498,7 @@ function Read-InventoryCache {
   $cachedMax = 0
   if ($null -ne $doc.max_systems) { $cachedMax = [int]$doc.max_systems }
   if ($cachedMax -ne $MaxSystems) {
-    Write-Host "Inventory cache max_systems mismatch (cache=$cachedMax want=$MaxSystems) — refreshing"
+    Write-Host "Inventory cache max_systems mismatch (cache=$cachedMax want=$MaxSystems) - refreshing"
     return $null
   }
   if ($doc.written_at) {
@@ -529,7 +529,7 @@ function Write-InventoryCache {
 }
 
 # ---------------------------------------------------------------------------
-# Phase A: inventory (use on-disk cache when fresh — avoid UE cold start)
+# Phase A: inventory (use on-disk cache when fresh - avoid UE cold start)
 # ---------------------------------------------------------------------------
 $inv = $null
 $inventoryFromCache = $false
@@ -607,7 +607,7 @@ if ($pickedSystems.Count -eq 0) {
 }
 
 # ---------------------------------------------------------------------------
-# Skip systems already covered in vault (fast HashSet — no local PNG scans).
+# Skip systems already covered in vault (fast HashSet - no local PNG scans).
 # ForceCapture / VELLUM_FORCE_CAPTURE re-renders everything.
 # ---------------------------------------------------------------------------
 $skippedVault = New-Object System.Collections.ArrayList
@@ -615,7 +615,7 @@ $toRenderSystems = New-Object System.Collections.ArrayList
 $vaultCovered = New-Object 'System.Collections.Generic.HashSet[string]'
 $skipSw = [System.Diagnostics.Stopwatch]::StartNew()
 if (-not $ForceCapture -and $pickedSystems.Count -gt 0) {
-  Send-VellumProgress -Message "Skip check: fetching vault lookdev…"
+  Send-VellumProgress -Message "Skip check: fetching vault lookdev..."
   $vaultOutputs = Get-LookdevOutputs -VellumBase $VellumBase -AssetId $AssetId
   $vaultCovered = Get-VaultCoveredSystemSet -Outputs $vaultOutputs -Lanes $IngestLanes
   Write-Host "Skip check: vault outputs=$(@($vaultOutputs).Count) covered=$($vaultCovered.Count) force=$ForceCapture"
@@ -764,10 +764,10 @@ if ($batchSystems.Count -gt 0) {
           $_ | Out-File -FilePath $MrqLog -Append
         }
         Write-Host "Phase C batch MRQ process exit=$mrqExit (artifacts are the gate)"
-        # Do NOT trust exit code — wait for frames for each authored system next.
+        # Do NOT trust exit code - wait for frames for each authored system next.
         $renderedOk = $true
       } else {
-        Write-Host "Phase C: no queue_path from author — falling back to per-system MRQ"
+        Write-Host "Phase C: no queue_path from author - falling back to per-system MRQ"
       }
 
       # Per-system: wait for MRQ artifacts, then hero + ingest. Re-render only if zero frames.

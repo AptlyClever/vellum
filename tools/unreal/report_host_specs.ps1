@@ -36,7 +36,7 @@ $disks = @(Get-CimSafe "Win32_LogicalDisk" -Filter "DriveType=3")
 $totalRamBytes = 0
 foreach ($m in $mem) { $totalRamBytes += [int64]$m.Capacity }
 
-# Prefer nvidia-smi for real VRAM — Win32 AdapterRAM is a 32-bit field and often lies.
+# Prefer nvidia-smi for real VRAM - Win32 AdapterRAM is a 32-bit field and often lies.
 $nvidia = @()
 try {
   $smi = Get-Command nvidia-smi -ErrorAction SilentlyContinue

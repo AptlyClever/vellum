@@ -5,9 +5,9 @@
 
 .DESCRIPTION
   Keep this running on the UE workstation. Operator uses the Vellum UI button
-  "Capture from Unreal" — this agent does the Unreal work and reports back.
+  "Capture from Unreal" - this agent does the Unreal work and reports back.
 
-  Hosts (profiles): config/ue-hosts.json — Aurora (primary) / Borealis (secondary).
+  Hosts (profiles): config/ue-hosts.json - Aurora (primary) / Borealis (secondary).
   Only one agent should poll at a time. Active host defaults from that file.
 
 .EXAMPLE
@@ -25,7 +25,7 @@ param(
   [switch]$ReportHostSpecs,
   # Experimental: warm Lookdev Worker (:8771). Default is Cmd runner (proven on Aurora).
   [switch]$UseLookdevWorker,
-  # Explicit default / WinSW stamp — Cmd-per-phase MRQ (works without warm editor).
+  # Explicit default / WinSW stamp - Cmd-per-phase MRQ (works without warm editor).
   [switch]$LegacyCmdRunner
 )
 # Default capture path is legacy Cmd. Worker is opt-in only.
@@ -130,18 +130,18 @@ function Invoke-CaptureViaWorker {
   param($Ctx)
   # Pull + restage + Ensure before every Capture so the operator never babysits.
   if (Test-Path $Heal) {
-    Write-Host "Host self-heal before Capture…"
+    Write-Host "Host self-heal before Capture..."
     & $Heal -HostName $UeHost.id -VellumBase $VellumBase
     if ($LASTEXITCODE -ne 0) { throw "host_heal_failed" }
   } else {
-    Write-Host "Ensure Lookdev Worker on $WorkerUrl …"
+    Write-Host "Ensure Lookdev Worker on $WorkerUrl ..."
     & $WorkerSupervisor -Ensure -HostName $UeHost.id -Port $WorkerPort
     if ($LASTEXITCODE -ne 0) { throw "worker_ensure_failed" }
   }
 
   $progressUri = "$VellumBase/api/jobs/$($Ctx.JobId)/progress"
   try {
-    $prog = @{ message = "Lookdev Worker capture starting…" } | ConvertTo-Json
+    $prog = @{ message = "Lookdev Worker capture starting..." } | ConvertTo-Json
     Invoke-RestMethod -Method Post -Uri $progressUri -ContentType "application/json" -Body $prog | Out-Null
   } catch { }
 
@@ -161,7 +161,7 @@ function Invoke-CaptureViaWorker {
   }
   $body = $bodyObj | ConvertTo-Json -Depth 6
 
-  # Inbox + poll outbox — do not use a multi-hour blocking HTTP POST (that hung forever
+  # Inbox + poll outbox - do not use a multi-hour blocking HTTP POST (that hung forever
   # while the old worker froze the editor with serve_forever on the main script thread).
   $outDir = Join-Path $Ctx.ProjectDir "Saved\VellumCapture"
   $inboxDir = Join-Path $outDir "worker-inbox"
@@ -196,7 +196,7 @@ function Invoke-CaptureViaWorker {
         continue
       }
     }
-    $note = "Waiting for Lookdev Worker…"
+    $note = "Waiting for Lookdev Worker..."
     try {
       $h = Invoke-RestMethod -Method Get -Uri "$WorkerUrl/health" -TimeoutSec 3
       $note = "Worker busy=$($h.busy) studio_build=$($h.studio_build) version=$($h.version)"
@@ -217,7 +217,7 @@ function Invoke-CaptureViaWorker {
 
   # Ingest heroes/sequences from MRQ dirs the worker wrote.
   if (Test-Path $Recover) {
-    Write-Host "Worker capture returned — ingesting MRQ dirs"
+    Write-Host "Worker capture returned - ingesting MRQ dirs"
     if ($Ctx.ForceCapture) {
       & $Recover -VellumBase $VellumBase -HostName $UeHost.id -AssetId $Ctx.AssetId -Force
     } else {
@@ -279,13 +279,13 @@ function Invoke-CaptureJob {
     Invoke-CaptureViaWorker -Ctx $ctx
     return
   }
-  # Default (2026-07-13): UnrealEditor-Cmd MRQ — path that already produced vault stills.
+  # Default (2026-07-13): UnrealEditor-Cmd MRQ - path that already produced vault stills.
   Invoke-CaptureViaLegacyRunner -Ctx $ctx
 }
 
 Write-Host "Vellum UE agent polling $VellumBase every ${PollSeconds}s"
 Write-Host "UI trigger: asset detail → Capture from Unreal"
-Write-Host "Host profile: $($UeHost.id) ($($UeHost.label), $($UeHost.role)) — config active=$($UeHost.active_in_config)"
+Write-Host "Host profile: $($UeHost.id) ($($UeHost.label), $($UeHost.role)) - config active=$($UeHost.active_in_config)"
 Write-Host "Agent scripts: $Runner"
 Write-Host "Repo root: $RepoRoot"
 Write-Host "Agent fingerprint: legacy-cmd-default (2026-07-13)"
@@ -297,7 +297,7 @@ Write-Host "Legacy runner fingerprint: $($runnerVersionLine.Trim())"
 # Startup: always git-pull + restart service if SHA moved (never kill Unreal for worker).
 if ((Test-Path $Heal) -and (-not $RecoverOnly) -and (-not $ReportHostSpecs)) {
   try {
-    Write-Host "Startup host-heal (git + agent bounce if needed)…"
+    Write-Host "Startup host-heal (git + agent bounce if needed)..."
     & $Heal -HostName $UeHost.id -VellumBase $VellumBase
   } catch {
     Write-Host "WARNING: startup host-heal failed: $($_.Exception.Message)"
@@ -324,7 +324,7 @@ if ($ReportHostSpecs) {
 # Best-effort hardware snapshot so Vellum can size work to this workstation.
 if (Test-Path $ReportSpecs) {
   try {
-    Write-Host "Reporting host specs for $($UeHost.id)…"
+    Write-Host "Reporting host specs for $($UeHost.id)..."
     & $ReportSpecs -VellumBase $VellumBase -HostName $UeHost.id | Out-Null
   } catch {
     Write-Host "WARNING: host specs report failed: $($_.Exception.Message)"

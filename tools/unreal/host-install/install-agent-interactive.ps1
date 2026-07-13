@@ -37,13 +37,13 @@ if (-not $Pwsh) {
 if (-not $Pwsh) { throw "pwsh/powershell not on PATH" }
 
 Write-Host "RepoRoot=$RepoRoot"
-Write-Host "User=$env:USERNAME (interactive agent — not LocalSystem)"
+Write-Host "User=$env:USERNAME (interactive agent - not LocalSystem)"
 
-# Stop SYSTEM service — it cannot own GPU UnrealEditor-Cmd.
+# Stop SYSTEM service - it cannot own GPU UnrealEditor-Cmd.
 $InstallDir = Join-Path $RepoRoot "tools\unreal\host-install\runtime"
 $WinSwExe = Join-Path $InstallDir "VellumUeAgent.exe"
 if (Get-Service -Name "VellumUeAgent" -ErrorAction SilentlyContinue) {
-  Write-Host "Stopping/uninstalling Windows Service VellumUeAgent (LocalSystem)…"
+  Write-Host "Stopping/uninstalling Windows Service VellumUeAgent (LocalSystem)..."
   if (Test-Path $WinSwExe) {
     Push-Location $InstallDir
     try { & .\VellumUeAgent.exe stop | Out-Host } catch { }
@@ -89,7 +89,7 @@ Write-Host ("TaskState={0} LastTaskResult={1} LastRunTime={2}" -f $task.State, $
 $fp = Select-String -Path $AgentPs1 -Pattern 'Agent fingerprint:' | Select-Object -First 1
 Write-Host "Script: $($fp.Line.Trim())"
 Write-Host "git HEAD: $(git -C $RepoRoot rev-parse --short HEAD)"
-Write-Host "Done. Agent must run as $env:USERNAME — verify no VellumUeAgent Windows service remains."
+Write-Host "Done. Agent must run as $env:USERNAME - verify no VellumUeAgent Windows service remains."
 Get-Service -Name "VellumUeAgent" -ErrorAction SilentlyContinue | ForEach-Object {
-  Write-Host "WARNING: service still present Status=$($_.Status) — uninstall failed?"
+  Write-Host "WARNING: service still present Status=$($_.Status) - uninstall failed?"
 }

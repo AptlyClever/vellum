@@ -17,7 +17,7 @@ param(
   [string]$RepoRoot = "",
   [switch]$RestartAgentService,
   [switch]$SkipGitPull,
-  # Default Capture is legacy Cmd — do not kill the interactive editor for worker boot.
+  # Default Capture is legacy Cmd - do not kill the interactive editor for worker boot.
   [switch]$EnsureLookdevWorker,
   [switch]$HardRestartWorker
 )
@@ -42,7 +42,7 @@ try {
   Push-Location $RepoRoot
   $beforeSha = (git rev-parse HEAD 2>$null)
   if (-not $SkipGitPull) {
-    Write-Host "git fetch/pull --ff-only…"
+    Write-Host "git fetch/pull --ff-only..."
     git fetch --quiet origin 2>$null
     git pull --ff-only --quiet origin HEAD 2>$null
     if ($LASTEXITCODE -ne 0) {
@@ -61,7 +61,7 @@ $ensureCode = 0
 $health = $null
 if ($EnsureLookdevWorker) {
   if (-not (Test-Path $WorkerPs1)) { throw "Missing $WorkerPs1" }
-  Write-Host "Ensure Lookdev Worker (auto rebuilds stale studio)…"
+  Write-Host "Ensure Lookdev Worker (auto rebuilds stale studio)..."
   & $WorkerPs1 -Ensure -HostName $UeHost.id -Port $Port
   $ensureCode = $LASTEXITCODE
   try {
@@ -77,7 +77,7 @@ if ($EnsureLookdevWorker) {
     if (-not $health -or -not $health.ok) { $needWorkerRestart = $true }
     elseif ("$($health.version)" -notmatch "lookdev-worker-2") { $needWorkerRestart = $true }
     if ($needWorkerRestart) {
-      Write-Host "Restarting UnrealEditor to load lookdev-worker-2…"
+      Write-Host "Restarting UnrealEditor to load lookdev-worker-2..."
       Get-Process -Name "UnrealEditor","UnrealEditor-Cmd" -ErrorAction SilentlyContinue | ForEach-Object {
         try { Stop-Process -Id $_.Id -Force -ErrorAction Stop } catch { }
       }
@@ -96,7 +96,7 @@ if ($EnsureLookdevWorker) {
   } catch { $health = $null }
 }
 
-# Publish heal status into host_specs.lookdev_worker (merge — do not wipe hardware).
+# Publish heal status into host_specs.lookdev_worker (merge - do not wipe hardware).
 try {
   $healBlob = @{
     healed_at             = (Get-Date).ToUniversalTime().ToString("o")
@@ -133,10 +133,10 @@ try {
 
 $codeChanged = ($beforeSha -and $afterSha -and ($beforeSha -ne $afterSha))
 if ($RestartAgentService -or $codeChanged) {
-  # Prefer interactive Scheduled Task — WinSW/LocalSystem cannot run GPU UnrealEditor-Cmd.
+  # Prefer interactive Scheduled Task - WinSW/LocalSystem cannot run GPU UnrealEditor-Cmd.
   $task = Get-ScheduledTask -TaskName "VellumUeAgent" -ErrorAction SilentlyContinue
   if ($task) {
-    Write-Host "Restarting Scheduled Task VellumUeAgent (code_changed=$codeChanged)…"
+    Write-Host "Restarting Scheduled Task VellumUeAgent (code_changed=$codeChanged)..."
     Get-CimInstance Win32_Process -Filter "Name='pwsh.exe' OR Name='powershell.exe'" -ErrorAction SilentlyContinue |
       Where-Object { $_.CommandLine -and $_.CommandLine -match 'vellum_ue_agent\.ps1' } |
       ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }

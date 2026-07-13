@@ -78,7 +78,7 @@ function ConvertTo-UeCmdPath {
   if ($p -match "(?i)UnrealEditor\.exe$") {
     $cmd = $p -replace "(?i)UnrealEditor\.exe$", "UnrealEditor-Cmd.exe"
     if (Test-Path -LiteralPath $cmd) { return (Resolve-Path -LiteralPath $cmd).Path }
-    # Cmd missing beside Editor — still return expected Cmd path for clearer errors.
+    # Cmd missing beside Editor - still return expected Cmd path for clearer errors.
     return $cmd
   }
   if (Test-Path -LiteralPath $p) {
@@ -143,7 +143,7 @@ function Find-UeCmdFromHost {
   }
 
   $hostId = if ($HostProfile) { $HostProfile.id } else { "?" }
-  throw "UnrealEditor-Cmd.exe not found for host '$hostId'. Set ue_cmd in config/ue-hosts.json or VELLUM_UE_CMD. (Editor path alone is fine — we derive -Cmd beside it.)"
+  throw "UnrealEditor-Cmd.exe not found for host '$hostId'. Set ue_cmd in config/ue-hosts.json or VELLUM_UE_CMD. (Editor path alone is fine - we derive -Cmd beside it.)"
 }
 
 function Resolve-UprojectFromHost {
@@ -153,7 +153,7 @@ function Resolve-UprojectFromHost {
     [string]$FallbackUproject = ""
   )
   $tries = New-Object System.Collections.Generic.List[string]
-  # Active host profile first — job payload often still has the other machine's path.
+  # Active host profile first - job payload often still has the other machine's path.
   if ($HostProfile) {
     if ($HostProfile.project) { [void]$tries.Add($HostProfile.project) }
     if ($HostProfile.project_dir) {

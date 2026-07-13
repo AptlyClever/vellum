@@ -91,7 +91,7 @@ if (-not $py) { $py = Get-Command py -ErrorAction SilentlyContinue }
 if (-not $py) { throw "python/py not found on PATH" }
 
 if (-not (Test-Path $MrqRoot)) {
-  throw "No MRQ output root at $MrqRoot — nothing to recover"
+  throw "No MRQ output root at $MrqRoot - nothing to recover"
 }
 
 $dirs = @()
@@ -168,7 +168,7 @@ foreach ($dir in $dirs) {
   }
 
   $HeroJson = Join-Path $OutDir "heroes-recover-$systemName.json"
-  # Quiet stdout — pick_heroes JSON dump looked like a hard failure mid-run.
+  # Quiet stdout - pick_heroes JSON dump looked like a hard failure mid-run.
   & $py.Source $PickHeroesPy $dir.FullName --min-rgb $MinRgb --json-out $HeroJson *> $null
   if ($LASTEXITCODE -ne 0 -or -not (Test-Path $HeroJson)) {
     $entry.skip = "hero_pick_failed"
@@ -182,7 +182,7 @@ foreach ($dir in $dirs) {
   if (-not [bool]$heroDoc.ok) {
     $entry.skip = [string]$heroDoc.error
     [void]$report.skipped.Add($entry)
-    # Black / rejected sequences are expected for pre-fix MRQ folders — not a hard error.
+    # Black / rejected sequences are expected for pre-fix MRQ folders - not a hard error.
     Write-Host "SKIP $systemName $($heroDoc.error) (not an ingest error)"
     continue
   }

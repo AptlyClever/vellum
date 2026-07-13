@@ -5,7 +5,7 @@
 
 .DESCRIPTION
   Ensures one UnrealEditor is running on Lookdev Studio with the in-UE HTTP
-  worker listening on 127.0.0.1:8771. This is Option 1 — GPU printer, not
+  worker listening on 127.0.0.1:8771. This is Option 1 - GPU printer, not
   Cmd-per-phase E2E.
 
 .EXAMPLE
@@ -61,7 +61,7 @@ function Test-StudioBuildCurrent {
 }
 
 function Request-StudioRebuild {
-  Write-Host "Studio build stale/missing — requesting /v1/ensure_studio force…"
+  Write-Host "Studio build stale/missing - requesting /v1/ensure_studio force..."
   $body = @{ force = $true } | ConvertTo-Json
   return Invoke-RestMethod -Method Post -Uri "$WorkerUrl/v1/ensure_studio" `
     -ContentType "application/json" -Body $body -TimeoutSec 300
@@ -127,7 +127,7 @@ function Start-LookdevWorker {
       $health = Get-WorkerHealth
       if (Test-StudioBuildCurrent -Health $health) { return $health }
     } catch {
-      Write-Host "Studio rebuild via HTTP failed: $($_.Exception.Message) — will restart editor"
+      Write-Host "Studio rebuild via HTTP failed: $($_.Exception.Message) - will restart editor"
     }
   }
 
@@ -140,7 +140,7 @@ function Start-LookdevWorker {
   } catch { }
 
   if ($inServiceSession) {
-    Write-Host "Non-interactive session: waiting for Lookdev Worker health (logon task should start UE)…"
+    Write-Host "Non-interactive session: waiting for Lookdev Worker health (logon task should start UE)..."
     $deadline = (Get-Date).AddSeconds([Math]::Min($ReadyTimeoutSec, 120))
     while ((Get-Date) -lt $deadline) {
       Start-Sleep -Seconds 3
@@ -150,7 +150,7 @@ function Start-LookdevWorker {
         return $health
       }
     }
-    throw "Lookdev Worker not healthy at $WorkerUrl/health. Log into Aurora (or run host-install logon task) so Unreal can warm — services cannot start the GPU editor."
+    throw "Lookdev Worker not healthy at $WorkerUrl/health. Log into Aurora (or run host-install logon task) so Unreal can warm - services cannot start the GPU editor."
   }
 
   $editor = Find-UeEditorBinary
@@ -192,7 +192,7 @@ function Start-LookdevWorker {
       Write-Host "Worker ready version=$($health.version) map=$($health.map)"
       return $health
     }
-    Write-Host "Waiting for worker health…"
+    Write-Host "Waiting for worker health..."
   }
   throw "Worker did not become healthy within ${ReadyTimeoutSec}s ($WorkerUrl/health)"
 }

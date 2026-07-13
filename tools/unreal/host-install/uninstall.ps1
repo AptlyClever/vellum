@@ -21,7 +21,7 @@ if (-not $RepoRoot) {
 $InstallDir = Join-Path $RepoRoot "tools\unreal\host-install\runtime"
 $WinSwExe = Join-Path $InstallDir "VellumUeAgent.exe"
 
-foreach ($name in @("VellumLookdevWorkerEnsure", "VellumLookdevWorkerWatchdog")) {
+foreach ($name in @("VellumUeAgent", "VellumLookdevWorkerEnsure", "VellumLookdevWorkerWatchdog")) {
   if (Get-ScheduledTask -TaskName $name -ErrorAction SilentlyContinue) {
     Unregister-ScheduledTask -TaskName $name -Confirm:$false
     Write-Host "Removed task $name"
@@ -45,4 +45,4 @@ if (Test-Path $WinSwExe) {
   }
 }
 
-Write-Host "Uninstall finished. Unreal editor may still be running — close it manually if desired."
+Write-Host "Uninstall finished. Unreal editor may still be running - close it manually if desired."

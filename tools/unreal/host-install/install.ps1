@@ -5,7 +5,7 @@
 
 .DESCRIPTION
   Default: interactive logon Scheduled Task for VellumUeAgent (GPU session).
-  Optional: WinSW service is disabled for Capture — LocalSystem Session 0 hangs UnrealEditor-Cmd.
+  Optional: WinSW service is disabled for Capture - LocalSystem Session 0 hangs UnrealEditor-Cmd.
   Legacy Lookdev Worker logon/watchdog tasks remain optional.
 
   Run elevated once on the GPU box after git pull.
@@ -18,7 +18,7 @@ param(
   [string]$HostName = "aurora",
   [string]$VellumBase = "http://192.168.68.93:8770",
   [string]$RepoRoot = "",
-  # Capture agent must be interactive — do not install WinSW LocalSystem service.
+  # Capture agent must be interactive - do not install WinSW LocalSystem service.
   [switch]$InstallWinSwService,
   [switch]$SkipLogonTask,
   [switch]$SkipWatchdog,
@@ -69,7 +69,7 @@ Write-Host "Pwsh=$Pwsh"
 
 # --- WinSW binary ---
 if (-not (Test-Path $WinSwExe)) {
-  Write-Host "Downloading WinSW 2.12.0…"
+  Write-Host "Downloading WinSW 2.12.0..."
   Invoke-WebRequest -Uri $WinSwUrl -OutFile $WinSwExe -UseBasicParsing
 }
 if (-not (Test-Path $WinSwExe)) { throw "WinSW download failed: $WinSwExe" }
@@ -93,22 +93,22 @@ if (-not $SkipAgentTask) {
     -HostName $HostName -VellumBase $VellumBase -RepoRoot $RepoRoot
 }
 
-# --- Optional WinSW service (NOT recommended for Capture — Session 0 / no GPU) ---
+# --- Optional WinSW service (NOT recommended for Capture - Session 0 / no GPU) ---
 if ($InstallWinSwService) {
   if (-not (Test-IsAdmin)) {
     throw "Service install needs elevation. Re-run from Admin PowerShell."
   }
-  Write-Host "WARNING: Installing WinSW LocalSystem agent — UnrealEditor-Cmd Capture will hang."
+  Write-Host "WARNING: Installing WinSW LocalSystem agent - UnrealEditor-Cmd Capture will hang."
   $existing = Get-Service -Name "VellumUeAgent" -ErrorAction SilentlyContinue
   if ($existing) {
-    Write-Host "Stopping existing VellumUeAgent…"
+    Write-Host "Stopping existing VellumUeAgent..."
     Push-Location $InstallDir
     try { & .\VellumUeAgent.exe stop | Out-Host } catch { }
     try { & .\VellumUeAgent.exe uninstall | Out-Host } catch { }
     Pop-Location
     Start-Sleep -Seconds 2
   }
-  Write-Host "Installing Windows Service VellumUeAgent…"
+  Write-Host "Installing Windows Service VellumUeAgent..."
   Push-Location $InstallDir
   try {
     & .\VellumUeAgent.exe install
@@ -162,7 +162,7 @@ if (-not $SkipWatchdog) {
 }
 
 if ($StartWorkerNow) {
-  Write-Host "Running host-heal now…"
+  Write-Host "Running host-heal now..."
   $HealPs1 = Join-Path $RepoRoot "tools\unreal\host-heal.ps1"
   & $Pwsh -NoProfile -ExecutionPolicy Bypass -File $HealPs1 -HostName $HostName -VellumBase $VellumBase
 }
