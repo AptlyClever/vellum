@@ -179,8 +179,26 @@ function Get-LogShotSnippet([string]$LogPath) {
   return ($lines -join "`n")
 }
 
+function Get-LogMrqSnippet([string]$LogPath) {
+  if (-not (Test-Path $LogPath)) { return "(no MRQ log)" }
+  $lines = Select-String -Path $LogPath -Pattern "MoviePipeline|Movie Render|LevelSequence|Failed to|Error:|Fatal|Render complete|Finished rendering|Writing frame|Output directory|Could not|not found|LogPython" -ErrorAction SilentlyContinue |
+    Select-Object -Last 50 |
+    ForEach-Object { $_.Line.Trim() }
+  if (-not $lines) { return "(no MoviePipeline/Error lines in MRQ log)" }
+  return ($lines -join "`n")
+}
+
 function ConvertTo-UePath([string]$Path) {
   return (($Path -replace '\\', '/').TrimEnd('/'))
+}
+
+function ConvertTo-UeSoftPath([string]$PackageOrSoft) {
+  # Epic cmdline requires /Game/Path/Asset.Asset — package path alone often exits 0 with zero frames.
+  $p = ConvertTo-UePath $PackageOrSoft
+  if (-not $p) { return $p }
+  $leaf = ($p -split "/")[-1]
+  if ($leaf -match "\.") { return $p }
+  return "$p.$leaf"
 }
 
 function Get-LogPythonSnippet([string]$LogText) {
@@ -233,7 +251,7 @@ $IngestLanes = @("slots", "hail-overlay")
 Write-Host "UE (Cmd): $Ue"
 Write-Host "Project: $ProjectUe"
 Write-Host "MaxSystems=$MaxSystems Width=$Width Height=$Height MapPath=$MapPath"
-Write-Host "Runner version: mrq-sequencer-ue58 (2026-07-13)"
+Write-Host "Runner version: mrq-sequencer-frames (2026-07-13)"
 Write-Host "UE host: $($UeHost.id) ($($UeHost.label))"
 Write-Host "Ingest lanes: $($IngestLanes -join ', ')"
 if ($JobId) { Write-Host "JobId=$JobId (progress -> $VellumBase/api/jobs/$JobId/progress)" }
@@ -363,17 +381,25 @@ foreach ($sys in $pickedSystems) {
     break
   }
 
-  $seqPath = [string]$author.sequence_asset
-  $cfgPath = [string]$author.config_asset
-  $mapForRender = [string]$author.map_path
-  Write-Host "Phase C [$slotIndex] cmdline MRQ seq=$seqPath cfg=$cfgPath"
+  # Soft object paths (Asset.Asset). Package-only paths are a known silent-no-render footgun.
+  $seqSoft = ConvertTo-UeSoftPath $(if ($author.sequence_path) { [string]$author.sequence_path } else { [string]$author.sequence_asset })
+  $cfgSoft = ConvertTo-UeSoftPath $(if ($author.config_path) { [string]$author.config_path } else { [string]$author.config_asset })
+  $mapSoft = ConvertTo-UeSoftPath $(if ($author.map_path) { [string]$author.map_path } else { $MapPath })
+  if ($author.notes) {
+    Write-Host "Author notes: $((@($author.notes) | Select-Object -First 16) -join ' | ')"
+  }
+  Write-Host "Phase C [$slotIndex] cmdline MRQ seq=$seqSoft cfg=$cfgSoft map=$mapSoft"
 
   $MrqLog = Join-Path $OutDir "ue-mrq-$slotIndex.log"
   if (Test-Path $MrqLog) { Remove-Item -Force $MrqLog }
+  # Prefer GUI Editor binary for -game MRQ (Cmd is fine for inventory/author).
+  $UeMrq = Find-UeEditor -CmdPath $Ue
+  Write-Host "Phase C UE binary: $UeMrq"
   $mrqArgs = @(
     $ProjectUe,
-    $mapForRender,
+    $mapSoft,
     "-game",
+    "-RenderOffscreen",
     "-windowed",
     "-ResX=$Width",
     "-ResY=$Height",
@@ -382,12 +408,13 @@ foreach ($sys in $pickedSystems) {
     "-log",
     "-stdout",
     "-FullStdOutLogOutput",
-    "-LevelSequence=$seqPath",
-    "-MoviePipelineConfig=$cfgPath"
+    "-allowStdOutLogVerbosity",
+    "-LevelSequence=$seqSoft",
+    "-MoviePipelineConfig=$cfgSoft"
   )
   $mrqExit = 0
   try {
-    $mrqExit = Invoke-UeLogged -Exe $Ue -ArgumentList $mrqArgs -LogPath $MrqLog `
+    $mrqExit = Invoke-UeLogged -Exe $UeMrq -ArgumentList $mrqArgs -LogPath $MrqLog `
       -Phase "Phase C[$slotIndex] MRQ $systemName" -HeartbeatSeconds 20
   } catch {
     $mrqExit = 1
@@ -399,12 +426,16 @@ foreach ($sys in $pickedSystems) {
   if ($frameFiles.Count -eq 0) {
     # MRQ sometimes writes under Saved/MovieRenders — sweep recent images
     $savedRoot = Join-Path $ProjectDir "Saved"
-    $since = (Get-Date).AddMinutes(-30)
-    $frameFiles = @(Find-RecentImages -Roots @($seqOutDir, $MrqRoot, $savedRoot) -Since $since -NameHint $safeHint)
+    $movieRenders = Join-Path $savedRoot "MovieRenders"
+    $since = (Get-Date).AddMinutes(-45)
+    $frameFiles = @(Find-RecentImages -Roots @($seqOutDir, $MrqRoot, $movieRenders, $savedRoot) -Since $since -NameHint $safeHint)
   }
-  Write-Host "Phase C [$slotIndex] frames found=$($frameFiles.Count) exit=$mrqExit"
+  Write-Host "Phase C [$slotIndex] frames found=$($frameFiles.Count) exit=$mrqExit out=$seqOutDir"
   if ($frameFiles.Count -eq 0) {
+    $mrqSnippet = Get-LogMrqSnippet -LogPath $MrqLog
+    Write-Host "MRQ log snippet:`n$mrqSnippet"
     [void]$allErrors.Add("mrq_no_frames:$systemName`:exit=$mrqExit")
+    [void]$allErrors.Add("mrq_log:$systemName`:$($mrqSnippet.Substring(0, [Math]::Min(900, $mrqSnippet.Length)))")
     Send-VellumProgress -Message "FAIL MRQ no frames $systemName" -LogPath $MrqLog
     break
   }

@@ -347,6 +347,21 @@ def _configure_sequence(unreal_mod, sequence, camera_actor, frame_count: int, fp
                 raise
 
 
+def _add_setting(config, unreal_mod, class_names: tuple[str, ...], notes: list[str], tag: str):
+    for name in class_names:
+        cls = getattr(unreal_mod, name, None)
+        if cls is None:
+            continue
+        try:
+            config.find_or_add_setting_by_class(cls)
+            notes.append(f"{tag}:{name}")
+            return True
+        except Exception as exc:  # noqa: BLE001
+            notes.append(f"{tag}_failed:{name}:{exc}")
+    notes.append(f"{tag}_missing:{','.join(class_names)}")
+    return False
+
+
 def _configure_mrq_config(unreal_mod, config, output_dir: str, width: int, height: int, notes: list[str]) -> None:
     out_cls = unreal_mod.MoviePipelineOutputSetting
     out = config.find_or_add_setting_by_class(out_cls)
@@ -361,15 +376,50 @@ def _configure_mrq_config(unreal_mod, config, output_dir: str, width: int, heigh
     try:
         out.file_name_format = "{sequence_name}.{frame_number}"
     except Exception:  # noqa: BLE001
-        pass
+        try:
+            out.set_editor_property("file_name_format", "{sequence_name}.{frame_number}")
+        except Exception:  # noqa: BLE001
+            pass
+    # Flush each frame to disk immediately (helps diagnose mid-run failures)
+    for prop, val in (
+        ("flush_disk_writes_per_frame", True),
+        ("b_flush_disk_writes_per_frame", True),
+    ):
+        try:
+            out.set_editor_property(prop, val)
+            break
+        except Exception:  # noqa: BLE001
+            continue
     notes.append(f"mrq_output:{output_dir}:{width}x{height}")
 
-    png_cls = getattr(unreal_mod, "MoviePipelineImageSequenceOutput_PNG", None)
-    if png_cls is not None:
-        config.find_or_add_setting_by_class(png_cls)
-        notes.append("mrq_png")
-    else:
-        notes.append("mrq_png_class_missing")
+    # Without a deferred/render pass, MRQ can exit 0 and write ZERO frames.
+    _add_setting(
+        config,
+        unreal_mod,
+        (
+            "MoviePipelineDeferredPassBase",
+            "MoviePipelineDeferredPass_PathTracer",
+        ),
+        notes,
+        "mrq_deferred_pass",
+    )
+    _add_setting(
+        config,
+        unreal_mod,
+        (
+            "MoviePipelineImageSequenceOutput_PNG",
+            "MoviePipelineImageSequenceOutputPNG",
+        ),
+        notes,
+        "mrq_png",
+    )
+    _add_setting(
+        config,
+        unreal_mod,
+        ("MoviePipelineAntiAliasingSetting",),
+        notes,
+        "mrq_aa",
+    )
 
     # Disable burn-in if present
     burn = getattr(unreal_mod, "MoviePipelineBurnInSetting", None)
