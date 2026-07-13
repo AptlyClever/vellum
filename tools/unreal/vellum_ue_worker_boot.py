@@ -111,7 +111,7 @@ def _vault_covered_systems(job: dict[str, Any], notes: list[str]) -> set[str]:
         kind = str(item.get("kind") or "")
         if not sys_name or not lane:
             continue
-        if kind and kind not in ("niagara-render", "niagara-sequence"):
+        if kind != "niagara-render":
             continue
         by_system.setdefault(sys_name, set()).add(lane)
 
