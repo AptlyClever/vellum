@@ -22,7 +22,7 @@ param(
   [string]$IntakeRunId = "",
   [string]$UeCmd = $env:VELLUM_UE_CMD,
   [string]$HostName = "",
-  [int]$MaxSystems = $(if ($env:VELLUM_MAX_SYSTEMS) { [int]$env:VELLUM_MAX_SYSTEMS } else { 3 }),
+  [int]$MaxSystems = $(if ($env:VELLUM_MAX_SYSTEMS) { [int]$env:VELLUM_MAX_SYSTEMS } else { 0 }),
   [int]$Width = $(if ($env:VELLUM_WIDTH) { [int]$env:VELLUM_WIDTH } else { 1920 }),
   [int]$Height = $(if ($env:VELLUM_HEIGHT) { [int]$env:VELLUM_HEIGHT } else { 1080 }),
   [string]$MapPath = "/Game/Vellum/Maps/VellumNiagaraCapture",
@@ -347,8 +347,8 @@ $IngestLanes = @("slots", "hail-overlay")
 
 Write-Host "UE (Cmd): $Ue"
 Write-Host "Project: $ProjectUe"
-Write-Host "MaxSystems=$MaxSystems Width=$Width Height=$Height MapPath=$MapPath"
-Write-Host "Runner version: mrq-batch-skip (2026-07-13)"
+Write-Host "MaxSystems=$MaxSystems (0=entire pack) Width=$Width Height=$Height MapPath=$MapPath"
+Write-Host "Runner version: mrq-full-pack (2026-07-13)"
 Write-Host "UE host: $($UeHost.id) ($($UeHost.label))"
 Write-Host "Ingest lanes: $($IngestLanes -join ', ')"
 Write-Host "ForceCapture=$ForceCapture"

@@ -1,9 +1,9 @@
 # Development Tracker: Vellum
 
-> **Current Active Issue:** Fireworks — durable Unreal lookdev capture (**MRQ + Sequencer**, batch queue)
+> **Current Active Issue:** Fireworks pack — **full automated lookdev** (all effects), then next purchased packs
 > **Governing CFD:** `cfd-inspiration-20260713-015950-vellum-control-alt-games-asset-vault-register-in` (slices A–F met; this is the post-CFD track)
 > **Capability spec:** `docs/ue-mrq-capture.md` (SoT — full fidelity; SceneCapture/HighResShot retired)
-> **Next Immediate Step:** Pull `mrq-batch-skip` on Aurora; Capture skips vault-covered systems (use Force to re-render).
+> **Next Immediate Step:** Operator: leave Aurora agent running → open Fireworks in Vellum → **Capture from Unreal** once. Agent pulls `mrq-full-pack` and renders the rest of the pack (skips the 3 already done).
 
 ---
 
@@ -26,14 +26,16 @@
 
 ## 2. The Active Issue (Do Not Add Steps Here!)
 
-* **What success looks like:** From Vellum UI, enqueue capture on **Aurora**; Lookdev gets **real Fireworks Niagara** outputs suitable for product lanes (stills and/or short renders as the pipeline defines — **not** flipbook-only scope cuts, **not** debug cubes / pure black).
+* **What success looks like:** Operator clicks **Capture** in Vellum; Aurora finishes **the whole Fireworks pack** into lookdev (skipping anything already vaulted). No per-system operator work. After Fireworks: same path for remaining purchased packs.
 * **Stopped (do not resume without explicit operator decision):**
   - `-game` + `HighResShot`
   - Editor `SceneCapture2D` → `export_render_target` bake (`vellum_capture_bake_map.py` / `editor-scenecapture*`)
+  - Sample/`max_systems=3` proof caps as the default Capture path
 * **Keep (infrastructure still valid):**
   - Vellum `ue_capture` job + claim/report
   - `vellum_ue_agent.ps1` + host profiles (Aurora primary / Borealis secondary)
   - Lookdev ingest API
+  - Vault skip + Force re-render
 * **Sub-Tasks:**
   - [x] Job/agent/host plumbing (Aurora preflight resolves UE + `F:\Games\AuroraVellum`)
   - [x] Stop improvising on SceneCapture / HighResShot (2026-07-13)
@@ -45,6 +47,9 @@
   - [x] Prove slots + hail-overlay lookdev in vault (recover ingest 2026-07-13: Chrysanthemum/Peony/Willow Single)
   - [x] Batch path: one author + one MoviePipelineQueue MRQ + per-system ingest (`mrq-batch-queue`)
   - [x] Skip vault-covered / local-ready systems; `force` override (`mrq-batch-skip`)
+  - [x] Default Capture = **entire pack** (`max_systems=0`, Single-over-Loop) — `mrq-full-pack`
+  - [ ] Fireworks pack lookdev complete in vault (all unique systems; skip already-done)
+  - [ ] Next purchased Unreal packs through the same Capture path (no operator digging)
 
 ---
 
@@ -82,3 +87,4 @@
 * **2026-07-13** — Interrupted job recover: 3 systems × slots+hail-overlay heroes/sequences ingested (`Recover done ok=True systems=3 ingested=18`). Validated max_luma peaks 113–198 via lookdev `/file`.
 * **2026-07-13** — Phase B optimization: batch author + MoviePipelineQueue + **per-system ingest** (`mrq-batch-queue`).
 * **2026-07-13** — Skip already-captured systems (`mrq-batch-skip`): vault lookdev on slots+hail-overlay, or local good MRQ → ingest-only; `force` / Force re-render / `-ForceCapture`.
+* **2026-07-13** — Reset Capture default to **entire pack** (`mrq-full-pack`, `max_systems=0`); drop `*_Loop` when `*_Single` sibling exists. Operator path: click Capture once; no per-system digging.

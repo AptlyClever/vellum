@@ -57,7 +57,11 @@ function Invoke-CaptureJob {
     "5.8"
   }
   $intakeRunId = [string]$Job.intake_run_id
-  $maxSystems = if ($payload.max_systems) { [int]$payload.max_systems } else { 3 }
+  # 0 = entire pack. Explicit payload.max_systems still allowed for rare debug.
+  $maxSystems = 0
+  if ($null -ne $payload.max_systems -and "$($payload.max_systems)" -ne "") {
+    $maxSystems = [int]$payload.max_systems
+  }
   $width = if ($payload.width) { [int]$payload.width } else { 1920 }
   $height = if ($payload.height) { [int]$payload.height } else { 1080 }
   $forceCapture = $false
@@ -149,7 +153,7 @@ Write-Host "UI trigger: asset detail → Capture from Unreal"
 Write-Host "Host profile: $($UeHost.id) ($($UeHost.label), $($UeHost.role)) — config active=$($UeHost.active_in_config)"
 Write-Host "Agent scripts: $Runner"
 Write-Host "Repo root: $RepoRoot"
-Write-Host "Agent fingerprint: mrq-batch-skip (2026-07-13)"
+Write-Host "Agent fingerprint: mrq-full-pack (2026-07-13)"
 $runnerVersionLine = (Get-Content $Runner | Where-Object { $_ -match "Runner version:" } | Select-Object -First 1)
 if (-not $runnerVersionLine) { $runnerVersionLine = "(no 'Runner version:' line found — old pull?)" }
 Write-Host "Runner fingerprint: $($runnerVersionLine.Trim())"

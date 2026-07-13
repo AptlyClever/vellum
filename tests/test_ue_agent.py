@@ -65,6 +65,7 @@ def test_ue_capture_claim_is_not_taken_by_linux_kinds(tmp_path: Path, monkeypatc
     assert body["ue_host"] == "aurora"
     assert "F:\\Games" in body["job"]["payload"]["project_path"]
     assert body["job"]["payload"].get("force") is False
+    assert body["job"]["payload"].get("max_systems") == 0
 
     forced = client.post(
         "/api/ue/capture",

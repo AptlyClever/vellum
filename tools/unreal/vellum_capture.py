@@ -42,7 +42,7 @@ def _cfg() -> dict[str, str]:
         "asset-id": os.environ.get("VELLUM_ASSET_ID") or cli.get("asset-id", "fireworks-vol-1-niagara"),
         "content-root": os.environ.get("VELLUM_CONTENT_ROOT") or cli.get("content-root", "/Game/FireworksV1"),
         "out-dir": os.environ.get("VELLUM_OUT_DIR") or cli.get("out-dir", ""),
-        "max-systems": os.environ.get("VELLUM_MAX_SYSTEMS") or cli.get("max-systems", "3"),
+        "max-systems": os.environ.get("VELLUM_MAX_SYSTEMS") or cli.get("max-systems", "0"),
     }
 
 
@@ -184,7 +184,23 @@ class _PathAsset:
         self.asset_name = name
 
 
+def _prefer_single_over_loop(assets: list) -> list:
+    """Keep unique lookdev targets: drop *_Loop when a *_Single sibling exists."""
+    names = {str(getattr(a, "asset_name", a)) for a in assets}
+    kept: list = []
+    for a in assets:
+        name = str(getattr(a, "asset_name", a))
+        if name.endswith("_Loop"):
+            sibling = name[: -len("_Loop")] + "_Single"
+            if sibling in names:
+                continue
+        kept.append(a)
+    return kept
+
+
 def _pick_systems(assets: list, max_n: int) -> list:
+    # max_n <= 0 means the whole pack (after Single-over-Loop de-dupe).
+    assets = _prefer_single_over_loop(list(assets))
     keywords = (
         "finale",
         "burst",
@@ -215,7 +231,10 @@ def _pick_systems(assets: list, max_n: int) -> list:
             score -= 5
         scored.append((score, low, a))
     scored.sort(key=lambda t: (-t[0], t[1]))
-    return [t[2] for t in scored[: max(0, max_n)]]
+    ordered = [t[2] for t in scored]
+    if max_n <= 0:
+        return ordered
+    return ordered[:max_n]
 
 
 def _disk_diagnostics(unreal_mod, notes: list[str]) -> dict:

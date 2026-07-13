@@ -82,6 +82,12 @@ class UeCaptureRequest(BaseModel):
         default=False,
         description="Re-render even when vault or local MRQ already has lookdev for the system.",
     )
+    max_systems: int = Field(
+        default=0,
+        ge=0,
+        le=500,
+        description="0 = entire pack (default). Positive N is debug-only: limit picked systems.",
+    )
 
 
 class JobClaimRequest(BaseModel):
@@ -376,6 +382,7 @@ def api_ue_capture(body: UeCaptureRequest) -> dict[str, Any]:
             "engine_version": engine,
             "ue_host": host_id,
             "force": bool(body.force),
+            "max_systems": int(body.max_systems),
         },
     )
     return {"schema_version": 1, "job": job, "ue_host": host_id}

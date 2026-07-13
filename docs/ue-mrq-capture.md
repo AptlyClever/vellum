@@ -5,7 +5,7 @@
 **Primary host:** Aurora (`config/ue-hosts.json` → `active: aurora`)  
 **Related:** host runbook `docs/scratch-inspect-niagara.md`, lookdev API `docs/api-lookdev.md`  
 **Decisions:** §12 locked 2026-07-13 (B / C / C / C / B)  
-**Runner fingerprint:** `mrq-batch-skip (2026-07-13)`
+**Runner fingerprint:** `mrq-full-pack (2026-07-13)`
 
 This is **new Vellum functionality**: turn a purchased Unreal Niagara pack into
 **full-fidelity lookdev renders** in the vault, driven from the Vellum UI, without
@@ -125,7 +125,7 @@ Evidence of missing content: `job-20260713-181144-c1ce27` → `systems_found=0` 
 
 Exact blueprint/Python asset names are implementation detail; behavior is fixed:
 
-1. **Inventory** — Asset Registry query for `NiagaraSystem` under configured `content_root`; if zero hits, fall back to `/Game` scan and record the winning root (**§12.4 = C**). Pick up to `max_systems` (prefer firework-ish names; same policy as current inventory helper).
+1. **Inventory** — Asset Registry query for `NiagaraSystem` under configured `content_root`; if zero hits, fall back to `/Game` scan and record the winning root (**§12.4 = C**). Default **`max_systems=0` = entire pack** (drop `*_Loop` when a `*_Single` sibling exists). Positive `max_systems` is debug-only.
 2. **Per system — stage**
    - Persistent or temp capture level (clean dark stage + lighting suitable for VFX read).
    - Spawn / place the Niagara system; warm up / play for a documented time window.

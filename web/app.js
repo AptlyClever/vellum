@@ -414,7 +414,7 @@ async function openDetail(id) {
   const captureBtn = document.createElement("button");
   captureBtn.type = "button";
   captureBtn.className = "btn";
-  captureBtn.textContent = "Capture from Unreal";
+  captureBtn.textContent = "Capture entire pack";
   captureBtn.addEventListener("click", async () => {
     captureBtn.disabled = true;
     captureBtn.textContent = "Queuing…";
