@@ -22,6 +22,7 @@ WORKER_VERSION = "lookdev-worker-1"
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8771
 STUDIO_MAP = "/Game/Vellum/Maps/VellumLookdevStudio"
+STUDIO_BUILD_REQUIRED = 3  # match vellum_lookdev_studio_author.STUDIO_BUILD
 
 _state_lock = threading.Lock()
 _state: dict[str, Any] = {
@@ -83,13 +84,31 @@ def _load_module_from_path(name: str, path: Path):
     return mod
 
 
+def _studio_build_on_disk() -> int:
+    ready = _out_dir() / "studio-ready.json"
+    if not ready.is_file():
+        return 0
+    try:
+        doc = json.loads(ready.read_text(encoding="utf-8"))
+        return int(doc.get("studio_build") or 0)
+    except Exception:  # noqa: BLE001
+        return 0
+
+
 def _ensure_studio(force: bool = False) -> dict[str, Any]:
     import unreal  # type: ignore
 
     notes: list[str] = []
     map_path = os.environ.get("VELLUM_STUDIO_MAP") or STUDIO_MAP
     exists = unreal.EditorAssetLibrary.does_asset_exist(map_path)
-    if not exists or force:
+    build = _studio_build_on_disk()
+    stale = build < int(STUDIO_BUILD_REQUIRED)
+    env_force = os.environ.get("VELLUM_FORCE_STUDIO", "").lower() in ("1", "true", "yes")
+    need_author = bool(force or env_force or stale or not exists)
+    notes.append(f"studio_build_disk:{build}/required:{STUDIO_BUILD_REQUIRED}")
+    notes.append(f"studio_need_author:{need_author}")
+
+    if need_author:
         studio_py = _out_dir() / "vellum_lookdev_studio_author.py"
         boot_dir = Path(__file__).resolve().parent
         candidates = [studio_py, boot_dir / "vellum_lookdev_studio_author.py"]
@@ -98,7 +117,9 @@ def _ensure_studio(force: bool = False) -> dict[str, Any]:
             if not path.is_file():
                 continue
             notes.append(f"studio_author:{path}")
-            mod = _load_module_from_path("vellum_lookdev_studio_author_dyn", path)
+            # Unique module name so a rebuilt script is not stuck as a stale import.
+            mod_name = f"vellum_lookdev_studio_author_dyn_{int(time.time())}"
+            mod = _load_module_from_path(mod_name, path)
             if hasattr(mod, "main"):
                 mod.main()
             ran = True
@@ -110,13 +131,26 @@ def _ensure_studio(force: bool = False) -> dict[str, Any]:
             except Exception as exc:  # noqa: BLE001
                 return {"ok": False, "error": f"studio_missing:{exc}", "notes": notes}
         exists = unreal.EditorAssetLibrary.does_asset_exist(map_path)
+        build = _studio_build_on_disk()
+        if build < int(STUDIO_BUILD_REQUIRED):
+            return {
+                "ok": False,
+                "error": f"studio_build_still_stale:{build}",
+                "notes": notes,
+            }
 
     ok = unreal.EditorLoadingAndSavingUtils.load_map(map_path)
     notes.append(f"load_map:{map_path}:{ok}")
     with _state_lock:
         _state["studio_ready"] = bool(ok)
         _state["map"] = _current_map_path() or map_path
-    return {"ok": bool(ok), "map_path": map_path, "notes": notes}
+        _state["studio_build"] = _studio_build_on_disk()
+    return {
+        "ok": bool(ok),
+        "map_path": map_path,
+        "studio_build": _studio_build_on_disk(),
+        "notes": notes,
+    }
 
 
 def _stage_import_path() -> None:
@@ -515,6 +549,8 @@ def _health_payload() -> dict[str, Any]:
             "map": _state.get("map") or _current_map_path(),
             "busy": bool(_state.get("busy")),
             "studio_ready": bool(_state.get("studio_ready")),
+            "studio_build": int(_state.get("studio_build") or _studio_build_on_disk()),
+            "studio_build_required": int(STUDIO_BUILD_REQUIRED),
             "last_error": _state.get("last_error") or "",
             "uptime_sec": int(time.time() - float(_state.get("started_at") or time.time())),
         }

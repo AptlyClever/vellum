@@ -50,6 +50,23 @@ function Get-WorkerHealth {
   }
 }
 
+$script:StudioBuildRequired = 3
+
+function Test-StudioBuildCurrent {
+  param($Health)
+  if (-not $Health -or -not $Health.ok) { return $false }
+  $build = 0
+  if ($null -ne $Health.studio_build) { $build = [int]$Health.studio_build }
+  return ($build -ge $script:StudioBuildRequired)
+}
+
+function Request-StudioRebuild {
+  Write-Host "Studio build stale/missing — requesting /v1/ensure_studio force…"
+  $body = @{ force = $true } | ConvertTo-Json
+  return Invoke-RestMethod -Method Post -Uri "$WorkerUrl/v1/ensure_studio" `
+    -ContentType "application/json" -Body $body -TimeoutSec 300
+}
+
 function Get-ProjectPaths {
   $uproject = Resolve-UprojectFromHost -HostProfile $UeHost
   $projectDir = Split-Path $uproject -Parent
@@ -100,8 +117,18 @@ function Start-LookdevWorker {
   Stage-WorkerScripts -OutDir $paths.OutDir
   $health = Get-WorkerHealth
   if ($health -and $health.ok) {
-    Write-Host "Worker already healthy version=$($health.version) map=$($health.map) busy=$($health.busy)"
-    return $health
+    if (Test-StudioBuildCurrent -Health $health) {
+      Write-Host "Worker already healthy version=$($health.version) studio_build=$($health.studio_build) map=$($health.map)"
+      return $health
+    }
+    try {
+      $rebuild = Request-StudioRebuild
+      Write-Host "Studio rebuild ok=$($rebuild.ok) build=$($rebuild.studio_build)"
+      $health = Get-WorkerHealth
+      if (Test-StudioBuildCurrent -Health $health) { return $health }
+    } catch {
+      Write-Host "Studio rebuild via HTTP failed: $($_.Exception.Message) — will restart editor"
+    }
   }
 
   # Session 0 / Windows Service must not launch UnrealEditor (GPU GUI).

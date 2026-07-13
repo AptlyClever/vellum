@@ -15,6 +15,8 @@ from pathlib import Path
 
 STUDIO_MAP = "/Game/Vellum/Maps/VellumLookdevStudio"
 PREFIX = "VellumStudio_"
+# Bump when lighting/layout must rebuild on every host without a manual ForceStudio.
+STUDIO_BUILD = 3
 
 
 def _now() -> str:
@@ -214,8 +216,9 @@ def _spawn_slot_mark(unreal_mod, actor_sub, notes: list[str]) -> None:
 
 
 def _spawn_lights(unreal_mod, actor_sub, notes: list[str]) -> None:
-    # Photo studio lighting — do NOT enable SkyLight real-time capture without
-    # SkyAtmosphere (UE paints a red viewport banner and Lit mode goes black).
+    # Photo studio: key + fill + rim only.
+    # Never spawn SkyLight — realtime-capture-without-atmosphere blacks Lit mode
+    # with the red viewport banner. Fireworks are emissive; they don't need a skylight.
     try:
         light = _spawn(
             unreal_mod,
@@ -230,12 +233,11 @@ def _spawn_lights(unreal_mod, actor_sub, notes: list[str]) -> None:
             if comp is not None:
                 _set_prop(comp, ("intensity",), 12.0)
                 _set_prop(comp, ("indirect_lighting_intensity",), 1.0)
-                _set_prop(comp, ("atmosphere_sun_light", "b_atmosphere_sun_light"), True)
+                _set_prop(comp, ("atmosphere_sun_light", "b_atmosphere_sun_light"), False)
         notes.append("key_light")
     except Exception as exc:  # noqa: BLE001
         notes.append(f"key_light_failed:{exc}")
 
-    # Soft fill opposite the key so the pedestal/floor read in Lit mode.
     try:
         fill = _spawn(
             unreal_mod,
@@ -247,51 +249,29 @@ def _spawn_lights(unreal_mod, actor_sub, notes: list[str]) -> None:
         if fill:
             comp = fill.get_component_by_class(unreal_mod.PointLightComponent)
             if comp is not None:
-                _set_prop(comp, ("intensity",), 8.0)
-                _set_prop(comp, ("attenuation_radius", "AttenuationRadius"), 4000.0)
-                _set_prop(comp, ("source_radius", "SourceRadius"), 80.0)
+                _set_prop(comp, ("intensity",), 12.0)
+                _set_prop(comp, ("attenuation_radius", "AttenuationRadius"), 5000.0)
+                _set_prop(comp, ("source_radius", "SourceRadius"), 120.0)
         notes.append("fill_light")
     except Exception as exc:  # noqa: BLE001
         notes.append(f"fill_light_failed:{exc}")
 
     try:
-        atm_cls = getattr(unreal_mod, "SkyAtmosphere", None)
-        if atm_cls is not None:
-            atm = _spawn(
-                unreal_mod,
-                actor_sub,
-                actor_class=atm_cls,
-                loc=unreal_mod.Vector(0.0, 0.0, 0.0),
-                label=f"{PREFIX}SkyAtmosphere",
-            )
-            if atm is not None:
-                notes.append("sky_atmosphere")
-    except Exception as exc:  # noqa: BLE001
-        notes.append(f"sky_atmosphere_failed:{exc}")
-
-    try:
-        sky = _spawn(
+        rim = _spawn(
             unreal_mod,
             actor_sub,
-            actor_class=unreal_mod.SkyLight,
-            loc=unreal_mod.Vector(0.0, 0.0, 500.0),
-            label=f"{PREFIX}SkyLight",
+            actor_class=unreal_mod.PointLight,
+            loc=unreal_mod.Vector(900.0, -700.0, 500.0),
+            label=f"{PREFIX}RimLight",
         )
-        if sky:
-            comp = sky.get_component_by_class(unreal_mod.SkyLightComponent)
+        if rim:
+            comp = rim.get_component_by_class(unreal_mod.PointLightComponent)
             if comp is not None:
-                _set_prop(comp, ("intensity",), 1.0)
-                # Static / non-realtime cubemap path — safe without RT sky capture.
-                _set_prop(comp, ("real_time_capture", "b_real_time_capture"), False)
-                try:
-                    # Recapture once from the atmosphere we just placed.
-                    if hasattr(comp, "recapture_sky"):
-                        comp.recapture_sky()
-                except Exception:  # noqa: BLE001
-                    pass
-        notes.append("sky_light")
+                _set_prop(comp, ("intensity",), 6.0)
+                _set_prop(comp, ("attenuation_radius", "AttenuationRadius"), 5000.0)
+        notes.append("rim_light")
     except Exception as exc:  # noqa: BLE001
-        notes.append(f"sky_light_failed:{exc}")
+        notes.append(f"rim_light_failed:{exc}")
 
 
 def _spawn_camera(unreal_mod, actor_sub, notes: list[str]) -> None:
@@ -351,6 +331,7 @@ def main() -> None:
 
     out = {
         "schema_version": 1,
+        "studio_build": STUDIO_BUILD,
         "tool": "vellum_lookdev_studio_author",
         "ok": False,
         "map_path": map_path,

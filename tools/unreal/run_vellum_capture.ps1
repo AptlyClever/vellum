@@ -398,6 +398,9 @@ if (-not $needStudio) {
     $studioDoc = Get-Content $StudioReadyPath -Raw | ConvertFrom-Json
     if (-not [bool]$studioDoc.ok) { $needStudio = $true }
     if ($studioDoc.map_path -and [string]$studioDoc.map_path -ne $MapPath) { $needStudio = $true }
+    $studioBuild = 0
+    if ($null -ne $studioDoc.studio_build) { $studioBuild = [int]$studioDoc.studio_build }
+    if ($studioBuild -lt 3) { $needStudio = $true }
   } catch {
     $needStudio = $true
   }
