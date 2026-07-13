@@ -42,6 +42,7 @@ pytest -q
 - **D (shipped):** Axiom Read `#/axiom/vellum` + `?embed=axiom`
 - **E (shipped):** Epic Add-to-Project → vault stage (Fireworks pilot); `PATCH /api/assets`; `docs/slice-e-epic-staging.md`
 - **F (shipped):** lookdev derive into project lanes (`docs/api-lookdev.md`); Fireworks stills → slots + hail-overlay
+- **Now:** Unreal scratch inspect + Niagara viewport stills (Fireworks); Unity reconcile parked — `docs/scratch-inspect-niagara.md`
 
 
 ## Boundaries

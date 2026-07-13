@@ -152,8 +152,12 @@ def patch_asset(
     redemption_status: str | None = None,
     raw_location: str | None = None,
     intake_notes: str | None = None,
+    scratch_project_path: str | None = None,
+    scratch_project_status: str | None = None,
+    scratch_engine_version: str | None = None,
+    scratch_notes: str | None = None,
 ) -> dict[str, Any]:
-    """Update mutable register fields for an owned asset (Slice E human checkpoints)."""
+    """Update mutable register fields for an owned asset."""
     aid = asset_id.strip()
     doc = ensure_register()
     target: dict[str, Any] | None = None
@@ -169,6 +173,14 @@ def patch_asset(
         target["raw_location"] = raw_location.strip() or None
     if intake_notes is not None:
         target["intake_notes"] = intake_notes
+    if scratch_project_path is not None:
+        target["scratch_project_path"] = scratch_project_path.strip() or None
+    if scratch_project_status is not None:
+        target["scratch_project_status"] = scratch_project_status.strip()
+    if scratch_engine_version is not None:
+        target["scratch_engine_version"] = scratch_engine_version.strip() or None
+    if scratch_notes is not None:
+        target["scratch_notes"] = scratch_notes
     _persist_register(doc)
     updated = get_asset(aid)
     assert updated is not None

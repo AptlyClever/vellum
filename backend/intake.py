@@ -208,8 +208,9 @@ def build_proposed_steps(asset: dict[str, Any]) -> list[dict[str, Any]]:
                 status="needs-human",
                 kind="inspect",
                 detail=(
-                    f"Open scratch under {vault}/03-scratch-projects/{engine or 'unreal'}/ "
-                    "and confirm the pack loads. Import scripts come later (Slice E)."
+                    f"Open Unreal scratch (e.g. workstation project) with the staged pack. "
+                    f"Vault note path: {vault}/03-scratch-projects/{engine or 'unreal'}/. "
+                    "Record path + engine version via /api/scratch/record when Niagara systems load."
                 ),
                 automatable=False,
             ),

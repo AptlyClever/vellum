@@ -31,3 +31,12 @@ Enqueues a `derive_lookdev` worker job. Copies png/jpg (not `.uasset`) from the 
 
 Also enqueued via `POST /api/intake/{run_id}/enqueue-automatable` when the `derive_lookdev` step is pending.
 If the pack has no preview stills, the job succeeds and marks the step `skipped`.
+
+## Ingest Niagara viewport still
+
+`POST /api/lookdev/ingest-render` (multipart form)
+
+- `asset_id`, `lane`, optional `note`, `file` (png/jpg/webp)
+
+Writes kind `niagara-render` under `05-derived-renders/<lane>/<asset>/niagara/`.
+See `docs/scratch-inspect-niagara.md`.

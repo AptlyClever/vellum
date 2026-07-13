@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -15,6 +15,7 @@ from . import intake as intake_mod
 from . import jobs as jobs_mod
 from . import lookdev as lookdev_mod
 from . import register as register_mod
+from . import scratch as scratch_mod
 
 ROOT = Path(__file__).resolve().parents[1]
 WEB_ROOT = ROOT / "web"
@@ -57,11 +58,23 @@ class AssetPatchRequest(BaseModel):
     redemption_status: str | None = Field(default=None, max_length=64)
     raw_location: str | None = Field(default=None, max_length=1000)
     intake_notes: str | None = Field(default=None, max_length=4000)
+    scratch_project_path: str | None = Field(default=None, max_length=1000)
+    scratch_project_status: str | None = Field(default=None, max_length=64)
+    scratch_engine_version: str | None = Field(default=None, max_length=64)
+    scratch_notes: str | None = Field(default=None, max_length=4000)
 
 
 class LookdevDeriveRequest(BaseModel):
     asset_id: str = Field(min_length=1, max_length=200)
     lanes: list[str] | None = None
+    intake_run_id: str | None = Field(default=None, max_length=200)
+
+
+class ScratchRecordRequest(BaseModel):
+    asset_id: str = Field(min_length=1, max_length=200)
+    scratch_project_path: str = Field(min_length=1, max_length=1000)
+    engine_version: str | None = Field(default=None, max_length=64)
+    notes: str | None = Field(default=None, max_length=4000)
     intake_run_id: str | None = Field(default=None, max_length=200)
 
 
@@ -111,10 +124,17 @@ def api_get_asset(asset_id: str) -> dict[str, Any]:
 
 @app.patch("/api/assets/{asset_id}")
 def api_patch_asset(asset_id: str, body: AssetPatchRequest) -> dict[str, Any]:
-    if (
-        body.redemption_status is None
-        and body.raw_location is None
-        and body.intake_notes is None
+    if all(
+        getattr(body, field) is None
+        for field in (
+            "redemption_status",
+            "raw_location",
+            "intake_notes",
+            "scratch_project_path",
+            "scratch_project_status",
+            "scratch_engine_version",
+            "scratch_notes",
+        )
     ):
         raise HTTPException(status_code=400, detail="no_fields")
     try:
@@ -123,6 +143,10 @@ def api_patch_asset(asset_id: str, body: AssetPatchRequest) -> dict[str, Any]:
             redemption_status=body.redemption_status,
             raw_location=body.raw_location,
             intake_notes=body.intake_notes,
+            scratch_project_path=body.scratch_project_path,
+            scratch_project_status=body.scratch_project_status,
+            scratch_engine_version=body.scratch_engine_version,
+            scratch_notes=body.scratch_notes,
         )
     except KeyError:
         raise HTTPException(status_code=404, detail="asset_not_found") from None
@@ -270,6 +294,77 @@ def api_lookdev_derive(body: LookdevDeriveRequest) -> dict[str, Any]:
         payload=payload,
     )
     return {"schema_version": 1, "job": job}
+
+
+@app.post("/api/lookdev/ingest-render")
+async def api_lookdev_ingest_render(
+    asset_id: str = Form(...),
+    lane: str = Form(...),
+    note: str | None = Form(default=None),
+    file: UploadFile = File(...),
+) -> dict[str, Any]:
+    """Upload a true Niagara viewport still into vault derived-renders."""
+    if register_mod.get_asset(asset_id) is None:
+        raise HTTPException(status_code=404, detail="asset_not_found")
+    suffix = Path(file.filename or "still.png").suffix.lower() or ".png"
+    if suffix not in lookdev_mod.IMAGE_SUFFIXES:
+        raise HTTPException(status_code=400, detail="unsupported_image")
+    import tempfile
+
+    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+        tmp_path = Path(tmp.name)
+        content = await file.read()
+        if not content:
+            raise HTTPException(status_code=400, detail="empty_file")
+        tmp.write(content)
+    try:
+        row = lookdev_mod.ingest_niagara_render(
+            asset_id,
+            lane=lane,
+            source_file=tmp_path,
+            note=note,
+            original_name=file.filename,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except KeyError:
+        raise HTTPException(status_code=404, detail="asset_not_found") from None
+    finally:
+        tmp_path.unlink(missing_ok=True)
+    return {"schema_version": 1, "output": row}
+
+
+@app.post("/api/scratch/record")
+def api_scratch_record(body: ScratchRecordRequest) -> dict[str, Any]:
+    try:
+        result = scratch_mod.record_scratch_inspect(
+            body.asset_id,
+            scratch_project_path=body.scratch_project_path,
+            engine_version=body.engine_version,
+            notes=body.notes,
+            intake_run_id=body.intake_run_id,
+        )
+    except KeyError:
+        raise HTTPException(status_code=404, detail="asset_not_found") from None
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    return {"schema_version": 1, **result}
+
+
+@app.get("/api/scratch/hint")
+def api_scratch_hint(engine: str = Query(default="unreal")) -> dict[str, Any]:
+    path = lookdev_mod.scratch_hint_path(engine)
+    readme = path / "README.md"
+    if not readme.is_file():
+        readme.write_text(
+            "# Unreal scratch inspection\n\n"
+            "Workstation Unreal projects (e.g. `C:\\\\epic\\\\VellumImport`) are the "
+            "live scratch. This vault folder holds notes/readouts only — not the .uproject.\n"
+            "Record inspect via `POST /api/scratch/record`.\n"
+            "Upload Niagara viewport stills via `POST /api/lookdev/ingest-render`.\n",
+            encoding="utf-8",
+        )
+    return {"schema_version": 1, "engine": engine, "vault_hint": str(path)}
 
 
 @app.get("/")

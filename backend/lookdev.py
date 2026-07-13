@@ -269,3 +269,66 @@ def derive_stills_for_asset(
         "created_count": len(created),
         "outputs": created,
     }
+
+
+def scratch_hint_path(engine: str = "unreal") -> Path:
+    eng = (engine or "unreal").lower()
+    path = vault_root() / "03-scratch-projects" / eng / "cag_asset_inspection"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def ingest_niagara_render(
+    asset_id: str,
+    *,
+    lane: str,
+    source_file: Path,
+    note: str | None = None,
+    original_name: str | None = None,
+) -> dict[str, Any]:
+    """Register a true Niagara viewport still under 05-derived-renders (not pack textures)."""
+    asset = register_mod.get_asset(asset_id)
+    if not asset:
+        raise KeyError(f"asset_not_found:{asset_id}")
+    if lane not in KNOWN_LANES:
+        raise ValueError(f"unknown_lane:{lane}")
+    if not source_file.is_file():
+        raise FileNotFoundError(str(source_file))
+    suffix = source_file.suffix.lower()
+    if suffix not in IMAGE_SUFFIXES:
+        raise ValueError(f"unsupported_image:{suffix}")
+
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    safe_name = original_name or source_file.name
+    safe_name = Path(safe_name).name
+    if Path(safe_name).suffix.lower() not in IMAGE_SUFFIXES:
+        safe_name = f"{safe_name}{suffix}"
+
+    dest_dir = vault_root() / "05-derived-renders" / lane / asset_id / "niagara"
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    dest = dest_dir / f"{stamp}-{safe_name}"
+    shutil.copy2(source_file, dest)
+
+    # Also keep a lookdev alias for browsing
+    lookdev_dir = vault_root() / "04-lookdev" / lane / asset_id / "niagara"
+    lookdev_dir.mkdir(parents=True, exist_ok=True)
+    lookdev_copy = lookdev_dir / dest.name
+    shutil.copy2(dest, lookdev_copy)
+
+    row = {
+        "id": f"derived-{stamp}-{secrets.token_hex(3)}",
+        "asset_id": asset_id,
+        "lane": lane,
+        "kind": "niagara-render",
+        "path": str(dest),
+        "source_path": str(source_file),
+        "created_at": _now(),
+        "note": note
+        or "Niagara viewport / HighResShot still from Unreal scratch inspect.",
+    }
+    catalog = load_catalog()
+    outputs = list(catalog.get("outputs") or [])
+    outputs.append(row)
+    catalog["outputs"] = outputs
+    save_catalog(catalog)
+    return row

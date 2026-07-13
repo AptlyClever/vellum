@@ -318,6 +318,20 @@ table.assets tbody tr:last-child td {
   font-family: var(--mono);
 }
 
+.scratch-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: flex-end;
+  margin: 0.75rem 0 1rem;
+}
+
+.file-btn {
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+}
+
 .intake-run {
   margin-top: 0.85rem;
   padding-top: 0.85rem;

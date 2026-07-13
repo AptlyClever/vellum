@@ -254,6 +254,13 @@ async function openDetail(id) {
   addDlRow(dl, "Status", a.redemption_status || "not_recorded");
   addDlRow(dl, "Project fit", a.project_fit || "");
   addDlRow(dl, "Source bundle", a.source_bundle || "");
+  addDlRow(dl, "Scratch", a.scratch_project_status || "not_recorded");
+  if (a.scratch_project_path) {
+    addDlRow(dl, "Scratch path", a.scratch_project_path);
+  }
+  if (a.scratch_engine_version) {
+    addDlRow(dl, "Scratch engine", a.scratch_engine_version);
+  }
   host.appendChild(dl);
 
   const note = document.createElement("p");
@@ -329,6 +336,75 @@ async function openDetail(id) {
     console.error(err);
   }
 
+  const scratchHead = document.createElement("h3");
+  scratchHead.textContent = "Scratch inspect";
+  scratchHead.style.marginTop = "1.5rem";
+  host.appendChild(scratchHead);
+
+  const scratchForm = document.createElement("div");
+  scratchForm.className = "scratch-form";
+  const pathLabel = document.createElement("label");
+  pathLabel.className = "field grow";
+  const pathSpan = document.createElement("span");
+  pathSpan.textContent = "Unreal project path";
+  const pathInput = document.createElement("input");
+  pathInput.type = "text";
+  pathInput.placeholder = "C:\\epic\\VellumImport";
+  pathInput.value = a.scratch_project_path || "C:\\epic\\VellumImport";
+  pathLabel.appendChild(pathSpan);
+  pathLabel.appendChild(pathInput);
+  scratchForm.appendChild(pathLabel);
+
+  const engLabel = document.createElement("label");
+  engLabel.className = "field";
+  const engSpan = document.createElement("span");
+  engSpan.textContent = "Engine";
+  const engInput = document.createElement("input");
+  engInput.type = "text";
+  engInput.placeholder = "5.8";
+  engInput.value = a.scratch_engine_version || "5.8";
+  engLabel.appendChild(engSpan);
+  engLabel.appendChild(engInput);
+  scratchForm.appendChild(engLabel);
+
+  const scratchBtn = document.createElement("button");
+  scratchBtn.type = "button";
+  scratchBtn.className = "btn";
+  scratchBtn.textContent = "Record scratch inspect";
+  scratchBtn.addEventListener("click", async () => {
+    scratchBtn.disabled = true;
+    scratchBtn.textContent = "Recording…";
+    try {
+      let intakeRunId = null;
+      try {
+        const listed = await fetchJson(
+          `/api/intake?asset_id=${encodeURIComponent(a.id)}&limit=1`
+        );
+        intakeRunId = (listed.runs && listed.runs[0] && listed.runs[0].run_id) || null;
+      } catch {
+        /* ignore */
+      }
+      const res = await fetch("/api/scratch/record", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          asset_id: a.id,
+          scratch_project_path: pathInput.value.trim(),
+          engine_version: engInput.value.trim(),
+          notes: "Niagara systems opened in Unreal scratch",
+          intake_run_id: intakeRunId,
+        }),
+      });
+      if (!res.ok) throw new Error(`scratch ${res.status}`);
+      await openDetail(a.id);
+    } catch (err) {
+      scratchBtn.textContent = "Record failed";
+      console.error(err);
+    }
+  });
+  scratchForm.appendChild(scratchBtn);
+  host.appendChild(scratchForm);
+
   const lookdevHead = document.createElement("h3");
   lookdevHead.textContent = "Lookdev";
   lookdevHead.style.marginTop = "1.5rem";
@@ -358,6 +434,38 @@ async function openDetail(id) {
     }
   });
   lookdevActions.appendChild(deriveBtn);
+
+  const fileLabel = document.createElement("label");
+  fileLabel.className = "btn btn-secondary file-btn";
+  fileLabel.textContent = "Upload Niagara render";
+  const fileInput = document.createElement("input");
+  fileInput.type = "file";
+  fileInput.accept = "image/png,image/jpeg,image/webp";
+  fileInput.hidden = true;
+  fileInput.addEventListener("change", async () => {
+    const file = fileInput.files && fileInput.files[0];
+    if (!file) return;
+    fileLabel.textContent = "Uploading…";
+    try {
+      const fd = new FormData();
+      fd.append("asset_id", a.id);
+      fd.append("lane", "slots");
+      fd.append("note", "Niagara viewport still from Unreal scratch");
+      fd.append("file", file, file.name);
+      const res = await fetch("/api/lookdev/ingest-render", {
+        method: "POST",
+        body: fd,
+      });
+      if (!res.ok) throw new Error(`ingest ${res.status}`);
+      await openDetail(a.id);
+    } catch (err) {
+      fileLabel.textContent = "Upload failed";
+      console.error(err);
+    }
+  });
+  fileLabel.appendChild(fileInput);
+  fileLabel.addEventListener("click", () => fileInput.click());
+  lookdevActions.appendChild(fileLabel);
   host.appendChild(lookdevActions);
 
   const lookdevHost = document.createElement("div");
