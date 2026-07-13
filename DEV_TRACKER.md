@@ -3,7 +3,7 @@
 > **Current Active Issue:** Fireworks pack — **full automated lookdev** (all effects), then next purchased packs
 > **Governing CFD:** `cfd-inspiration-20260713-015950-vellum-control-alt-games-asset-vault-register-in` (slices A–F met; this is the post-CFD track)
 > **Capability spec:** `docs/ue-mrq-capture.md` (SoT — full fidelity; SceneCapture/HighResShot retired)
-> **Next Immediate Step:** Aurora: `git pull` → `pwsh -File tools/unreal/vellum_ue_worker.ps1 -Ensure` → restart agent (`lookdev-worker`) → **Force** + Capture. SoT: `docs/ue-lookdev-worker.md`.
+> **Next Immediate Step:** Aurora Admin once: `pwsh -File tools/unreal/host-install/install.ps1 -StartWorkerNow` — then Capture from Vellum (no parked console). SoT: `docs/ue-lookdev-worker.md` + `tools/unreal/host-install/README.md`.
 
 ---
 
@@ -15,7 +15,8 @@
 * **Scratch / hosts:** `docs/scratch-inspect-niagara.md`
 * **UE MRQ capture capability (SoT):** `docs/ue-mrq-capture.md`
 * **UE Lookdev Worker (hosting SoT):** `docs/ue-lookdev-worker.md`
-* **Warm worker:** `pwsh -File tools/unreal/vellum_ue_worker.ps1 -Ensure`
+* **Warm worker:** `pwsh -File tools/unreal/host-install/install.ps1 -StartWorkerNow` (service + logon task)
+* **Manual worker (debug):** `pwsh -File tools/unreal/vellum_ue_worker.ps1 -Ensure`
 * **Recover interrupted MRQ dirs:** `pwsh -File tools/unreal/vellum_ue_agent.ps1 -RecoverOnly`
 * **Record scratch:** `POST /api/scratch/record`
 * **Upload Niagara still:** `POST /api/lookdev/ingest-render` (multipart)
@@ -99,3 +100,4 @@
 * **2026-07-13** — **Lookdev Studio** (`mrq-lookdev-studio`): permanent photo-studio map (`VellumLookdevStudio`) with center slot + lights + mid cam; capture defaults to 60 frames (~2s); Phase 0 builds studio once. Old void stills inconsistent — Force re-render for pack.
 * **2026-07-13** — Adaptive per-system frame estimate (`mrq-adaptive-frames`), max 4s / 120 frames.
 * **2026-07-13** — **Option 1 locked:** Aurora **Lookdev Worker** — warm UnrealEditor on studio map + loopback HTTP `127.0.0.1:8771`; agent primary path (legacy Cmd runner = `-LegacyCmdRunner` only). Docs: `docs/ue-lookdev-worker.md`.
+* **2026-07-13** — Host wrappers: WinSW service `VellumUeAgent` + At-logon/watchdog tasks (`tools/unreal/host-install/`) so Capture is not console-babysat.

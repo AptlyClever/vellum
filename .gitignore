@@ -27,5 +27,6 @@ data/*.sqlite3
 
 # Never track vault raw assets (vault lives outside this repo)
 
-data/job-progress/
-data/ue-host-specs/
+# Runtime (WinSW binary, stamped XML, service logs) — machine-local
+tools/unreal/host-install/runtime/
+

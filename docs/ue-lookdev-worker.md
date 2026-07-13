@@ -53,11 +53,28 @@ Default bind: `127.0.0.1:8771` (`worker_port` on host profile).
 
 ## Operator run
 
-```powershell
-# Warm the GPU printer (once per login / after reboot)
-pwsh -File tools/unreal/vellum_ue_worker.ps1 -Ensure
+### Preferred (no console babysitting)
 
-# Agent (default uses worker when healthy)
+On Aurora, once (Admin PowerShell):
+
+```powershell
+cd E:\Dev\vellum   # repo from ue-hosts.json
+git pull
+pwsh -File tools/unreal/host-install/install.ps1 -StartWorkerNow
+```
+
+That installs:
+
+- **Windows Service** `VellumUeAgent` (WinSW) — polls Vellum, talks to warm worker
+- **At-logon task** `VellumLookdevWorkerEnsure` — starts UE on Lookdev Studio in your GPU session
+- **Watchdog task** every 5 minutes — re-Ensure if health is down
+
+Details: [`tools/unreal/host-install/README.md`](../tools/unreal/host-install/README.md).
+
+### Manual (debug only)
+
+```powershell
+pwsh -File tools/unreal/vellum_ue_worker.ps1 -Ensure
 pwsh -File tools/unreal/vellum_ue_agent.ps1
 ```
 

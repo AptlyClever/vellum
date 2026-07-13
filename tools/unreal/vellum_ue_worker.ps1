@@ -103,6 +103,28 @@ function Start-LookdevWorker {
     return $health
   }
 
+  # Session 0 / Windows Service must not launch UnrealEditor (GPU GUI).
+  # Logon task VellumLookdevWorkerEnsure owns warming the editor.
+  $inServiceSession = $false
+  try {
+    if ($env:SESSIONNAME -eq "Services") { $inServiceSession = $true }
+    if (-not [Environment]::UserInteractive) { $inServiceSession = $true }
+  } catch { }
+
+  if ($inServiceSession) {
+    Write-Host "Non-interactive session: waiting for Lookdev Worker health (logon task should start UE)…"
+    $deadline = (Get-Date).AddSeconds([Math]::Min($ReadyTimeoutSec, 120))
+    while ((Get-Date) -lt $deadline) {
+      Start-Sleep -Seconds 3
+      $health = Get-WorkerHealth
+      if ($health -and $health.ok) {
+        Write-Host "Worker ready version=$($health.version) map=$($health.map)"
+        return $health
+      }
+    }
+    throw "Lookdev Worker not healthy at $WorkerUrl/health. Log into Aurora (or run host-install logon task) so Unreal can warm — services cannot start the GPU editor."
+  }
+
   $editor = Find-UeEditorBinary
   $bootPy = Join-Path $paths.OutDir "vellum_ue_worker_boot.py"
   $bootUe = ConvertTo-UePath $bootPy
