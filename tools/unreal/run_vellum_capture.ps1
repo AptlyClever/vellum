@@ -162,42 +162,37 @@ function Send-VellumProgress {
 }
 
 function Invoke-UeLogged {
-  # Start UE; live while Get-Process -Id sees it. Never read ExitCode after redirect.
+  # Never RedirectStandardOutput/Error on UE - after Unreal exits, Process.Dispose
+  # and ExitCode on redirected handles hang PowerShell forever (observed Aurora).
+  # Liveness = Get-Process -Id only. Logs via -AbsLog=.
   param(
     [string]$Exe,
     [string[]]$ArgumentList,
     [string]$LogPath,
     [string]$Phase,
     [int]$HeartbeatSeconds = 15,
-    [switch]$NoRedirect
+    [switch]$NoRedirect  # retained for callers; always no-redirect now
   )
   if (Test-Path $LogPath) { Remove-Item -Force $LogPath -ErrorAction SilentlyContinue }
-  $errPath = "$LogPath.stderr"
-  if (Test-Path $errPath) { Remove-Item -Force $errPath -ErrorAction SilentlyContinue }
   Send-VellumProgress -Message "$Phase starting exe=$Exe"
-  if ($NoRedirect) {
-    $joined = @($ArgumentList) + @("-AbsLog=$LogPath")
-    $proc = Start-Process -FilePath $Exe -ArgumentList $joined -PassThru -WindowStyle Minimized
-  } else {
-    $proc = Start-Process -FilePath $Exe -ArgumentList $ArgumentList `
-      -PassThru -NoNewWindow `
-      -RedirectStandardOutput $LogPath `
-      -RedirectStandardError $errPath
+  $joined = [System.Collections.Generic.List[string]]::new()
+  foreach ($a in @($ArgumentList)) { [void]$joined.Add([string]$a) }
+  if (-not ($joined | Where-Object { $_ -like "-AbsLog=*" })) {
+    [void]$joined.Add("-AbsLog=$LogPath")
   }
+  $proc = Start-Process -FilePath $Exe -ArgumentList $joined.ToArray() `
+    -PassThru -WindowStyle Minimized
   $uePid = [int]$proc.Id
+  # Drop Process object immediately - keep only PID. Do not Dispose/ExitCode.
+  $proc = $null
   Send-VellumProgress -Message "$Phase pid=$uePid"
   $started = Get-Date
   while ($null -ne (Get-Process -Id $uePid -ErrorAction SilentlyContinue)) {
     Start-Sleep -Seconds $HeartbeatSeconds
     if ($null -eq (Get-Process -Id $uePid -ErrorAction SilentlyContinue)) { break }
     $elapsed = [int]((Get-Date) - $started).TotalSeconds
-    if ((-not $NoRedirect) -and (Test-Path $errPath)) {
-      Get-Content $errPath -ErrorAction SilentlyContinue | Add-Content -Path $LogPath -ErrorAction SilentlyContinue
-      Clear-Content $errPath -ErrorAction SilentlyContinue
-    }
     Send-VellumProgress -Message "$Phase still running (${elapsed}s)" -LogPath $LogPath
   }
-  try { $proc.Dispose() } catch { }
   Send-VellumProgress -Message "$Phase process gone" -LogPath $LogPath
   return 0
 }
