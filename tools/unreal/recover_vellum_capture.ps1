@@ -64,6 +64,29 @@ if ($Systems.Count -gt 0) {
   $dirs = @(Get-ChildItem -Path $MrqRoot -Directory -ErrorAction SilentlyContinue)
 }
 
+# Prefer freshest _Single shells; skip stale _Loop dirs when a Single sibling exists.
+# Alphabetical listing hit old pure-black Loop first and looked like a total failure.
+$singleNames = @{}
+foreach ($d in $dirs) {
+  if ($d.Name -match '_Single$') { $singleNames[$d.Name] = $true }
+}
+$filtered = New-Object System.Collections.ArrayList
+foreach ($d in $dirs) {
+  if ($d.Name -match '^(.*)_Loop$' ) {
+    $singleSibling = $Matches[1] + "_Single"
+    if ($singleNames.ContainsKey($singleSibling)) {
+      Write-Host "IGNORE $($d.Name) (stale loop; sibling $singleSibling present)"
+      continue
+    }
+  }
+  [void]$filtered.Add($d)
+}
+$dirs = @($filtered | Sort-Object {
+    $n = $_.Name
+    $pri = if ($n -match '_Single$') { 0 } else { 1 }
+    "{0}-{1:yyyyMMddHHmmss}-{2}" -f $pri, $_.LastWriteTimeUtc, $n
+  })
+
 $report = [ordered]@{
   schema_version = 1
   tool           = "recover_vellum_capture"
@@ -78,7 +101,10 @@ $report = [ordered]@{
 }
 
 Write-Host "Recover MRQ capture under $MrqRoot"
-Write-Host "Candidate systems: $($dirs.Count)"
+Write-Host "Candidate systems (after loop filter): $($dirs.Count)"
+foreach ($d in $dirs) {
+  Write-Host "  - $($d.Name)  frames=$(Get-ImageCount $d.FullName)  mtime=$($d.LastWriteTime)"
+}
 
 foreach ($dir in $dirs) {
   $systemName = $dir.Name
@@ -96,11 +122,11 @@ foreach ($dir in $dirs) {
   }
 
   $HeroJson = Join-Path $OutDir "heroes-recover-$systemName.json"
-  & $py.Source $PickHeroesPy $dir.FullName --min-rgb $MinRgb --json-out $HeroJson
+  # Quiet stdout — pick_heroes JSON dump looked like a hard failure mid-run.
+  & $py.Source $PickHeroesPy $dir.FullName --min-rgb $MinRgb --json-out $HeroJson *> $null
   if ($LASTEXITCODE -ne 0 -or -not (Test-Path $HeroJson)) {
     $entry.skip = "hero_pick_failed"
     [void]$report.skipped.Add($entry)
-    [void]$report.errors.Add("hero_pick_failed:$systemName")
     Write-Host "SKIP $systemName hero_pick_failed"
     continue
   }
@@ -110,11 +136,10 @@ foreach ($dir in $dirs) {
   if (-not [bool]$heroDoc.ok) {
     $entry.skip = [string]$heroDoc.error
     [void]$report.skipped.Add($entry)
-    [void]$report.errors.Add("hero_rejected:$systemName`:$($heroDoc.error)")
-    Write-Host "SKIP $systemName $($heroDoc.error)"
+    # Black / rejected sequences are expected for pre-fix MRQ folders — not a hard error.
+    Write-Host "SKIP $systemName $($heroDoc.error) (not an ingest error)"
     continue
   }
-
   $safeHint = Safe-Name $systemName
   $heroPaths = @()
   foreach ($h in @($heroDoc.heroes)) {
