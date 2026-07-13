@@ -15,8 +15,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
 
-import yaml
-
 from . import intake as intake_mod
 from . import register as register_mod
 
@@ -276,25 +274,7 @@ def _execute_record_paths(job: dict[str, Any]) -> dict[str, Any]:
         raise KeyError(f"asset_not_found:{asset_id}")
     path = stage_path_for_asset(asset)
     path.mkdir(parents=True, exist_ok=True)
-    doc = register_mod.ensure_register()
-    updated = False
-    for row in doc.get("assets") or []:
-        if isinstance(row, dict) and row.get("id") == asset_id:
-            row["raw_location"] = str(path)
-            updated = True
-            break
-    if not updated:
-        raise KeyError(f"asset_not_found:{asset_id}")
-    register_mod.register_path().write_text(
-        yaml.dump(doc, sort_keys=False, allow_unicode=True),
-        encoding="utf-8",
-    )
-    vault_mirror = os.environ.get("VELLUM_VAULT_REGISTER_PATH", "").strip()
-    if vault_mirror:
-        Path(vault_mirror).write_text(
-            register_mod.register_path().read_text(encoding="utf-8"),
-            encoding="utf-8",
-        )
+    register_mod.patch_asset(str(asset_id), raw_location=str(path))
     return {"raw_location": str(path)}
 
 

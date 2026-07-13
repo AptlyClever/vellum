@@ -40,7 +40,8 @@ pytest -q
 - **B (shipped):** IntakeRun propose API + UI (`docs/api-intake.md`)
 - **C (shipped):** SQLite job queue + `vellum-worker`; enqueue automatable IntakeRun steps
 - **D (shipped):** Axiom Read `#/axiom/vellum` + `?embed=axiom`
-- **Next:** E — drive brittle imports with human checkpoints
+- **E (shipped):** Epic Add-to-Project → vault stage (Fireworks pilot); `PATCH /api/assets`; `docs/slice-e-epic-staging.md`
+- **Next:** F — lookdev derive into project lanes
 
 ## Boundaries
 

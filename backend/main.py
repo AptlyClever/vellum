@@ -52,6 +52,12 @@ class JobEnqueueRequest(BaseModel):
     payload: dict[str, Any] = Field(default_factory=dict)
 
 
+class AssetPatchRequest(BaseModel):
+    redemption_status: str | None = Field(default=None, max_length=64)
+    raw_location: str | None = Field(default=None, max_length=1000)
+    intake_notes: str | None = Field(default=None, max_length=4000)
+
+
 @app.get("/api/health")
 def health() -> dict[str, Any]:
     summary = register_mod.register_summary()
@@ -92,6 +98,25 @@ def api_get_asset(asset_id: str) -> dict[str, Any]:
     if not asset:
         raise HTTPException(status_code=404, detail="asset_not_found")
     return asset
+
+
+@app.patch("/api/assets/{asset_id}")
+def api_patch_asset(asset_id: str, body: AssetPatchRequest) -> dict[str, Any]:
+    if (
+        body.redemption_status is None
+        and body.raw_location is None
+        and body.intake_notes is None
+    ):
+        raise HTTPException(status_code=400, detail="no_fields")
+    try:
+        return register_mod.patch_asset(
+            asset_id,
+            redemption_status=body.redemption_status,
+            raw_location=body.raw_location,
+            intake_notes=body.intake_notes,
+        )
+    except KeyError:
+        raise HTTPException(status_code=404, detail="asset_not_found") from None
 
 
 @app.post("/api/intake/propose")

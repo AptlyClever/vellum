@@ -50,6 +50,20 @@ Queues worker jobs for pending automatable steps only:
 
 Does **not** enqueue Epic/Unity redeem or download (`needs-human`).
 
+## Patch asset register fields (Slice E)
+
+`PATCH /api/assets/{asset_id}`
+
+```json
+{
+  "redemption_status": "redeemed",
+  "raw_location": "/mnt/data/vault/vellum/.../fireworks-vol-1-niagara",
+  "intake_notes": "optional provenance"
+}
+```
+
+Use after a human redeem/download lands files in the vault. See `docs/slice-e-epic-staging.md`.
+
 ## Jobs
 
 - `POST /api/jobs` — `{kind, asset_id?, intake_run_id?, step_id?, payload?}`

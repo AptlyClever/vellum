@@ -135,6 +135,46 @@ def get_asset(asset_id: str, *, now: datetime | None = None) -> dict[str, Any] |
     return None
 
 
+def _persist_register(doc: dict[str, Any]) -> None:
+    path = register_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(yaml.dump(doc, sort_keys=False, allow_unicode=True), encoding="utf-8")
+    vault_mirror = os.environ.get("VELLUM_VAULT_REGISTER_PATH", "").strip()
+    if vault_mirror:
+        mirror = Path(vault_mirror)
+        mirror.parent.mkdir(parents=True, exist_ok=True)
+        mirror.write_text(path.read_text(encoding="utf-8"), encoding="utf-8")
+
+
+def patch_asset(
+    asset_id: str,
+    *,
+    redemption_status: str | None = None,
+    raw_location: str | None = None,
+    intake_notes: str | None = None,
+) -> dict[str, Any]:
+    """Update mutable register fields for an owned asset (Slice E human checkpoints)."""
+    aid = asset_id.strip()
+    doc = ensure_register()
+    target: dict[str, Any] | None = None
+    for row in doc.get("assets") or []:
+        if isinstance(row, dict) and row.get("id") == aid:
+            target = row
+            break
+    if target is None:
+        raise KeyError(aid)
+    if redemption_status is not None:
+        target["redemption_status"] = redemption_status.strip()
+    if raw_location is not None:
+        target["raw_location"] = raw_location.strip() or None
+    if intake_notes is not None:
+        target["intake_notes"] = intake_notes
+    _persist_register(doc)
+    updated = get_asset(aid)
+    assert updated is not None
+    return updated
+
+
 def register_summary(*, now: datetime | None = None) -> dict[str, Any]:
     assets = list_assets(now=now)
     open_n = sum(1 for a in assets if a.get("redeem_window") == "open")

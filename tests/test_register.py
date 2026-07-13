@@ -5,7 +5,14 @@ from pathlib import Path
 
 import yaml
 
-from backend.register import enrich_asset, ensure_register, list_assets, redeem_window, register_summary
+from backend.register import (
+    enrich_asset,
+    ensure_register,
+    list_assets,
+    patch_asset,
+    redeem_window,
+    register_summary,
+)
 
 
 def test_seed_has_37_assets(tmp_path: Path, monkeypatch) -> None:
@@ -86,3 +93,31 @@ def test_health_via_app(tmp_path: Path, monkeypatch) -> None:
     listed = client.get("/api/assets", params={"q": "hangar"})
     assert listed.status_code == 200
     assert listed.json()["count"] >= 1
+
+
+def test_patch_asset_redemption(tmp_path: Path, monkeypatch) -> None:
+    from fastapi.testclient import TestClient
+
+    reg = tmp_path / "register.yaml"
+    monkeypatch.setenv("VELLUM_REGISTER_PATH", str(reg))
+    monkeypatch.delenv("VELLUM_VAULT_REGISTER_PATH", raising=False)
+    ensure_register(force_reseed=True)
+
+    updated = patch_asset(
+        "fireworks-vol-1-niagara",
+        redemption_status="redeemed",
+        raw_location="/tmp/vault/fireworks",
+        intake_notes="pilot",
+    )
+    assert updated["redemption_status"] == "redeemed"
+    assert updated["raw_location"] == "/tmp/vault/fireworks"
+
+    from backend.main import app
+
+    client = TestClient(app)
+    r = client.patch(
+        "/api/assets/fireworks-vol-1-niagara",
+        json={"redemption_status": "redeemed", "intake_notes": "via api"},
+    )
+    assert r.status_code == 200
+    assert r.json()["intake_notes"] == "via api"
