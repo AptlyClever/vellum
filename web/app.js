@@ -344,7 +344,7 @@ async function openDetail(id) {
   const captureHelp = document.createElement("p");
   captureHelp.className = "fit";
   captureHelp.textContent =
-    "Queues a job for the Windows UE agent (no Unreal clicking). Keep vellum_ue_agent.ps1 running on the active host (Aurora primary / Borealis secondary — only one at a time).";
+    "Queues MRQ + Sequencer capture on the active UE host (Aurora). Keep vellum_ue_agent.ps1 running — no Unreal UI clicking. Heroes + sequences ingest to slots and hail-overlay.";
   host.appendChild(captureHelp);
 
   const hostMeta = document.createElement("p");

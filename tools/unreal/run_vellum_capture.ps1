@@ -198,44 +198,52 @@ function Safe-Name([string]$Name) {
 
 $RepoRoot = Resolve-Path (Join-Path $PSScriptRoot "..\..")
 $InventoryPySource = Join-Path $PSScriptRoot "vellum_capture.py"
-$BakePySource = Join-Path $PSScriptRoot "vellum_capture_bake_map.py"
+$AuthorPySource = Join-Path $PSScriptRoot "vellum_capture_mrq_author.py"
+$PickHeroesPy = Join-Path $PSScriptRoot "pick_heroes.py"
 if (-not (Test-Path $InventoryPySource)) { throw "vellum_capture.py not found next to runner" }
-if (-not (Test-Path $BakePySource)) { throw "vellum_capture_bake_map.py not found next to runner" }
+if (-not (Test-Path $AuthorPySource)) { throw "vellum_capture_mrq_author.py not found next to runner" }
+if (-not (Test-Path $PickHeroesPy)) { throw "pick_heroes.py not found next to runner" }
 if (-not $Project) {
   $Project = Resolve-UprojectFromHost -HostProfile $UeHost
 }
 if (-not (Test-Path $Project)) { throw "Project not found: $Project" }
 
 $Ue = Find-UeCmdFromHost -HostProfile $UeHost -Hint $UeCmd
-$UeGame = Find-UeEditor -CmdPath $Ue
 $ProjectDir = Split-Path $Project -Parent
 $OutDir = Join-Path $ProjectDir "Saved\VellumCapture"
 $StillsDir = Join-Path $OutDir "stills"
+$MrqRoot = Join-Path $OutDir "mrq"
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
 New-Item -ItemType Directory -Force -Path $StillsDir | Out-Null
+New-Item -ItemType Directory -Force -Path $MrqRoot | Out-Null
 
-# Stage scripts INSIDE the project so ExecutePythonScript never sees \tools (tab).
 $StagedInventoryPy = Join-Path $OutDir "vellum_capture.py"
-$StagedBakePy = Join-Path $OutDir "vellum_capture_bake_map.py"
+$StagedAuthorPy = Join-Path $OutDir "vellum_capture_mrq_author.py"
+$StagedPickHeroesPy = Join-Path $OutDir "pick_heroes.py"
 Copy-Item -Force -Path $InventoryPySource -Destination $StagedInventoryPy
-Copy-Item -Force -Path $BakePySource -Destination $StagedBakePy
+Copy-Item -Force -Path $AuthorPySource -Destination $StagedAuthorPy
+Copy-Item -Force -Path $PickHeroesPy -Destination $StagedPickHeroesPy
 
 $ProjectUe = ConvertTo-UePath $Project
 $OutDirUe = ConvertTo-UePath $OutDir
+$FrameCount = 120
+$FrameRate = 30
+$IngestLanes = @("slots", "hail-overlay")
 
-Write-Host "UE (editor/inventory): $Ue"
-Write-Host "UE (game stills): $UeGame"
+Write-Host "UE (Cmd): $Ue"
 Write-Host "Project: $ProjectUe"
 Write-Host "MaxSystems=$MaxSystems Width=$Width Height=$Height MapPath=$MapPath"
-Write-Host "Runner version: ue-hosts (2026-07-13)"
+Write-Host "Runner version: mrq-sequencer (2026-07-13)"
 Write-Host "UE host: $($UeHost.id) ($($UeHost.label))"
+Write-Host "Ingest lanes: $($IngestLanes -join ', ')"
 if ($JobId) { Write-Host "JobId=$JobId (progress -> $VellumBase/api/jobs/$JobId/progress)" }
 
 $allErrors = New-Object System.Collections.ArrayList
 $stills = New-Object System.Collections.ArrayList
+$sequences = New-Object System.Collections.ArrayList
 
 # ---------------------------------------------------------------------------
-# Phase A: inventory only (editor Python; existing proven path).
+# Phase A: inventory
 # ---------------------------------------------------------------------------
 $env:VELLUM_ASSET_ID = $AssetId
 $env:VELLUM_CONTENT_ROOT = $ContentRoot
@@ -266,7 +274,7 @@ if (-not (Test-Path $InventoryManifestPath)) {
     $logTail = Get-LogPythonSnippet (Get-Content $InventoryLog -Raw -ErrorAction SilentlyContinue)
   }
   throw @"
-Inventory did not write manifest-inventory.json under $OutDir (runner=game-mode-capture-map).
+Inventory did not write manifest-inventory.json under $OutDir (runner=mrq-sequencer).
 Unreal exit=$ueExit staged=$StagedInventoryPy
 
 LogPython snippet:
@@ -276,123 +284,185 @@ $logTail
 
 $inv = Get-Content $InventoryManifestPath -Raw | ConvertFrom-Json
 if ($inv.errors) { foreach ($e in @($inv.errors)) { [void]$allErrors.Add("inventory:$e") } }
+if ($inv.content_root) { $ContentRoot = [string]$inv.content_root }
 $pickedSystems = @($inv.niagara_systems)
-Write-Host "Inventory systems_found=$($inv.niagara_systems_found) picked=$($pickedSystems.Count)"
-Send-VellumProgress -Message "Inventory done: found=$($inv.niagara_systems_found) picked=$($pickedSystems.Count)"
+Write-Host "Inventory systems_found=$($inv.niagara_systems_found) picked=$($pickedSystems.Count) content_root=$ContentRoot"
+Send-VellumProgress -Message "Inventory done: found=$($inv.niagara_systems_found) picked=$($pickedSystems.Count) root=$ContentRoot"
 if ($pickedSystems.Count -eq 0) {
-  [void]$allErrors.Add("no_systems_to_bake")
+  [void]$allErrors.Add("no_systems_to_capture")
 }
 
 # ---------------------------------------------------------------------------
-# Phase B: bake map + SceneCapture still in editor (no -game HighResShot).
-# Game-mode window stayed blank on this box; HighResShot wrote zero PNGs.
+# Phase B/C: author Sequencer+MRQ config, then cmdline MRQ render per system.
 # ---------------------------------------------------------------------------
 $slotIndex = 0
 foreach ($sys in $pickedSystems) {
   $systemName = [string]$sys.asset_name
   $objectPath = [string]$sys.object_path
   $safeHint = Safe-Name $systemName
-  $stillDest = Join-Path $StillsDir "$AssetId-$safeHint.png"
-  Write-Host "Phase B [$slotIndex] bake+SceneCapture $objectPath"
+  $seqOutDir = Join-Path $MrqRoot $safeHint
+  New-Item -ItemType Directory -Force -Path $seqOutDir | Out-Null
+  # Clear prior frames for this system
+  Get-ChildItem -Path $seqOutDir -File -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
 
+  Write-Host "Phase B [$slotIndex] author MRQ $objectPath"
   $job = @{
-    asset_id            = $AssetId
-    map_path            = $MapPath
-    system_object_path  = $objectPath
-    system_name         = $systemName
-    slot_index          = $slotIndex
-    width               = $Width
-    height              = $Height
-    still_path          = (ConvertTo-UePath $stillDest)
+    asset_id           = $AssetId
+    map_path           = $MapPath
+    system_object_path = $objectPath
+    system_name        = $systemName
+    slot_index         = $slotIndex
+    width              = $Width
+    height             = $Height
+    frame_count        = $FrameCount
+    frame_rate         = $FrameRate
+    output_dir         = (ConvertTo-UePath $seqOutDir)
+    sequence_package   = "/Game/Vellum/Sequences"
+    config_package     = "/Game/Vellum/MRQ"
   }
   $JobPath = Join-Path $OutDir "job.json"
   ($job | ConvertTo-Json) | Set-Content -Path $JobPath -Encoding utf8
-
   $env:VELLUM_JOB_JSON = ConvertTo-UePath $JobPath
   $env:VELLUM_OUT_DIR = $OutDirUe
 
-  $BakeLog = Join-Path $OutDir "ue-bake-$slotIndex.log"
-  if (Test-Path $BakeLog) { Remove-Item -Force $BakeLog }
-  $BakeExecFlag = "-ExecutePythonScript=" + (ConvertTo-UePath $StagedBakePy)
-
-  # SceneCapture is offscreen — Cmd -unattended is fine and avoids GUI
-  # stdout-redirect hangs with UnrealEditor.exe.
-  $bakeExit = 0
+  $AuthorLog = Join-Path $OutDir "ue-author-$slotIndex.log"
+  if (Test-Path $AuthorLog) { Remove-Item -Force $AuthorLog }
+  $AuthorExecFlag = "-ExecutePythonScript=" + (ConvertTo-UePath $StagedAuthorPy)
+  $authorExit = 0
   try {
-    $bakeExit = Invoke-UeLogged -Exe $Ue -ArgumentList @(
-        $ProjectUe, "-stdout", "-FullStdOutLogOutput", "-unattended", "-nop4", $BakeExecFlag
-      ) -LogPath $BakeLog -Phase "Phase B[$slotIndex] bake+capture $systemName"
+    $authorExit = Invoke-UeLogged -Exe $Ue -ArgumentList @(
+        $ProjectUe, "-stdout", "-FullStdOutLogOutput", "-unattended", "-nop4", $AuthorExecFlag
+      ) -LogPath $AuthorLog -Phase "Phase B[$slotIndex] author $systemName"
   } catch {
-    $bakeExit = 1
-    $_ | Out-File -FilePath $BakeLog -Append
-    Send-VellumProgress -Message "Phase B[$slotIndex] bake crashed: $_" -LogPath $BakeLog
+    $authorExit = 1
+    $_ | Out-File -FilePath $AuthorLog -Append
+    Send-VellumProgress -Message "Phase B[$slotIndex] author crashed: $_" -LogPath $AuthorLog
   }
 
-  $BakeResultPath = Join-Path $OutDir "bake-result.json"
-  $bakeOk = $false
-  $bakeStill = ""
-  $bakeNotes = @()
-  if (Test-Path $BakeResultPath) {
-    $bakeResult = Get-Content $BakeResultPath -Raw | ConvertFrom-Json
-    $bakeOk = [bool]$bakeResult.ok
-    $bakeStill = [string]($bakeResult.still_path)
-    if ($bakeResult.notes) { $bakeNotes = @($bakeResult.notes) }
-    if ($bakeResult.errors) { foreach ($e in @($bakeResult.errors)) { [void]$allErrors.Add("bake:$systemName`:$e") } }
-  } else {
-    $logTail = Get-LogPythonSnippet (Get-Content $BakeLog -Raw -ErrorAction SilentlyContinue)
-    [void]$allErrors.Add("bake_no_result:$systemName`:exit=$bakeExit`:$logTail")
+  $AuthorResultPath = Join-Path $OutDir "author-result.json"
+  if (-not (Test-Path $AuthorResultPath)) {
+    [void]$allErrors.Add("author_no_result:$systemName`:exit=$authorExit")
+    Send-VellumProgress -Message "FAIL author $systemName (no result)" -LogPath $AuthorLog
+    break
   }
-
-  $stillFile = $null
-  if ($bakeStill -and (Test-Path $bakeStill)) {
-    $stillFile = Get-Item -Path $bakeStill
-  } elseif (Test-Path $stillDest) {
-    $stillFile = Get-Item -Path $stillDest
-  }
-
-  if (-not $bakeOk -or -not $stillFile -or $stillFile.Length -lt 64) {
-    Write-Host "Phase B [$slotIndex] FAIL bake/capture $systemName exit=$bakeExit notes=$($bakeNotes -join ',')"
-    Send-VellumProgress -Message "FAIL bake/capture $systemName" -LogPath $BakeLog
-    Write-Host "Failing fast — not baking remaining systems until one still works."
-    if (-not $bakeOk) { [void]$allErrors.Add("bake_failed:$systemName`:exit=$bakeExit") }
-    if (-not $stillFile) { [void]$allErrors.Add("no_still_file:$systemName") }
-    elseif ($stillFile.Length -lt 64) { [void]$allErrors.Add("still_too_small:$systemName`:$($stillFile.Length)") }
+  $author = Get-Content $AuthorResultPath -Raw | ConvertFrom-Json
+  if ($author.errors) { foreach ($e in @($author.errors)) { [void]$allErrors.Add("author:$systemName`:$e") } }
+  if (-not [bool]$author.ok) {
+    [void]$allErrors.Add("author_failed:$systemName")
+    Send-VellumProgress -Message "FAIL author $systemName" -LogPath $AuthorLog
     break
   }
 
-  $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
-  $dest = Join-Path $StillsDir "$AssetId-$safeHint-$stamp.png"
-  if ($stillFile.FullName -ne $dest) {
-    Copy-Item -Force -Path $stillFile.FullName -Destination $dest
-  }
-  [void]$stills.Add(@{
-      path        = $dest
-      kind        = "niagara-render"
-      system      = $systemName
-      object_path = $objectPath
-      method      = "editor-scenecapture-export"
-      source      = $stillFile.FullName
-      bytes       = $stillFile.Length
-    })
-  Write-Host "Phase B [$slotIndex] captured still $dest ($($stillFile.Length) bytes)"
-  Send-VellumProgress -Message "Captured still $systemName ($($stillFile.Length) bytes) -> $dest"
+  $seqPath = [string]$author.sequence_asset
+  $cfgPath = [string]$author.config_asset
+  $mapForRender = [string]$author.map_path
+  Write-Host "Phase C [$slotIndex] cmdline MRQ seq=$seqPath cfg=$cfgPath"
 
+  $MrqLog = Join-Path $OutDir "ue-mrq-$slotIndex.log"
+  if (Test-Path $MrqLog) { Remove-Item -Force $MrqLog }
+  $mrqArgs = @(
+    $ProjectUe,
+    $mapForRender,
+    "-game",
+    "-windowed",
+    "-ResX=$Width",
+    "-ResY=$Height",
+    "-nosplash",
+    "-nop4",
+    "-log",
+    "-stdout",
+    "-FullStdOutLogOutput",
+    "-LevelSequence=$seqPath",
+    "-MoviePipelineConfig=$cfgPath"
+  )
+  $mrqExit = 0
+  try {
+    $mrqExit = Invoke-UeLogged -Exe $Ue -ArgumentList $mrqArgs -LogPath $MrqLog `
+      -Phase "Phase C[$slotIndex] MRQ $systemName" -HeartbeatSeconds 20
+  } catch {
+    $mrqExit = 1
+    $_ | Out-File -FilePath $MrqLog -Append
+    Send-VellumProgress -Message "Phase C[$slotIndex] MRQ crashed: $_" -LogPath $MrqLog
+  }
+
+  $frameFiles = @(Get-ImageFiles -Root $seqOutDir)
+  if ($frameFiles.Count -eq 0) {
+    # MRQ sometimes writes under Saved/MovieRenders — sweep recent images
+    $savedRoot = Join-Path $ProjectDir "Saved"
+    $since = (Get-Date).AddMinutes(-30)
+    $frameFiles = @(Find-RecentImages -Roots @($seqOutDir, $MrqRoot, $savedRoot) -Since $since -NameHint $safeHint)
+  }
+  Write-Host "Phase C [$slotIndex] frames found=$($frameFiles.Count) exit=$mrqExit"
+  if ($frameFiles.Count -eq 0) {
+    [void]$allErrors.Add("mrq_no_frames:$systemName`:exit=$mrqExit")
+    Send-VellumProgress -Message "FAIL MRQ no frames $systemName" -LogPath $MrqLog
+    break
+  }
+
+  # Normalize frames into seqOutDir for zip/heroes
+  foreach ($f in $frameFiles) {
+    if ($f.DirectoryName -ne $seqOutDir) {
+      Copy-Item -Force -Path $f.FullName -Destination (Join-Path $seqOutDir $f.Name)
+    }
+  }
+
+  $HeroJson = Join-Path $OutDir "heroes-$slotIndex.json"
+  $py = Get-Command python -ErrorAction SilentlyContinue
+  if (-not $py) { $py = Get-Command py -ErrorAction SilentlyContinue }
+  if (-not $py) { throw "python/py not found on PATH for pick_heroes.py" }
+  & $py.Source $StagedPickHeroesPy $seqOutDir --json-out $HeroJson
+  if ($LASTEXITCODE -ne 0 -or -not (Test-Path $HeroJson)) {
+    [void]$allErrors.Add("hero_pick_failed:$systemName")
+    break
+  }
+  $heroDoc = Get-Content $HeroJson -Raw | ConvertFrom-Json
+  if (-not [bool]$heroDoc.ok) {
+    [void]$allErrors.Add("hero_rejected:$systemName`:$($heroDoc.error)")
+    Send-VellumProgress -Message "FAIL heroes $systemName $($heroDoc.error)"
+    break
+  }
+
+  foreach ($h in @($heroDoc.heroes)) {
+    $src = [string]$h.path
+    if (-not (Test-Path $src)) { continue }
+    $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
+    $dest = Join-Path $StillsDir "$AssetId-$safeHint-$($h.role)-$stamp.png"
+    Copy-Item -Force -Path $src -Destination $dest
+    [void]$stills.Add(@{
+        path        = $dest
+        kind        = "niagara-render"
+        system      = $systemName
+        object_path = $objectPath
+        method      = "mrq-sequencer"
+        role        = [string]$h.role
+        max_rgb     = [int]$h.max_rgb
+        bytes       = (Get-Item $dest).Length
+      })
+    Write-Host "Hero $($h.role) -> $dest (max_rgb=$($h.max_rgb))"
+  }
+  [void]$sequences.Add(@{
+      system = $systemName
+      path   = $seqOutDir
+      frames = [int]$heroDoc.frame_count
+    })
+  Send-VellumProgress -Message "Captured $systemName heroes=$($heroDoc.heroes.Count) frames=$($heroDoc.frame_count)"
   $slotIndex++
 }
 
 # ---------------------------------------------------------------------------
-# Merge manifests -> Saved/VellumCapture/manifest.json (shape vellum_ue_agent.ps1 reads).
+# Manifest + scratch + ingest (slots + hail-overlay)
 # ---------------------------------------------------------------------------
 $Manifest = Join-Path $OutDir "manifest.json"
 $man = @{
   schema_version        = 1
   tool                  = "vellum_capture"
-  mode                  = "editor-scenecapture"
+  mode                  = "mrq-sequencer"
   asset_id              = $AssetId
   content_root          = $ContentRoot
   niagara_systems_found = [int]$inv.niagara_systems_found
   niagara_systems       = $inv.niagara_systems
   stills                = @($stills)
+  sequences             = @($sequences)
   errors                = @($allErrors)
   stills_attempted      = $true
   ok                    = ($stills.Count -gt 0)
@@ -400,7 +470,7 @@ $man = @{
 ($man | ConvertTo-Json -Depth 8) | Set-Content -Path $Manifest -Encoding utf8
 
 $errJoin = (@($allErrors) -join "; ")
-$notes = "auto-capture(scenecapture) systems=$($inv.niagara_systems_found) stills=$($stills.Count) errors=$errJoin"
+$notes = "auto-capture(mrq-sequencer) systems=$($inv.niagara_systems_found) stills=$($stills.Count) sequences=$($sequences.Count) errors=$errJoin"
 Write-Host "Manifest mode=$($man.mode) stills=$($stills.Count) ok=$($man.ok)"
 if ($errJoin) { Write-Host "Manifest errors: $errJoin" }
 Send-VellumProgress -Message "Done stills=$($stills.Count) ok=$($man.ok)"
@@ -412,7 +482,6 @@ $scratchBody = @{
   notes                = $notes
   intake_run_id        = $IntakeRunId
 } | ConvertTo-Json
-
 Invoke-RestMethod -Method Post -Uri "$VellumBase/api/scratch/record" `
   -ContentType "application/json" -Body $scratchBody | Out-Null
 Write-Host "Recorded scratch inspect for $AssetId"
@@ -421,16 +490,37 @@ $uploaded = 0
 foreach ($still in $stills) {
   $path = [string]$still.path
   if (-not (Test-Path $path)) { continue }
-  & curl.exe -sS -X POST "$VellumBase/api/lookdev/ingest-render" `
-    -F "asset_id=$AssetId" `
-    -F "lane=$Lane" `
-    -F "note=auto Niagara game-mode capture via vellum_capture_bake_map" `
-    -F "file=@$path"
-  if ($LASTEXITCODE -ne 0) { throw "ingest-render failed for $path" }
-  $uploaded++
-  Write-Host "Ingested $path"
+  foreach ($laneName in $IngestLanes) {
+    & curl.exe -sS -X POST "$VellumBase/api/lookdev/ingest-render" `
+      -F "asset_id=$AssetId" `
+      -F "lane=$laneName" `
+      -F "note=auto Niagara MRQ $($still.role) via mrq-sequencer" `
+      -F "file=@$path"
+    if ($LASTEXITCODE -ne 0) { throw "ingest-render failed for $path lane=$laneName" }
+    $uploaded++
+    Write-Host "Ingested hero $path -> $laneName"
+  }
 }
 
-Write-Host "Done. systems=$($inv.niagara_systems_found) uploaded_stills=$uploaded ok=$($man.ok)"
+foreach ($seq in $sequences) {
+  $seqDir = [string]$seq.path
+  $sysName = [string]$seq.system
+  if (-not (Test-Path $seqDir)) { continue }
+  $zipPath = Join-Path $OutDir ("seq-" + (Safe-Name $sysName) + ".zip")
+  if (Test-Path $zipPath) { Remove-Item -Force $zipPath }
+  Compress-Archive -Path (Join-Path $seqDir "*") -DestinationPath $zipPath -Force
+  foreach ($laneName in $IngestLanes) {
+    & curl.exe -sS -X POST "$VellumBase/api/lookdev/ingest-sequence" `
+      -F "asset_id=$AssetId" `
+      -F "lane=$laneName" `
+      -F "system_name=$sysName" `
+      -F "note=auto Niagara MRQ sequence via mrq-sequencer" `
+      -F "archive=@$zipPath"
+    if ($LASTEXITCODE -ne 0) { throw "ingest-sequence failed for $sysName lane=$laneName" }
+    Write-Host "Ingested sequence $sysName -> $laneName"
+  }
+}
+
+Write-Host "Done. systems=$($inv.niagara_systems_found) uploaded_heroes=$uploaded ok=$($man.ok)"
 if (-not $man.ok) { exit 2 }
 exit 0

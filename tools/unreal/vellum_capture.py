@@ -80,6 +80,23 @@ def _list_niagara(unreal_mod, registry, content_root: str) -> list:
         return list(registry.get_assets(ar_filter) or [])
 
 
+def _resolve_content_root(unreal_mod, registry, preferred: str) -> tuple[str, list]:
+    """Try preferred root, then /Game (§12.4 = C)."""
+    roots: list[str] = []
+    for root in (preferred, "/Game"):
+        if root and root not in roots:
+            roots.append(root)
+    for root in roots:
+        try:
+            registry.scan_paths_synchronous([root], True)
+        except Exception:  # noqa: BLE001
+            pass
+        assets = _list_niagara(unreal_mod, registry, root)
+        if assets:
+            return root, assets
+    return preferred or "/Game", []
+
+
 def _asset_object_path(asset_data) -> str:
     pkg = str(asset_data.package_name)
     name = str(asset_data.asset_name)
@@ -144,11 +161,8 @@ def main() -> None:
 
     try:
         registry = unreal.AssetRegistryHelpers.get_asset_registry()
-        try:
-            registry.scan_paths_synchronous([content_root], True)
-        except Exception:  # noqa: BLE001
-            pass
-        assets = _list_niagara(unreal, registry, content_root)
+        content_root, assets = _resolve_content_root(unreal, registry, content_root)
+        unreal.log(f"Vellum inventory resolved content_root={content_root} count={len(assets)}")
         picked = _pick_systems(assets, max_systems)
         for a in picked:
             obj_path = _asset_object_path(a)
@@ -171,6 +185,7 @@ def main() -> None:
         "mode": "inventory_only",
         "asset_id": asset_id,
         "content_root": content_root,
+        "content_root_preferred": args["content-root"],
         "created_at": _now(),
         "engine": unreal.SystemLibrary.get_engine_version(),
         "project_dir": unreal.Paths.project_dir(),

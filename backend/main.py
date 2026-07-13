@@ -448,7 +448,7 @@ async def api_lookdev_ingest_render(
     note: str | None = Form(default=None),
     file: UploadFile = File(...),
 ) -> dict[str, Any]:
-    """Upload a true Niagara viewport still into vault derived-renders."""
+    """Upload a Niagara MRQ hero still into vault derived-renders."""
     if register_mod.get_asset(asset_id) is None:
         raise HTTPException(status_code=404, detail="asset_not_found")
     suffix = Path(file.filename or "still.png").suffix.lower() or ".png"
@@ -476,6 +476,49 @@ async def api_lookdev_ingest_render(
         raise HTTPException(status_code=404, detail="asset_not_found") from None
     finally:
         tmp_path.unlink(missing_ok=True)
+    return {"schema_version": 1, "output": row}
+
+
+@app.post("/api/lookdev/ingest-sequence")
+async def api_lookdev_ingest_sequence(
+    asset_id: str = Form(...),
+    lane: str = Form(...),
+    system_name: str = Form(...),
+    note: str | None = Form(default=None),
+    archive: UploadFile = File(...),
+) -> dict[str, Any]:
+    """Upload a zip of MRQ PNG frames; retained under niagara/sequences/."""
+    if register_mod.get_asset(asset_id) is None:
+        raise HTTPException(status_code=404, detail="asset_not_found")
+    name = archive.filename or "sequence.zip"
+    if not name.lower().endswith(".zip"):
+        raise HTTPException(status_code=400, detail="expected_zip")
+    import tempfile
+    import zipfile
+
+    with tempfile.TemporaryDirectory() as td:
+        td_path = Path(td)
+        zip_path = td_path / "seq.zip"
+        zip_path.write_bytes(await archive.read())
+        extract_dir = td_path / "frames"
+        extract_dir.mkdir()
+        try:
+            with zipfile.ZipFile(zip_path, "r") as zf:
+                zf.extractall(extract_dir)
+        except zipfile.BadZipFile as e:
+            raise HTTPException(status_code=400, detail="bad_zip") from e
+        try:
+            row = lookdev_mod.ingest_niagara_sequence(
+                asset_id,
+                lane=lane,
+                system_name=system_name,
+                source_dir=extract_dir,
+                note=note,
+            )
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+        except KeyError:
+            raise HTTPException(status_code=404, detail="asset_not_found") from None
     return {"schema_version": 1, "output": row}
 
 

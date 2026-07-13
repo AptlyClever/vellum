@@ -1,8 +1,9 @@
 # Development Tracker: Vellum
 
-> **Current Active Issue:** Fireworks — Niagara SceneCapture stills on **Aurora** (primary host)
+> **Current Active Issue:** Fireworks — durable Unreal lookdev capture (**MRQ + Sequencer**)
 > **Governing CFD:** `cfd-inspiration-20260713-015950-vellum-control-alt-games-asset-vault-register-in` (slices A–F met; this is the post-CFD track)
-> **Next Immediate Step:** `git pull` on Aurora → restart agent → confirm preflight finds `F:\Games\AuroraVellum\AuroraVellum.uproject` → Capture from Vellum
+> **Capability spec:** `docs/ue-mrq-capture.md` (SoT — full fidelity; SceneCapture/HighResShot retired)
+> **Next Immediate Step:** On Aurora `git pull`, restart agent (fingerprint `mrq-sequencer`), Capture from Vellum. First run may use `VELLUM_MAX_SYSTEMS=1`.
 
 ---
 
@@ -11,28 +12,36 @@
 
 * **UI:** http://192.168.68.93:8770/
 * **Axiom Read:** http://192.168.68.93:7895/#/axiom/vellum
-* **Scratch + Niagara runbook:** `docs/scratch-inspect-niagara.md`
+* **Scratch / hosts:** `docs/scratch-inspect-niagara.md`
+* **UE MRQ capture capability (SoT):** `docs/ue-mrq-capture.md`
 * **Record scratch:** `POST /api/scratch/record`
 * **Upload Niagara still:** `POST /api/lookdev/ingest-render` (multipart)
 * **Compose:** `docker compose up -d --build` (port **8770**)
 * **Tests:** `PYTHONPATH=. pytest -q`
+* **UE hosts:** `config/ue-hosts.json` / `GET /api/ue/hosts` (Aurora active)
 * **Governing CFD:** `#/axiom/praxis-tracker?inspiration=cfd-inspiration-20260713-015950-vellum-control-alt-games-asset-vault-register-in`
 
 ---
 
 ## 2. The Active Issue (Do Not Add Steps Here!)
 
-* **What success looks like:** From Vellum UI alone, enqueue Unreal capture on **Aurora**; Lookdev gets distinct `niagara-render` stills that show Fireworks particles (not pure black, not only a debug cube).
+* **What success looks like:** From Vellum UI, enqueue capture on **Aurora**; Lookdev gets **real Fireworks Niagara** outputs suitable for product lanes (stills and/or short renders as the pipeline defines — **not** flipbook-only scope cuts, **not** debug cubes / pure black).
+* **Stopped (do not resume without explicit operator decision):**
+  - `-game` + `HighResShot`
+  - Editor `SceneCapture2D` → `export_render_target` bake (`vellum_capture_bake_map.py` / `editor-scenecapture*`)
+* **Keep (infrastructure still valid):**
+  - Vellum `ue_capture` job + claim/report
+  - `vellum_ue_agent.ps1` + host profiles (Aurora primary / Borealis secondary)
+  - Lookdev ingest API
 * **Sub-Tasks:**
-  - [x] `POST /api/ue/capture` + claim/report for Windows agent
-  - [x] UI **Capture from Unreal** button
-  - [x] `vellum_ue_agent.ps1` poll loop
-  - [x] Borealis smoke: agent + Capture (`job-20260713-062514-5e88d4`) — pipeline OK; stills were debug cube / black (host issues; stop investing here)
-  - [x] Host profiles: `config/ue-hosts.json` (aurora active / borealis secondary) + `GET /api/ue/hosts`
-  - [x] Aurora project path: `F:\Games\AuroraVellum`
-  - [ ] Aurora: Fireworks in project + Python Editor Script Plugin
-  - [ ] Aurora: agent preflight OK + Capture
-  - [ ] Confirm stills show real Niagara particles (not cube-only / not pure black)
+  - [x] Job/agent/host plumbing (Aurora preflight resolves UE + `F:\Games\AuroraVellum`)
+  - [x] Stop improvising on SceneCapture / HighResShot (2026-07-13)
+  - [x] Capability spec: `docs/ue-mrq-capture.md`
+  - [x] Lock §12 decisions (B / C / C / C / B)
+  - [x] Aurora: Fireworks in `AuroraVellum` at `/Game/FireworksV1` + MRQ/Python plugins
+  - [x] Operator will not hand-author Sequencer/MRQ UI — spike/proof is scripted
+  - [x] Implement cmdline **MRQ + Sequencer** backend + agent wiring
+  - [ ] Prove slots + hail-overlay lookdev in vault via Vellum Capture only
 
 ---
 
@@ -40,8 +49,8 @@
 *Ideas deferred until the active issue completes.*
 
 * Unity tier reconcile (explicitly deferred).
-* Deeper Movie Render Queue / automated UE captures.
 * Optional deeper AI fit-tagging.
+* ~~Deeper Movie Render Queue~~ → **promoted to active** (was parking-lot improvisation deferral; now the capture backend).
 
 ---
 
@@ -61,3 +70,8 @@
 * **2026-07-13** — Aurora first Capture failed (`job-20260713-174728-597c9c`): `UnrealEditor-Cmd.exe not found` — UE not under `C:\Program Files\Epic Games`; job payload still Borealis `C:\epic\VellumImport`. Agent/runner now discover E:/D: installs + registry; support `VELLUM_UE_CMD` / `VELLUM_UE_PROJECT` (`aurora-ue-discovery`).
 * **2026-07-13** — **UE host profiles:** `config/ue-hosts.json` — Aurora primary (`F:\Games\UE_5.8\…\UnrealEditor.exe`, derives `-Cmd`), Borealis secondary; `active: aurora`. Shared `tools/unreal/ue-hosts.ps1`; agent `-HostName` / `VELLUM_UE_HOST`; API `GET /api/ue/hosts`; UI defaults to active host.
 * **2026-07-13** — Aurora scratch project path set to `F:\Games\AuroraVellum`.
+* **2026-07-13** — Aurora Capture `job-20260713-181144-c1ce27`: host OK, `systems_found=0` / `no_systems_to_bake` (Fireworks not in project yet). Operator: **stop** SceneCapture/HighResShot improvisation; do **not** cut scope to flipbook-only; next capture backend is **MRQ + Sequencer** (full lookdev fidelity).
+* **2026-07-13** — Capability documented: `docs/ue-mrq-capture.md` (new functionality SoT — control/host/agent keep; MRQ+Sequencer capture backend to build; §12 open decisions).
+* **2026-07-13** — §12 locked: outputs **B**, duration/framing **C**, executor **C**, content-root **C**, multi-lane **B** (slots+hail-overlay).
+* **2026-07-13** — Aurora: Fireworks at `/Game/FireworksV1`; MRQ + Python plugins on. Operator declined manual Sequencer/MRQ UI spike — proof path is **fully scripted**; Capture stays Vellum UI + agent only.
+* **2026-07-13** — Implemented scripted **mrq-sequencer** runner: inventory (+ `/Game` fallback), author map/sequence/MRQ config, cmdline MRQ, mid+max-luma heroes, sequence zip ingest to **slots** + **hail-overlay**.

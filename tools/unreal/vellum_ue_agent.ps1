@@ -116,7 +116,9 @@ function Invoke-CaptureJob {
     } | ConvertTo-Json -Depth 6
     Invoke-RestMethod -Method Post -Uri "$VellumBase/api/jobs/$($Job.job_id)/report" `
       -ContentType "application/json" -Body $fail | Out-Null
-    throw $failMsg
+    # Do not throw — already reported; avoids 409 double-report in the outer catch.
+    Write-Host "Reported failure $failMsg"
+    return
   }
 
   $report = @{
@@ -134,7 +136,7 @@ Write-Host "UI trigger: asset detail → Capture from Unreal"
 Write-Host "Host profile: $($UeHost.id) ($($UeHost.label), $($UeHost.role)) — config active=$($UeHost.active_in_config)"
 Write-Host "Agent scripts: $Runner"
 Write-Host "Repo root: $RepoRoot"
-Write-Host "Agent fingerprint: ue-hosts (2026-07-13)"
+Write-Host "Agent fingerprint: mrq-sequencer (2026-07-13)"
 $runnerVersionLine = (Get-Content $Runner | Where-Object { $_ -match "Runner version:" } | Select-Object -First 1)
 if (-not $runnerVersionLine) { $runnerVersionLine = "(no 'Runner version:' line found — old pull?)" }
 Write-Host "Runner fingerprint: $($runnerVersionLine.Trim())"

@@ -39,4 +39,8 @@ If the pack has no preview stills, the job succeeds and marks the step `skipped`
 - `asset_id`, `lane`, optional `note`, `file` (png/jpg/webp)
 
 Writes kind `niagara-render` under `05-derived-renders/<lane>/<asset>/niagara/`.
-See `docs/scratch-inspect-niagara.md`.
+
+`POST /api/lookdev/ingest-sequence` — zip of MRQ PNG frames → kind `niagara-sequence`.
+
+Capture capability (MRQ + Sequencer, full fidelity): `docs/ue-mrq-capture.md`.  
+Host profiles / retired backends: `docs/scratch-inspect-niagara.md`.

@@ -18,10 +18,11 @@ Vellum is the Control Alt Games asset vault and intake/prototyping project.
 5. `docs/humble-asset-vault-inventory.md` — 37-item inventory (no keys).
 6. `docs/api-intake.md` — IntakeRun + jobs + asset patch API for agents.
 7. `docs/api-lookdev.md` — DerivedOutput / project-lane derive API.
-8. `docs/scratch-inspect-niagara.md` — Unreal scratch + Niagara viewport stills (Fireworks).
-9. `docs/slice-e-epic-staging.md` — Epic/Fab Add-to-Project → vault copy runbook.
-10. `docs/asset-import-engine.md` — intake runner / vault layout plan.
-11. `docs/brand-canon.md` — core vs Games classification rules.
+8. `docs/ue-mrq-capture.md` — **Unreal MRQ + Sequencer lookdev capture** (new capability SoT).
+9. `docs/scratch-inspect-niagara.md` — UE host profiles + retired HighResShot/SceneCapture backends.
+10. `docs/slice-e-epic-staging.md` — Epic/Fab Add-to-Project → vault copy runbook.
+11. `docs/asset-import-engine.md` — intake runner / vault layout plan.
+12. `docs/brand-canon.md` — core vs Games classification rules.
 
 ## Working rules
 

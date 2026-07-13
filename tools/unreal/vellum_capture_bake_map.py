@@ -1,3 +1,6 @@
+# RETIRED — SceneCapture bake path. Do not extend.
+# Replaced by MRQ + Sequencer: docs/ue-mrq-capture.md, vellum_capture_mrq_author.py
+#
 # Vellum Unreal capture — Phase B setup, still runs INSIDE Unreal Editor
 # (Python Editor Script Plugin), via:
 #   UnrealEditor-Cmd.exe <uproject> -ExecutePythonScript=<staged script>

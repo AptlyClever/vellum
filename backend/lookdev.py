@@ -285,8 +285,9 @@ def ingest_niagara_render(
     source_file: Path,
     note: str | None = None,
     original_name: str | None = None,
+    kind: str = "niagara-render",
 ) -> dict[str, Any]:
-    """Register a true Niagara viewport still under 05-derived-renders (not pack textures)."""
+    """Register a Niagara lookdev still under 05-derived-renders (not pack textures)."""
     asset = register_mod.get_asset(asset_id)
     if not asset:
         raise KeyError(f"asset_not_found:{asset_id}")
@@ -309,7 +310,6 @@ def ingest_niagara_render(
     dest = dest_dir / f"{stamp}-{safe_name}"
     shutil.copy2(source_file, dest)
 
-    # Also keep a lookdev alias for browsing
     lookdev_dir = vault_root() / "04-lookdev" / lane / asset_id / "niagara"
     lookdev_dir.mkdir(parents=True, exist_ok=True)
     lookdev_copy = lookdev_dir / dest.name
@@ -319,12 +319,84 @@ def ingest_niagara_render(
         "id": f"derived-{stamp}-{secrets.token_hex(3)}",
         "asset_id": asset_id,
         "lane": lane,
-        "kind": "niagara-render",
+        "kind": kind,
         "path": str(dest),
         "source_path": str(source_file),
         "created_at": _now(),
         "note": note
-        or "Niagara viewport / HighResShot still from Unreal scratch inspect.",
+        or "Niagara MRQ lookdev still from Unreal capture.",
+    }
+    catalog = load_catalog()
+    outputs = list(catalog.get("outputs") or [])
+    outputs.append(row)
+    catalog["outputs"] = outputs
+    save_catalog(catalog)
+    return row
+
+
+def ingest_niagara_sequence(
+    asset_id: str,
+    *,
+    lane: str,
+    system_name: str,
+    source_dir: Path,
+    note: str | None = None,
+) -> dict[str, Any]:
+    """Copy an MRQ PNG sequence directory into the vault (full-fidelity retention)."""
+    asset = register_mod.get_asset(asset_id)
+    if not asset:
+        raise KeyError(f"asset_not_found:{asset_id}")
+    if lane not in KNOWN_LANES:
+        raise ValueError(f"unknown_lane:{lane}")
+    if not source_dir.is_dir():
+        raise FileNotFoundError(str(source_dir))
+
+    frames = sorted(
+        [p for p in source_dir.rglob("*") if p.is_file() and p.suffix.lower() in IMAGE_SUFFIXES]
+    )
+    if not frames:
+        raise ValueError("empty_sequence")
+
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    safe_sys = "".join(c if c.isalnum() or c in "-_" else "_" for c in system_name) or "system"
+    dest_dir = (
+        vault_root()
+        / "05-derived-renders"
+        / lane
+        / asset_id
+        / "niagara"
+        / "sequences"
+        / f"{stamp}-{safe_sys}"
+    )
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    for src in frames:
+        shutil.copy2(src, dest_dir / src.name)
+
+    lookdev_dir = (
+        vault_root()
+        / "04-lookdev"
+        / lane
+        / asset_id
+        / "niagara"
+        / "sequences"
+        / dest_dir.name
+    )
+    lookdev_dir.mkdir(parents=True, exist_ok=True)
+    for src in dest_dir.iterdir():
+        if src.is_file():
+            shutil.copy2(src, lookdev_dir / src.name)
+
+    row = {
+        "id": f"derived-{stamp}-{secrets.token_hex(3)}",
+        "asset_id": asset_id,
+        "lane": lane,
+        "kind": "niagara-sequence",
+        "path": str(dest_dir),
+        "source_path": str(source_dir),
+        "frame_count": len(frames),
+        "system_name": system_name,
+        "created_at": _now(),
+        "note": note or "Niagara MRQ PNG sequence retained for lookdev.",
     }
     catalog = load_catalog()
     outputs = list(catalog.get("outputs") or [])

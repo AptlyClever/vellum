@@ -28,6 +28,7 @@ pytest -q
 | Doc | What it is |
 | --- | --- |
 | **[DEV_TRACKER.md](./DEV_TRACKER.md)** | Active issue + Governing CFD |
+| **[docs/ue-mrq-capture.md](./docs/ue-mrq-capture.md)** | **New:** Unreal MRQ + Sequencer lookdev capture capability |
 | **[docs/cfd/](./docs/cfd/)** | CFD mirrors + architecture research |
 | **[docs/humble-asset-vault-inventory.md](./docs/humble-asset-vault-inventory.md)** | Authoritative **37-item** inventory (keys excluded) |
 | **[config/humble-seed.yaml](./config/humble-seed.yaml)** | Seed register (no keys) |
@@ -42,7 +43,7 @@ pytest -q
 - **D (shipped):** Axiom Read `#/axiom/vellum` + `?embed=axiom`
 - **E (shipped):** Epic Add-to-Project → vault stage (Fireworks pilot); `PATCH /api/assets`; `docs/slice-e-epic-staging.md`
 - **F (shipped):** lookdev derive into project lanes (`docs/api-lookdev.md`); Fireworks stills → slots + hail-overlay
-- **Now:** Unreal scratch inspect + Niagara viewport stills (Fireworks); Unity reconcile parked — `docs/scratch-inspect-niagara.md`
+- **Now:** Unreal **MRQ + Sequencer** lookdev capture for Fireworks (`docs/ue-mrq-capture.md`); SceneCapture/HighResShot retired; Unity reconcile parked — host runbook `docs/scratch-inspect-niagara.md`
 
 
 ## Boundaries
