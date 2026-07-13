@@ -18,10 +18,14 @@ from pathlib import Path
 ACTOR_PREFIX = "VellumMRQ_"
 STUDIO_PREFIX = "VellumStudio_"
 DEFAULT_MAP = "/Game/Vellum/Maps/VellumLookdevStudio"
-DEFAULT_FRAMES = 60  # ~2s @ 30fps — fireworks are short bursts, not ambient loops
+# Max window (locked §12.2): 4s @ 30fps. Per-system estimate may be shorter.
+DEFAULT_FRAMES = 120
+MIN_FRAMES = 24
 DEFAULT_FPS = 30
 # Frames before playback start used as camera-cut warm-up head.
 WARMUP_FRAMES = 30
+# Extra frames after Niagara reports finished so trails decay into shot.
+TAIL_PAD_FRAMES = 8
 
 
 def _job_path() -> Path:
@@ -351,18 +355,198 @@ def _spawn_niagara(unreal_mod, actor_sub, system_asset, notes: list[str], loc=No
     except Exception:  # noqa: BLE001
         pass
     try:
+        # Leave age in default tick mode for length probe + Sequencer lifecycle.
+        # DesiredAge=1.0 mid-seek was truncating author-time intent for short bursts.
         if hasattr(comp, "set_age_update_mode"):
             mode = getattr(unreal_mod, "NiagaraAgeUpdateMode", None)
-            desired = getattr(mode, "DESIRED_AGE", None) if mode else None
-            if desired is not None:
-                comp.set_age_update_mode(desired)
-                comp.set_desired_age(1.0)
+            tick_mode = getattr(mode, "TICK_DELTA_TIME", None) if mode else None
+            if tick_mode is not None:
+                comp.set_age_update_mode(tick_mode)
         comp.reset_system()
         comp.activate(True)
         notes.append("niagara_activated")
     except Exception as exc:  # noqa: BLE001
         notes.append(f"niagara_activate_failed:{exc}")
     return actor
+
+
+def _read_user_duration_seconds(unreal_mod, system_asset, comp, notes: list[str]) -> float | None:
+    """Best-effort read of an author-exposed duration user parameter."""
+    names = (
+        "Duration",
+        "LifeTime",
+        "Lifetime",
+        "SystemDuration",
+        "BurstDuration",
+        "EffectDuration",
+        "User.Duration",
+        "User.LifeTime",
+        "User.Lifetime",
+    )
+    # Prefer live component getters when available.
+    if comp is not None and hasattr(comp, "get_variable_float"):
+        for name in names:
+            try:
+                result = comp.get_variable_float(name)
+                val = None
+                if isinstance(result, (tuple, list)) and result:
+                    val = float(result[0])
+                elif isinstance(result, (int, float)):
+                    val = float(result)
+                if val is not None and val > 0.05:
+                    notes.append(f"duration_user_param:{name}={val:.3f}s")
+                    return val
+            except Exception:  # noqa: BLE001
+                continue
+    # Fall back to listing user params if UE exposes them.
+    try:
+        lib = getattr(unreal_mod, "NiagaraFunctionLibrary", None)
+        if lib is not None and hasattr(lib, "get_all_user_parameters") and system_asset is not None:
+            for info in list(lib.get_all_user_parameters(system_asset) or []):
+                try:
+                    pname = str(getattr(info, "name", None) or getattr(info, "parameter_name", None) or "")
+                except Exception:  # noqa: BLE001
+                    continue
+                low = pname.lower()
+                if any(k in low for k in ("duration", "lifetime", "life_time", "burst")):
+                    notes.append(f"duration_user_param_seen:{pname}")
+    except Exception as exc:  # noqa: BLE001
+        notes.append(f"duration_user_params_failed:{exc}")
+    return None
+
+
+def _estimate_capture_frames(
+    unreal_mod,
+    *,
+    system_asset,
+    niagara_actor,
+    fps: int,
+    max_frames: int,
+    notes: list[str],
+) -> int:
+    """Per-system capture length: probe until finished, capped by max_frames (§12.2)."""
+    fps = max(1, int(fps or DEFAULT_FPS))
+    ceiling = max(MIN_FRAMES, min(int(max_frames or DEFAULT_FRAMES), DEFAULT_FRAMES))
+    comp = _niagara_component(unreal_mod, niagara_actor) if niagara_actor is not None else None
+
+    hinted = _read_user_duration_seconds(unreal_mod, system_asset, comp, notes)
+    if hinted is not None:
+        frames = int(round(hinted * fps)) + TAIL_PAD_FRAMES
+        frames = max(MIN_FRAMES, min(ceiling, frames))
+        notes.append(f"frame_estimate_user:{frames}/{ceiling}")
+        return frames
+
+    if comp is None:
+        notes.append(f"frame_estimate_fallback_no_comp:{ceiling}")
+        return ceiling
+
+    finished = {"v": False}
+
+    def _mark_finished(*_args, **_kwargs) -> None:
+        finished["v"] = True
+
+    try:
+        delegate = getattr(comp, "on_system_finished", None)
+        if delegate is not None:
+            if hasattr(delegate, "add_callable"):
+                delegate.add_callable(_mark_finished)
+            elif hasattr(delegate, "add_function"):
+                delegate.add_function(_mark_finished)
+            notes.append("duration_bound_on_system_finished")
+    except Exception as exc:  # noqa: BLE001
+        notes.append(f"duration_bind_finished_failed:{exc}")
+
+    try:
+        if hasattr(comp, "set_age_update_mode"):
+            mode = getattr(unreal_mod, "NiagaraAgeUpdateMode", None)
+            tick_mode = getattr(mode, "TICK_DELTA_TIME", None) if mode else None
+            if tick_mode is not None:
+                comp.set_age_update_mode(tick_mode)
+        comp.reset_system()
+        comp.activate(True)
+    except Exception as exc:  # noqa: BLE001
+        notes.append(f"duration_probe_reset_failed:{exc}")
+        notes.append(f"frame_estimate_fallback_reset:{ceiling}")
+        return ceiling
+
+    dt = 1.0 / float(fps)
+    last_active = MIN_FRAMES
+    saw_active = False
+    quiet = 0
+    detected = None
+
+    for frame in range(0, ceiling + 1):
+        try:
+            if hasattr(comp, "advance_simulation"):
+                comp.advance_simulation(1, dt)
+            elif hasattr(comp, "advance_simulation_by_time"):
+                comp.advance_simulation_by_time(dt, dt)
+            else:
+                notes.append("duration_probe_no_advance")
+                break
+        except Exception as exc:  # noqa: BLE001
+            notes.append(f"duration_advance_failed:{exc}")
+            break
+
+        if finished["v"]:
+            detected = frame
+            notes.append(f"duration_finished_at_frame:{frame}")
+            break
+
+        complete = False
+        try:
+            if hasattr(comp, "is_complete") and bool(comp.is_complete()):
+                complete = True
+        except Exception:  # noqa: BLE001
+            pass
+        if complete:
+            detected = frame
+            notes.append(f"duration_is_complete_at_frame:{frame}")
+            break
+
+        active = True
+        try:
+            if hasattr(comp, "is_active"):
+                active = bool(comp.is_active())
+        except Exception:  # noqa: BLE001
+            active = True
+
+        # Bounds volume as a coarse activity signal for looping/ambient systems.
+        extent_alive = False
+        try:
+            _origin, extent = niagara_actor.get_actor_bounds(True)
+            extent_alive = (abs(float(extent.x)) + abs(float(extent.y)) + abs(float(extent.z))) > 8.0
+        except Exception:  # noqa: BLE001
+            extent_alive = active
+
+        if active or extent_alive:
+            saw_active = True
+            last_active = frame
+            quiet = 0
+        elif saw_active:
+            quiet += 1
+            if quiet >= 8:
+                detected = last_active
+                notes.append(f"duration_quiet_after_frame:{last_active}")
+                break
+    else:
+        notes.append(f"duration_hit_ceiling:{ceiling}")
+        detected = ceiling
+
+    if detected is None:
+        detected = ceiling
+
+    frames = max(MIN_FRAMES, min(ceiling, int(detected) + TAIL_PAD_FRAMES))
+    notes.append(f"frame_estimate_probe:{frames}/{ceiling}")
+
+    # Rewind so Sequencer spawnable template starts at age 0.
+    try:
+        comp.reset_system()
+        comp.activate(True)
+        notes.append("duration_probe_reset_for_sequence")
+    except Exception as exc:  # noqa: BLE001
+        notes.append(f"duration_probe_rearm_failed:{exc}")
+    return frames
 
 
 def _fireworks_camera_pose(unreal_mod):
@@ -810,6 +994,17 @@ def _author_one_system(
     niagara = _spawn_niagara(unreal_mod, actor_sub, system_asset, notes, loc=slot_loc)
     if niagara is None:
         raise RuntimeError(f"spawn_niagara_failed:{system_name}")
+
+    # job frame_count is a ceiling; actual window follows this system's length.
+    frame_count = _estimate_capture_frames(
+        unreal_mod,
+        system_asset=system_asset,
+        niagara_actor=niagara,
+        fps=frame_rate,
+        max_frames=frame_count,
+        notes=notes,
+    )
+    notes.append(f"capture_frames:{system_name}={frame_count}")
 
     cam_loc, cam_rot = _studio_camera_pose(unreal_mod, actor_sub, notes)
     camera = _spawn(

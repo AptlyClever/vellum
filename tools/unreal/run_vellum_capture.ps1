@@ -362,7 +362,7 @@ Copy-Item -Force -Path $PickHeroesPy -Destination $StagedPickHeroesPy
 
 $ProjectUe = ConvertTo-UePath $Project
 $OutDirUe = ConvertTo-UePath $OutDir
-$FrameCount = 60
+$FrameCount = 120
 $FrameRate = 30
 $IngestLanes = @("slots", "hail-overlay")
 $Ue = $null
@@ -376,10 +376,10 @@ function Ensure-UeCmd {
 
 Write-Host "Project: $ProjectUe"
 Write-Host "MaxSystems=$MaxSystems (0=entire pack) Width=$Width Height=$Height MapPath=$MapPath"
-Write-Host "Runner version: mrq-lookdev-studio-2 (2026-07-13)"
+Write-Host "Runner version: mrq-adaptive-frames (2026-07-13)"
 Write-Host "UE host: $($UeHost.id) ($($UeHost.label))"
 Write-Host "Ingest lanes: $($IngestLanes -join ', ')"
-Write-Host "ForceCapture=$ForceCapture ForceStudio=$ForceStudio"
+Write-Host "ForceCapture=$ForceCapture ForceStudio=$ForceStudio MaxFrameCount=$FrameCount (per-system estimate may be shorter)"
 if ($JobId) { Write-Host "JobId=$JobId (progress -> $VellumBase/api/jobs/$JobId/progress)" }
 
 $allErrors = New-Object System.Collections.ArrayList

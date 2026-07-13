@@ -43,7 +43,7 @@ $env:VELLUM_MAX_SYSTEMS = "1"
 pwsh -ExecutionPolicy Bypass -File .\tools\unreal\vellum_ue_agent.ps1
 ```
 
-Expect fingerprint **`mrq-lookdev-studio (2026-07-13)`**. Then Vellum → Fireworks → **Force** + **Capture entire pack** (rebuilds on the Lookdev Studio map).
+Expect fingerprint **`mrq-adaptive-frames (2026-07-13)`**. Then Vellum → Fireworks → **Force** + **Capture entire pack** (Lookdev Studio; per-system length up to 4s).
 
 Until that fingerprint shows, you’re on an old pull.
 

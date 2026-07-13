@@ -5,7 +5,7 @@
 **Primary host:** Aurora (`config/ue-hosts.json` → `active: aurora`)  
 **Related:** host runbook `docs/scratch-inspect-niagara.md`, lookdev API `docs/api-lookdev.md`  
 **Decisions:** §12 locked 2026-07-13 (B / C / C / C / B)  
-**Runner fingerprint:** `mrq-lookdev-studio (2026-07-13)`
+**Runner fingerprint:** `mrq-adaptive-frames (2026-07-13)`
 
 This is **new Vellum functionality**: turn a purchased Unreal Niagara pack into
 **full-fidelity lookdev renders** in the vault, driven from the Vellum UI, without
@@ -93,7 +93,7 @@ For the Fireworks pilot, each selected Niagara system produces **lookdev media**
 | **Short sequence** | Time-bounded PNG sequence covering the effect’s readable arc; retained in vault |
 
 Resolution default: **1920×1080** (overridable via job payload / env).  
-Capture window default: **~2s @ 30fps** (60 frames; fireworks bursts) on permanent **Lookdev Studio** map (`/Game/Vellum/Maps/VellumLookdevStudio`); heroes = mid + max-luma. Spec §12.2 still records the earlier 4s adaptive decision — studio + shorter window is the live default.  
+Capture window: **per-system estimate**, capped at **4s @ 30fps** (120 frames) on permanent **Lookdev Studio** map (`/Game/Vellum/Maps/VellumLookdevStudio`); heroes = mid + max-luma.  
 Lane ingest on Capture success (**§12.5 = B**): **slots** + **hail-overlay**.
 
 **Out of scope for v1 of this capability (explicit, not a fidelity cut):**
@@ -186,7 +186,7 @@ Windows agent POSTs a CIM snapshot to `POST /api/ue/hosts/specs` on startup (`re
 
 Permanent map `/Game/Vellum/Maps/VellumLookdevStudio` — floor, pedestal, center slot (`VellumStudio_Slot_Center`), lights, mid camera. Built once (Phase 0 / `vellum_lookdev_studio_author.py`); `studio-ready.json` skips rebuild unless `ForceStudio` / `VELLUM_FORCE_STUDIO=1`.
 
-Capture places each Niagara system at the slot and uses the studio camera. Default window **60 frames @ 30fps**. Prior void-space stills remain in the vault but **do not match** studio lighting/framing — use **Force** for a pack refresh after this lands.
+Capture places each Niagara system at the slot and uses the studio camera. Capture length is **estimated per system** (finished probe / duration user param), clamped to **24–120 frames @ 30fps**. Prior void-space stills remain in the vault but **do not match** studio lighting/framing — use **Force** for a pack refresh after this lands.
 
 ---
 

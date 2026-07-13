@@ -3,7 +3,7 @@
 > **Current Active Issue:** Fireworks pack — **full automated lookdev** (all effects), then next purchased packs
 > **Governing CFD:** `cfd-inspiration-20260713-015950-vellum-control-alt-games-asset-vault-register-in` (slices A–F met; this is the post-CFD track)
 > **Capability spec:** `docs/ue-mrq-capture.md` (SoT — full fidelity; SceneCapture/HighResShot retired)
-> **Next Immediate Step:** Pull `mrq-lookdev-studio` on Aurora → restart agent → **Force** + **Capture entire pack** so Fireworks re-renders on the permanent photo-studio map (old void stills are skipped unless Force).
+> **Next Immediate Step:** Pull `mrq-adaptive-frames` on Aurora → restart agent → **Force** + **Capture entire pack** (per-system length, max 4s).
 
 ---
 
