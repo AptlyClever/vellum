@@ -1,0 +1,21 @@
+# Vellum — gitignore
+
+# Secrets / env
+.env
+.env.local
+*.pem
+*.key
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Never track vault raw assets (vault lives outside this repo)
+
