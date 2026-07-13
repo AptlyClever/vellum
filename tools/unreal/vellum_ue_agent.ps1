@@ -94,6 +94,11 @@ function Invoke-CaptureJob {
 
 Write-Host "Vellum UE agent polling $VellumBase every ${PollSeconds}s"
 Write-Host "UI trigger: asset detail → Capture from Unreal"
+Write-Host "Agent scripts: $Runner"
+Write-Host "Repo root: $RepoRoot"
+# Fingerprint so we can tell if Windows is still on an old pull.
+$runnerHead = (Get-Content $Runner -TotalCount 8 | Select-Object -Last 1)
+Write-Host "Runner fingerprint: $runnerHead"
 
 while ($true) {
   try {

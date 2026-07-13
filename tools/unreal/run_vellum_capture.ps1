@@ -4,9 +4,10 @@
   Unsupervised Fireworks scratch inspect + still capture → Vellum.
 
 .DESCRIPTION
-  1) Launches UnrealEditor-Cmd with tools/unreal/vellum_capture.py
-  2) Reads Saved/VellumCapture/manifest.json
-  3) POSTs scratch/record + lookdev/ingest-render to Vellum
+  1) Stages vellum_capture.py into the Unreal project (avoids \tools tab mangling)
+  2) Launches UnrealEditor-Cmd with env-var config (no nested CLI quotes)
+  3) Reads Saved/VellumCapture/manifest.json
+  4) POSTs scratch/record + lookdev/ingest-render to Vellum
 
   One-time setup on the Windows box:
   - Enable Python Editor Script Plugin in the VellumImport project
@@ -43,14 +44,26 @@ function Find-UeCmd {
   throw "UnrealEditor-Cmd.exe not found. Set VELLUM_UE_CMD to the full path."
 }
 
-$RepoRoot = Resolve-Path (Join-Path $PSScriptRoot "..\..")
-$CapturePy = Join-Path $RepoRoot "tools\unreal\vellum_capture.py"
-if (-not (Test-Path $CapturePy)) {
-  # Fallback: script may be copied next to the project
-  $CapturePy = Join-Path (Split-Path $Project -Parent) "vellum_capture.py"
+function ConvertTo-UePath([string]$Path) {
+  return (($Path -replace '\\', '/').TrimEnd('/'))
 }
-if (-not (Test-Path $CapturePy)) {
-  throw "vellum_capture.py not found at $CapturePy"
+
+function Get-LogPythonSnippet([string]$LogText) {
+  if (-not $LogText) { return "" }
+  $lines = $LogText -split "`r?`n" | Where-Object {
+    $_ -match "LogPython|ExecutePythonScript|vellum_capture|Vellum capture|Could not load Python"
+  }
+  if (-not $lines) { return "" }
+  return (($lines | Select-Object -Last 40) -join "`n")
+}
+
+$RepoRoot = Resolve-Path (Join-Path $PSScriptRoot "..\..")
+$SourcePy = Join-Path $RepoRoot "tools\unreal\vellum_capture.py"
+if (-not (Test-Path $SourcePy)) {
+  $SourcePy = Join-Path $PSScriptRoot "vellum_capture.py"
+}
+if (-not (Test-Path $SourcePy)) {
+  throw "vellum_capture.py not found next to runner or under tools/unreal"
 }
 if (-not (Test-Path $Project)) {
   throw "Project not found: $Project"
@@ -61,37 +74,57 @@ $ProjectDir = Split-Path $Project -Parent
 $OutDir = Join-Path $ProjectDir "Saved\VellumCapture"
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
 
-Write-Host "UE: $Ue"
-Write-Host "Project: $Project"
-Write-Host "Script: $CapturePy"
+# Stage script INSIDE the project so ExecutePythonScript never sees \tools (tab).
+$StagedPy = Join-Path $OutDir "vellum_capture.py"
+Copy-Item -Force -Path $SourcePy -Destination $StagedPy
 
-# Unreal/Python treats `\t` in Windows paths as a TAB. Always pass forward slashes.
-# Also use --key=value so we never nest quotes around out-dir.
-function ConvertTo-UePath([string]$Path) {
-  return (($Path -replace '\\', '/').TrimEnd('/'))
-}
-
-$CapturePyUe = ConvertTo-UePath $CapturePy
+$CapturePyUe = ConvertTo-UePath $StagedPy
 $OutDirUe = ConvertTo-UePath $OutDir
 $ProjectUe = ConvertTo-UePath $Project
+$UeLog = Join-Path $OutDir "ue-capture.log"
+if (Test-Path $UeLog) { Remove-Item -Force $UeLog }
 
-# Single quoted ExecutePythonScript payload — no nested double quotes.
-$ExecPy = "${CapturePyUe} --asset-id=${AssetId} --content-root=${ContentRoot} --out-dir=${OutDirUe}"
-Write-Host "ExecutePythonScript: $ExecPy"
+Write-Host "UE: $Ue"
+Write-Host "Project: $ProjectUe"
+Write-Host "Staged script: $CapturePyUe"
+Write-Host "Runner version: stage-to-project + env-args (2026-07-13)"
 
-& $Ue $ProjectUe "-stdout" "-FullStdOutLogOutput" "-unattended" "-nop4" "-ExecutePythonScript=$ExecPy"
-$ueExit = $LASTEXITCODE
+# Env vars — Unreal CLI quoting is unreliable for script arguments.
+$env:VELLUM_ASSET_ID = $AssetId
+$env:VELLUM_CONTENT_ROOT = $ContentRoot
+$env:VELLUM_OUT_DIR = $OutDirUe
+$env:VELLUM_MAX_SYSTEMS = "3"
+
+# Path-only ExecutePythonScript (no trailing args / nested quotes).
+$ExecFlag = "-ExecutePythonScript=$CapturePyUe"
+Write-Host "ExecutePythonScript: $CapturePyUe"
+Write-Host "VELLUM_OUT_DIR=$OutDirUe"
+
+$ueExit = 0
+try {
+  & $Ue $ProjectUe "-stdout" "-FullStdOutLogOutput" "-unattended" "-nop4" $ExecFlag 2>&1 |
+    Tee-Object -FilePath $UeLog
+  $ueExit = $LASTEXITCODE
+} catch {
+  $ueExit = 1
+  $_ | Out-File -FilePath $UeLog -Append
+}
 Write-Host "Unreal exit code: $ueExit"
 
 $Manifest = Join-Path $OutDir "manifest.json"
 if (-not (Test-Path $Manifest)) {
-  throw @"
-Capture did not write manifest.json under $OutDir.
+  $logTail = ""
+  if (Test-Path $UeLog) {
+    $logTail = Get-LogPythonSnippet (Get-Content $UeLog -Raw -ErrorAction SilentlyContinue)
+  }
+  $msg = @"
+Capture did not write manifest.json under $OutDir (runner=stage-to-project).
+Unreal exit=$ueExit staged=$CapturePyUe
 
-Likely cause previously: path '\tools' was parsed as TAB+ools by Unreal.
-Re-pull/copy fixed scripts, then retry Capture from Unreal.
-Also check Saved/Logs for LogPython errors.
+LogPython snippet:
+$logTail
 "@
+  throw $msg
 }
 
 $man = Get-Content $Manifest -Raw | ConvertFrom-Json

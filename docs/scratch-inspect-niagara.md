@@ -36,6 +36,11 @@ Humble → Epic redeem / first Add to Project only.
 
 ## Troubleshooting
 
-If the agent fails with missing `manifest.json` and the UE log shows a path like
-`C:/dev/vellum       ools/...`, that was `\t` in `\tools` being treated as a tab.
-Fixed scripts use forward slashes — `git pull` on `C:\dev\vellum` and restart the agent.
+1. **Old scripts still running** — job error mentions `enable Python plugin` → Windows
+   did not `git pull` / restart the agent. After a good pull, errors say
+   `runner=stage-to-project` and include a LogPython snippet.
+2. **`\tools` → tab** — path like `vellum       ools` means Unreal ate `\t`.
+   Current runner stages the script into `Saved/VellumCapture/vellum_capture.py`
+   and passes config via `VELLUM_*` env vars (no `\tools` on the UE command line).
+3. Restart the agent after every pull:
+   `pwsh -ExecutionPolicy Bypass -File .\tools\unreal\vellum_ue_agent.ps1`
