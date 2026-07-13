@@ -5,7 +5,7 @@
 **Primary host:** Aurora (`config/ue-hosts.json` → `active: aurora`)  
 **Related:** host runbook `docs/scratch-inspect-niagara.md`, lookdev API `docs/api-lookdev.md`  
 **Decisions:** §12 locked 2026-07-13 (B / C / C / C / B)  
-**Runner fingerprint:** `mrq-full-pack (2026-07-13)`
+**Runner fingerprint:** `mrq-pack-resilient (2026-07-13)`
 
 This is **new Vellum functionality**: turn a purchased Unreal Niagara pack into
 **full-fidelity lookdev renders** in the vault, driven from the Vellum UI, without
@@ -167,6 +167,14 @@ After inventory, before Phase B author / MRQ wipe:
 1. **Vault covered** — `GET /api/lookdev/outputs` has `niagara-render` for the system on both **slots** and **hail-overlay** → skip render and ingest.
 2. **Local MRQ ready** — `Saved/VellumCapture/mrq/<system>/` passes `pick_heroes` (≥30 non-black frames) but vault is incomplete → **ingest only** (no re-render).
 3. **Force** — `force: true` on `POST /api/ue/capture`, UI “Force re-render”, runner `-ForceCapture`, or `VELLUM_FORCE_CAPTURE=1` redoes everything. Recover uses `-Force` the same way.
+
+**Inventory cache:** `Saved/VellumCapture/inventory-cache.json` (72h, keyed by `content_root` + `max_systems`). Fresh cache skips the Unreal inventory cold start. If vault covers every cached system, author/MRQ are skipped too — no UE launch.
+
+**Partial pack success:** one black/reject or ingest failure records an error and **continues** remaining systems. Job succeeds when any stills landed (or all vault-skipped).
+
+### Host hardware specs
+
+Windows agent POSTs a CIM snapshot to `POST /api/ue/hosts/specs` on startup (`report_host_specs.ps1`). Surfaced on `GET /api/ue/hosts` as `host_specs` so Capture planning can see real CPU/GPU/RAM instead of treating Aurora as a black box.
 
 **Likely follow-ons** (track when implementing; do not silently invent):
 

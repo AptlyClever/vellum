@@ -3,7 +3,7 @@
 > **Current Active Issue:** Fireworks pack — **full automated lookdev** (all effects), then next purchased packs
 > **Governing CFD:** `cfd-inspiration-20260713-015950-vellum-control-alt-games-asset-vault-register-in` (slices A–F met; this is the post-CFD track)
 > **Capability spec:** `docs/ue-mrq-capture.md` (SoT — full fidelity; SceneCapture/HighResShot retired)
-> **Next Immediate Step:** Operator: leave Aurora agent running → open Fireworks in Vellum → **Capture from Unreal** once. Agent pulls `mrq-full-pack` and renders the rest of the pack (skips the 3 already done).
+> **Next Immediate Step:** Pull `mrq-pack-resilient` on Aurora (restart agent — auto-posts host specs). Click **Capture entire pack** again; bad systems no longer kill the whole run; inventory cache avoids UE on pure-skip.
 
 ---
 
@@ -48,6 +48,8 @@
   - [x] Batch path: one author + one MoviePipelineQueue MRQ + per-system ingest (`mrq-batch-queue`)
   - [x] Skip vault-covered / local-ready systems; `force` override (`mrq-batch-skip`)
   - [x] Default Capture = **entire pack** (`max_systems=0`, Single-over-Loop) — `mrq-full-pack`
+  - [x] Inventory cache + vault-only skip without UE; soft-fail per system (`mrq-pack-resilient`)
+  - [x] Host specs report from UE agent → `GET /api/ue/hosts`
   - [ ] Fireworks pack lookdev complete in vault (all unique systems; skip already-done)
   - [ ] Next purchased Unreal packs through the same Capture path (no operator digging)
 
@@ -88,3 +90,5 @@
 * **2026-07-13** — Phase B optimization: batch author + MoviePipelineQueue + **per-system ingest** (`mrq-batch-queue`).
 * **2026-07-13** — Skip already-captured systems (`mrq-batch-skip`): vault lookdev on slots+hail-overlay, or local good MRQ → ingest-only; `force` / Force re-render / `-ForceCapture`.
 * **2026-07-13** — Reset Capture default to **entire pack** (`mrq-full-pack`, `max_systems=0`); drop `*_Loop` when `*_Single` sibling exists. Operator path: click Capture once; no per-system digging.
+* **2026-07-13** — Live import panel on asset detail (job progress + lookdev refresh).
+* **2026-07-13** — `mrq-pack-resilient`: inventory cache (skip UE cold start), continue on black/ingest failure, host specs POST from agent.

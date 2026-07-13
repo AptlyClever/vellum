@@ -504,6 +504,17 @@ async function openDetail(id) {
     hostMeta.textContent = activeHost
       ? `Active host: ${activeHost.label || activeHost.id} · profiles: ${labels}`
       : `UE hosts: ${labels}`;
+    if (activeHost && activeHost.host_specs) {
+      const s = activeHost.host_specs;
+      const cpu = (s.cpu && s.cpu[0] && s.cpu[0].name) || "CPU ?";
+      const ram = s.ram_gb != null ? `${s.ram_gb} GB RAM` : "RAM ?";
+      const gpu =
+        (s.gpus && s.gpus[0] && s.gpus[0].name) || "GPU ?";
+      hostMeta.textContent += ` · ${cpu} · ${ram} · ${gpu}`;
+    } else if (activeHost) {
+      hostMeta.textContent +=
+        " · host specs pending (restart UE agent after pull)";
+    }
   } catch (err) {
     hostMeta.textContent = "UE host profiles unavailable — using local defaults.";
     console.warn(err);

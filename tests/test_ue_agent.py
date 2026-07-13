@@ -25,6 +25,31 @@ def test_ue_hosts_aurora_is_active() -> None:
     assert ids == {"aurora", "borealis"}
 
 
+def test_ue_host_specs_roundtrip(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("VELLUM_UE_HOST_SPECS_DIR", str(tmp_path / "specs"))
+    from backend.main import app
+
+    client = TestClient(app)
+    posted = client.post(
+        "/api/ue/hosts/specs",
+        json={
+            "host_id": "aurora",
+            "specs": {
+                "cpu": [{"name": "Test CPU", "cores": 16, "logical_processors": 32}],
+                "ram_gb": 64,
+                "gpus": [{"name": "Test GPU", "adapter_ram_gb": 12}],
+            },
+        },
+    )
+    assert posted.status_code == 200
+    assert posted.json()["host_id"] == "aurora"
+    hosts = client.get("/api/ue/hosts")
+    assert hosts.status_code == 200
+    active = hosts.json()["active_host"]
+    assert active["host_specs"]["ram_gb"] == 64
+    assert active["host_specs"]["gpus"][0]["name"] == "Test GPU"
+
+
 def test_ue_capture_claim_is_not_taken_by_linux_kinds(tmp_path: Path, monkeypatch) -> None:
     reg = tmp_path / "register.yaml"
     db = tmp_path / "jobs.sqlite3"

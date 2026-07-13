@@ -21,7 +21,8 @@ param(
   [string]$HostName = "",
   [string]$DefaultProject = $(if ($env:VELLUM_UE_PROJECT) { $env:VELLUM_UE_PROJECT } else { "" }),
   [string]$UeCmd = $env:VELLUM_UE_CMD,
-  [switch]$RecoverOnly
+  [switch]$RecoverOnly,
+  [switch]$ReportHostSpecs
 )
 
 $ErrorActionPreference = "Stop"
@@ -153,7 +154,7 @@ Write-Host "UI trigger: asset detail → Capture from Unreal"
 Write-Host "Host profile: $($UeHost.id) ($($UeHost.label), $($UeHost.role)) — config active=$($UeHost.active_in_config)"
 Write-Host "Agent scripts: $Runner"
 Write-Host "Repo root: $RepoRoot"
-Write-Host "Agent fingerprint: mrq-full-pack (2026-07-13)"
+Write-Host "Agent fingerprint: mrq-pack-resilient (2026-07-13)"
 $runnerVersionLine = (Get-Content $Runner | Where-Object { $_ -match "Runner version:" } | Select-Object -First 1)
 if (-not $runnerVersionLine) { $runnerVersionLine = "(no 'Runner version:' line found — old pull?)" }
 Write-Host "Runner fingerprint: $($runnerVersionLine.Trim())"
@@ -166,6 +167,23 @@ try {
   Write-Host "Resolved project (preflight): $(Resolve-UprojectFromHost -HostProfile $UeHost -FallbackUproject $DefaultProject)"
 } catch {
   Write-Host "WARNING: $($_.Exception.Message)"
+}
+
+$ReportSpecs = Join-Path $PSScriptRoot "report_host_specs.ps1"
+if ($ReportHostSpecs) {
+  if (-not (Test-Path $ReportSpecs)) { throw "report_host_specs.ps1 missing" }
+  & $ReportSpecs -VellumBase $VellumBase -HostName $UeHost.id
+  exit $LASTEXITCODE
+}
+
+# Best-effort hardware snapshot so Vellum can size work to this workstation.
+if (Test-Path $ReportSpecs) {
+  try {
+    Write-Host "Reporting host specs for $($UeHost.id)…"
+    & $ReportSpecs -VellumBase $VellumBase -HostName $UeHost.id | Out-Null
+  } catch {
+    Write-Host "WARNING: host specs report failed: $($_.Exception.Message)"
+  }
 }
 
 if ($RecoverOnly) {

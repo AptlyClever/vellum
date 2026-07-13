@@ -219,6 +219,7 @@ function Safe-Name([string]$Name) {
 
 function Ingest-CapturedSystem {
   # Upload heroes + sequence immediately so an interrupt mid-batch still lands vault outputs.
+  # Soft-fail: one bad upload must not abort the rest of the pack.
   param(
     [string]$AssetId,
     [string]$SystemName,
@@ -226,19 +227,26 @@ function Ingest-CapturedSystem {
     [string]$SeqDir,
     [string]$OutDir,
     [string]$VellumBase,
-    [string[]]$Lanes
+    [string[]]$Lanes,
+    [System.Collections.IList]$Errors
   )
   $uploaded = 0
   foreach ($still in $HeroStills) {
     $path = [string]$still.path
     if (-not (Test-Path $path)) { continue }
     foreach ($laneName in $Lanes) {
-      & curl.exe -sS -X POST "$VellumBase/api/lookdev/ingest-render" `
+      $null = & curl.exe -sS -X POST "$VellumBase/api/lookdev/ingest-render" `
         -F "asset_id=$AssetId" `
         -F "lane=$laneName" `
         -F "note=auto Niagara MRQ $($still.role) via mrq-batch" `
         -F "file=@$path"
-      if ($LASTEXITCODE -ne 0) { throw "ingest-render failed for $path lane=$laneName" }
+      if ($LASTEXITCODE -ne 0) {
+        if ($Errors) {
+          [void]$Errors.Add("ingest_render_failed:$SystemName`:$laneName")
+        }
+        Write-Host "WARNING ingest-render failed for $path lane=$laneName"
+        continue
+      }
       $uploaded++
       Write-Host "Ingested hero $path -> $laneName"
     }
@@ -248,13 +256,19 @@ function Ingest-CapturedSystem {
     if (Test-Path $zipPath) { Remove-Item -Force $zipPath }
     Compress-Archive -Path (Join-Path $SeqDir "*") -DestinationPath $zipPath -Force
     foreach ($laneName in $Lanes) {
-      & curl.exe -sS -X POST "$VellumBase/api/lookdev/ingest-sequence" `
+      $null = & curl.exe -sS -X POST "$VellumBase/api/lookdev/ingest-sequence" `
         -F "asset_id=$AssetId" `
         -F "lane=$laneName" `
         -F "system_name=$SystemName" `
         -F "note=auto Niagara MRQ sequence via mrq-batch" `
         -F "archive=@$zipPath"
-      if ($LASTEXITCODE -ne 0) { throw "ingest-sequence failed for $SystemName lane=$laneName" }
+      if ($LASTEXITCODE -ne 0) {
+        if ($Errors) {
+          [void]$Errors.Add("ingest_sequence_failed:$SystemName`:$laneName")
+        }
+        Write-Host "WARNING ingest-sequence failed for $SystemName lane=$laneName"
+        continue
+      }
       Write-Host "Ingested sequence $SystemName -> $laneName"
     }
   }
@@ -348,7 +362,7 @@ $IngestLanes = @("slots", "hail-overlay")
 Write-Host "UE (Cmd): $Ue"
 Write-Host "Project: $ProjectUe"
 Write-Host "MaxSystems=$MaxSystems (0=entire pack) Width=$Width Height=$Height MapPath=$MapPath"
-Write-Host "Runner version: mrq-full-pack (2026-07-13)"
+Write-Host "Runner version: mrq-pack-resilient (2026-07-13)"
 Write-Host "UE host: $($UeHost.id) ($($UeHost.label))"
 Write-Host "Ingest lanes: $($IngestLanes -join ', ')"
 Write-Host "ForceCapture=$ForceCapture"
@@ -357,48 +371,110 @@ if ($JobId) { Write-Host "JobId=$JobId (progress -> $VellumBase/api/jobs/$JobId/
 $allErrors = New-Object System.Collections.ArrayList
 $stills = New-Object System.Collections.ArrayList
 $sequences = New-Object System.Collections.ArrayList
+$InventoryCachePath = Join-Path $OutDir "inventory-cache.json"
+$InventoryCacheMaxAgeHours = 72
 
-# ---------------------------------------------------------------------------
-# Phase A: inventory
-# ---------------------------------------------------------------------------
-$env:VELLUM_ASSET_ID = $AssetId
-$env:VELLUM_CONTENT_ROOT = $ContentRoot
-$env:VELLUM_OUT_DIR = $OutDirUe
-$env:VELLUM_MAX_SYSTEMS = "$MaxSystems"
-
-$InventoryLog = Join-Path $OutDir "ue-inventory.log"
-if (Test-Path $InventoryLog) { Remove-Item -Force $InventoryLog }
-$InventoryExecFlag = "-ExecutePythonScript=" + (ConvertTo-UePath $StagedInventoryPy)
-Write-Host "Phase A (inventory): $InventoryExecFlag"
-
-$ueExit = 0
-try {
-  $ueExit = Invoke-UeLogged -Exe $Ue -ArgumentList @(
-      $ProjectUe, "-stdout", "-FullStdOutLogOutput", "-unattended", "-nop4", $InventoryExecFlag
-    ) -LogPath $InventoryLog -Phase "Phase A inventory"
-} catch {
-  $ueExit = 1
-  $_ | Out-File -FilePath $InventoryLog -Append
-  Send-VellumProgress -Message "Phase A inventory crashed: $_" -LogPath $InventoryLog
-}
-Write-Host "Inventory phase exit code: $ueExit"
-
-$InventoryManifestPath = Join-Path $OutDir "manifest-inventory.json"
-if (-not (Test-Path $InventoryManifestPath)) {
-  $logTail = ""
-  if (Test-Path $InventoryLog) {
-    $logTail = Get-LogPythonSnippet (Get-Content $InventoryLog -Raw -ErrorAction SilentlyContinue)
+function Read-InventoryCache {
+  param([string]$Path, [string]$ExpectedRoot, [int]$MaxAgeHours, [int]$MaxSystems)
+  if (-not (Test-Path $Path)) { return $null }
+  try {
+    $doc = Get-Content $Path -Raw | ConvertFrom-Json
+  } catch {
+    return $null
   }
-  throw @"
+  if (-not $doc -or -not $doc.niagara_systems) { return $null }
+  if ([string]$doc.content_root -ne $ExpectedRoot) { return $null }
+  $cachedMax = 0
+  if ($null -ne $doc.max_systems) { $cachedMax = [int]$doc.max_systems }
+  if ($cachedMax -ne $MaxSystems) {
+    Write-Host "Inventory cache max_systems mismatch (cache=$cachedMax want=$MaxSystems) — refreshing"
+    return $null
+  }
+  if ($doc.written_at) {
+    try {
+      $written = [datetime]::Parse([string]$doc.written_at).ToUniversalTime()
+      if (((Get-Date).ToUniversalTime() - $written).TotalHours -gt $MaxAgeHours) {
+        Write-Host "Inventory cache expired (>$MaxAgeHours h)"
+        return $null
+      }
+    } catch {
+      # keep using cache if timestamp unreadable
+    }
+  }
+  return $doc
+}
+
+function Write-InventoryCache {
+  param([string]$Path, [object]$Inventory, [string]$ContentRoot, [int]$MaxSystems)
+  $doc = @{
+    schema_version        = 1
+    written_at            = (Get-Date).ToUniversalTime().ToString("o")
+    content_root          = $ContentRoot
+    max_systems           = $MaxSystems
+    niagara_systems_found = [int]$Inventory.niagara_systems_found
+    niagara_systems       = @($Inventory.niagara_systems)
+  }
+  ($doc | ConvertTo-Json -Depth 8) | Set-Content -Path $Path -Encoding utf8
+}
+
+# ---------------------------------------------------------------------------
+# Phase A: inventory (use on-disk cache when fresh — avoid UE cold start)
+# ---------------------------------------------------------------------------
+$inv = $null
+$inventoryFromCache = $false
+if (-not $ForceCapture) {
+  $inv = Read-InventoryCache -Path $InventoryCachePath -ExpectedRoot $ContentRoot `
+    -MaxAgeHours $InventoryCacheMaxAgeHours -MaxSystems $MaxSystems
+  if ($inv) {
+    $inventoryFromCache = $true
+    Write-Host "Phase A skipped: using inventory cache ($($inv.niagara_systems.Count) systems)"
+    Send-VellumProgress -Message "Inventory cache hit: systems=$(@($inv.niagara_systems).Count) root=$ContentRoot"
+  }
+}
+
+if (-not $inv) {
+  $env:VELLUM_ASSET_ID = $AssetId
+  $env:VELLUM_CONTENT_ROOT = $ContentRoot
+  $env:VELLUM_OUT_DIR = $OutDirUe
+  $env:VELLUM_MAX_SYSTEMS = "$MaxSystems"
+
+  $InventoryLog = Join-Path $OutDir "ue-inventory.log"
+  if (Test-Path $InventoryLog) { Remove-Item -Force $InventoryLog }
+  $InventoryExecFlag = "-ExecutePythonScript=" + (ConvertTo-UePath $StagedInventoryPy)
+  Write-Host "Phase A (inventory): $InventoryExecFlag"
+
+  $ueExit = 0
+  try {
+    $ueExit = Invoke-UeLogged -Exe $Ue -ArgumentList @(
+        $ProjectUe, "-stdout", "-FullStdOutLogOutput", "-unattended", "-nop4", $InventoryExecFlag
+      ) -LogPath $InventoryLog -Phase "Phase A inventory"
+  } catch {
+    $ueExit = 1
+    $_ | Out-File -FilePath $InventoryLog -Append
+    Send-VellumProgress -Message "Phase A inventory crashed: $_" -LogPath $InventoryLog
+  }
+  Write-Host "Inventory phase exit code: $ueExit"
+
+  $InventoryManifestPath = Join-Path $OutDir "manifest-inventory.json"
+  if (-not (Test-Path $InventoryManifestPath)) {
+    $logTail = ""
+    if (Test-Path $InventoryLog) {
+      $logTail = Get-LogPythonSnippet (Get-Content $InventoryLog -Raw -ErrorAction SilentlyContinue)
+    }
+    throw @"
 Inventory did not write manifest-inventory.json under $OutDir (runner=mrq-sequencer).
 Unreal exit=$ueExit staged=$StagedInventoryPy
 
 LogPython snippet:
 $logTail
 "@
-}
+  }
 
-$inv = Get-Content $InventoryManifestPath -Raw | ConvertFrom-Json
+  $inv = Get-Content $InventoryManifestPath -Raw | ConvertFrom-Json
+  Write-InventoryCache -Path $InventoryCachePath -Inventory $inv -ContentRoot $(
+    if ($inv.content_root) { [string]$inv.content_root } else { $ContentRoot }
+  ) -MaxSystems $MaxSystems
+}
 if ($inv.errors) { foreach ($e in @($inv.errors)) { [void]$allErrors.Add("inventory:$e") } }
 if ($inv.content_root) { $ContentRoot = [string]$inv.content_root }
 $pickedSystems = @($inv.niagara_systems)
@@ -461,8 +537,12 @@ foreach ($sys in $pickedSystems) {
   }
   [void]$toRenderSystems.Add($sys)
 }
-Send-VellumProgress -Message ("Skip plan: render={0} ingest_only={1} vault_skip={2} force={3}" -f `
-  $toRenderSystems.Count, $ingestOnlySystems.Count, $skippedVault.Count, [bool]$ForceCapture)
+Send-VellumProgress -Message ("Skip plan: render={0} ingest_only={1} vault_skip={2} force={3} cache={4}" -f `
+  $toRenderSystems.Count, $ingestOnlySystems.Count, $skippedVault.Count, [bool]$ForceCapture, [bool]$inventoryFromCache)
+
+if ($toRenderSystems.Count -eq 0 -and $ingestOnlySystems.Count -eq 0) {
+  Send-VellumProgress -Message "No Unreal author/MRQ needed (vault already covered or nothing picked)"
+}
 
 foreach ($entry in @($ingestOnlySystems)) {
   $systemName = [string]$entry.asset_name
@@ -496,7 +576,7 @@ foreach ($entry in @($ingestOnlySystems)) {
   $sysHeroes = @($stills | Where-Object { $_.system -eq $systemName })
   $nUp = Ingest-CapturedSystem -AssetId $AssetId -SystemName $systemName `
     -HeroStills $sysHeroes -SeqDir $seqOutDir -OutDir $OutDir `
-    -VellumBase $VellumBase -Lanes $IngestLanes
+    -VellumBase $VellumBase -Lanes $IngestLanes -Errors $allErrors
   Send-VellumProgress -Message "Ingest-only $systemName heroes=$(@($heroDoc.heroes).Count) ingested=$nUp"
 }
 
@@ -725,7 +805,7 @@ if ($batchSystems.Count -gt 0) {
         $sysHeroes = @($stills | Where-Object { $_.system -eq $systemName })
         $nUp = Ingest-CapturedSystem -AssetId $AssetId -SystemName $systemName `
           -HeroStills $sysHeroes -SeqDir $seqOutDir -OutDir $OutDir `
-          -VellumBase $VellumBase -Lanes $IngestLanes
+          -VellumBase $VellumBase -Lanes $IngestLanes -Errors $allErrors
         Send-VellumProgress -Message "Captured $systemName heroes=$($heroDoc.heroes.Count) frames=$($heroDoc.frame_count) ingested=$nUp"
         $slotIndex++
       }
@@ -737,7 +817,8 @@ if ($batchSystems.Count -gt 0) {
 # Manifest + scratch (per-system ingest already completed above)
 # ---------------------------------------------------------------------------
 $vaultSkipOk = ($pickedSystems.Count -gt 0 -and $toRenderSystems.Count -eq 0 -and
-  $ingestOnlySystems.Count -eq 0 -and $skippedVault.Count -gt 0 -and $allErrors.Count -eq 0)
+  $ingestOnlySystems.Count -eq 0 -and $skippedVault.Count -gt 0)
+$partialOk = ($stills.Count -gt 0)
 $Manifest = Join-Path $OutDir "manifest.json"
 $man = @{
   schema_version        = 1
@@ -753,9 +834,10 @@ $man = @{
   ingest_only           = @($ingestOnlySystems | ForEach-Object { $_.asset_name })
   render_systems        = @($toRenderSystems | ForEach-Object { $_.asset_name })
   force_capture         = [bool]$ForceCapture
+  inventory_from_cache  = [bool]$inventoryFromCache
   errors                = @($allErrors)
   stills_attempted      = ($toRenderSystems.Count -gt 0 -or $ingestOnlySystems.Count -gt 0)
-  ok                    = (($stills.Count -gt 0) -or $vaultSkipOk)
+  ok                    = ($partialOk -or $vaultSkipOk)
   ingest_policy         = "per_system"
   skip_policy           = "vault_or_local_mrq"
 }

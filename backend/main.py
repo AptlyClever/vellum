@@ -90,6 +90,11 @@ class UeCaptureRequest(BaseModel):
     )
 
 
+class UeHostSpecsRequest(BaseModel):
+    host_id: str = Field(min_length=1, max_length=64)
+    specs: dict[str, Any]
+
+
 class JobClaimRequest(BaseModel):
     kinds: list[str] = Field(default_factory=lambda: ["ue_capture"])
 
@@ -395,6 +400,16 @@ def api_ue_hosts() -> dict[str, Any]:
         return ue_hosts_mod.public_hosts_payload()
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.post("/api/ue/hosts/specs")
+def api_ue_hosts_specs(body: UeHostSpecsRequest) -> dict[str, Any]:
+    """Persist workstation hardware snapshot from the Windows UE agent."""
+    try:
+        saved = ue_hosts_mod.save_host_specs(body.host_id, body.specs)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {"schema_version": 1, **saved}
 
 
 @app.get("/api/lookdev/lanes")
