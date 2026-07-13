@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "active": "aurora",
+  "notes": "UE capture host profiles. Only one agent should poll at a time. Flip active (or pass -Host / VELLUM_UE_HOST) when moving between machines. Aurora is primary; Borealis is secondary.",
+  "hosts": {
+    "aurora": {
+      "label": "Aurora",
+      "role": "primary",
+      "repo": "E:\\Dev\\vellum",
+      "ue_editor": "F:\\Games\\UE_5.8\\Engine\\Binaries\\Win64\\UnrealEditor.exe",
+      "ue_cmd": "F:\\Games\\UE_5.8\\Engine\\Binaries\\Win64\\UnrealEditor-Cmd.exe",
+      "project": "F:\\Games\\VellumImport\\VellumImport.uproject",
+      "project_dir": "F:\\Games\\VellumImport",
+      "content_root": "/Game/FireworksV1",
+      "engine_version": "5.8"
+    },
+    "borealis": {
+      "label": "Borealis",
+      "role": "secondary",
+      "repo": "C:\\dev\\vellum",
+      "ue_editor": "C:\\Program Files\\Epic Games\\UE_5.8\\Engine\\Binaries\\Win64\\UnrealEditor.exe",
+      "ue_cmd": "C:\\Program Files\\Epic Games\\UE_5.8\\Engine\\Binaries\\Win64\\UnrealEditor-Cmd.exe",
+      "project": "C:\\epic\\VellumImport\\VellumImport.uproject",
+      "project_dir": "C:\\epic\\VellumImport",
+      "content_root": "/Game/FireworksV1",
+      "engine_version": "5.8"
+    }
+  }
+}

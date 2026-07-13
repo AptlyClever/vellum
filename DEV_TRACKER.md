@@ -1,13 +1,13 @@
 # Development Tracker: Vellum
 
-> **Current Active Issue:** Fireworks — Vellum UI → UE agent capture
-> **Governing CFD:** `cfd-inspiration-20260713-015950-vellum-control-alt-games-asset-vault-register-in`
-> **Next Immediate Step:** Re-download `tools/unreal/*` on the Windows UE box (see `docs/scratch-inspect-niagara.md` § Windows script refresh), restart `vellum_ue_agent.ps1`, then click **Capture from Unreal** in Vellum
+> **Current Active Issue:** Fireworks — Niagara SceneCapture stills on **Aurora** (primary host)
+> **Governing CFD:** `cfd-inspiration-20260713-015950-vellum-control-alt-games-asset-vault-register-in` (slices A–F met; this is the post-CFD track)
+> **Next Immediate Step:** `git pull` on Aurora → restart `vellum_ue_agent.ps1` (fingerprint `ue-hosts`) → confirm preflight resolves `F:\Games\UE_5.8\…\UnrealEditor-Cmd.exe` → Capture from Vellum. Edit `config/ue-hosts.json` `aurora.project` if scratch `.uproject` is not under `F:\Games\VellumImport`
 
 ---
 
 ## 1. Quick Runbook
-*Keep your commands here so you never have to search for them.*
+    *Keep your commands here so you never have to search for them.*
 
 * **UI:** http://192.168.68.93:8770/
 * **Axiom Read:** http://192.168.68.93:7895/#/axiom/vellum
@@ -22,13 +22,16 @@
 
 ## 2. The Active Issue (Do Not Add Steps Here!)
 
-* **What success looks like:** From Vellum UI alone, enqueue Unreal capture; background Windows agent runs UE and stills appear in Lookdev.
+* **What success looks like:** From Vellum UI alone, enqueue Unreal capture on **Aurora**; Lookdev gets distinct `niagara-render` stills that show Fireworks particles (not pure black, not only a debug cube).
 * **Sub-Tasks:**
   - [x] `POST /api/ue/capture` + claim/report for Windows agent
   - [x] UI **Capture from Unreal** button
   - [x] `vellum_ue_agent.ps1` poll loop
-  - [ ] Operator: start agent once on UE box + first Capture click
-  - [ ] Improve Niagara framing in `vellum_capture.py` after first success
+  - [x] Borealis smoke: agent + Capture (`job-20260713-062514-5e88d4`) — pipeline OK; stills were debug cube / black (host issues; stop investing here)
+  - [x] Host profiles: `config/ue-hosts.json` (aurora active / borealis secondary) + `GET /api/ue/hosts`
+  - [ ] Aurora: Fireworks in scratch project + Python Editor Script Plugin (confirm `aurora.project` path)
+  - [ ] Aurora: agent preflight OK + Capture
+  - [ ] Confirm stills show real Niagara particles (not cube-only / not pure black)
 
 ---
 
@@ -52,4 +55,7 @@
 * **2026-07-13** — **Next track:** Unreal scratch inspect + Niagara viewport stills for Fireworks; Unity reconcile parked. APIs `/api/scratch/record`, `/api/lookdev/ingest-render`; `docs/scratch-inspect-niagara.md`.
 * **2026-07-13** — Automation-first capture: `tools/unreal/run_vellum_capture.ps1` drives UnrealEditor-Cmd + posts results to Vellum (manual UI is fallback only).
 * **2026-07-13** — UI-first: **Capture from Unreal** enqueues `ue_capture`; Windows `vellum_ue_agent.ps1` polls/claims/runs (operator stays in Vellum).
-* **2026-07-13** — Editor `HighResShot`/`SceneCapture2D` under `UnrealEditor-Cmd -unattended` confirmed dead end (no live viewport, zero-byte PNGs). Switched stills to a game-mode capture map: `vellum_capture_bake_map.py` bakes one Niagara system + auto-activating camera into `/Game/Vellum/Maps/VellumNiagaraCapture` per system (property-driven, no Blueprint graph — Python can't wire BP nodes), then `-game -ExecCmds="HighResShot ...,quit"` renders it for real. `run_vellum_capture.ps1` now runs inventory + per-system bake/shoot phases and merges manifests; `docs/scratch-inspect-niagara.md` has the Windows raw.githubusercontent.com re-download + restart steps.
+* **2026-07-13** — `-game` HighResShot abandoned (blank window / zero PNGs). Switched to editor SceneCapture2D → `export_render_target` (`editor-scenecapture-noblack`). Pure-black exports rejected.
+* **2026-07-13** — **Verified on Borealis:** pipeline OK (`job-20260713-062514-5e88d4`, 3 stills ingested). Earlier batch pure black; latest batch gray debug cube only — Niagara particles missing. Operator: stop Borealis capture debug; switch UE agent host to **Aurora**.
+* **2026-07-13** — Aurora first Capture failed (`job-20260713-174728-597c9c`): `UnrealEditor-Cmd.exe not found` — UE not under `C:\Program Files\Epic Games`; job payload still Borealis `C:\epic\VellumImport`. Agent/runner now discover E:/D: installs + registry; support `VELLUM_UE_CMD` / `VELLUM_UE_PROJECT` (`aurora-ue-discovery`).
+* **2026-07-13** — **UE host profiles:** `config/ue-hosts.json` — Aurora primary (`F:\Games\UE_5.8\…\UnrealEditor.exe`, derives `-Cmd`), Borealis secondary; `active: aurora`. Shared `tools/unreal/ue-hosts.ps1`; agent `-HostName` / `VELLUM_UE_HOST`; API `GET /api/ue/hosts`; UI defaults to active host.

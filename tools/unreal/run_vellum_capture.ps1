@@ -13,7 +13,7 @@
   pwsh -File tools/unreal/run_vellum_capture.ps1
 #>
 param(
-  [string]$Project = "C:\epic\VellumImport\VellumImport.uproject",
+  [string]$Project = "",
   [string]$AssetId = "fireworks-vol-1-niagara",
   [string]$ContentRoot = "/Game/FireworksV1",
   [string]$VellumBase = "http://192.168.68.93:8770",
@@ -21,6 +21,7 @@ param(
   [string]$EngineVersion = "5.8",
   [string]$IntakeRunId = "",
   [string]$UeCmd = $env:VELLUM_UE_CMD,
+  [string]$HostName = "",
   [int]$MaxSystems = $(if ($env:VELLUM_MAX_SYSTEMS) { [int]$env:VELLUM_MAX_SYSTEMS } else { 3 }),
   [int]$Width = $(if ($env:VELLUM_WIDTH) { [int]$env:VELLUM_WIDTH } else { 1920 }),
   [int]$Height = $(if ($env:VELLUM_HEIGHT) { [int]$env:VELLUM_HEIGHT } else { 1080 }),
@@ -29,31 +30,29 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-
-function Find-UeCmd {
-  param([string]$Hint)
-  if ($Hint -and (Test-Path $Hint)) { return (Resolve-Path $Hint).Path }
-  $candidates = @(
-    "C:\Program Files\Epic Games\UE_5.8\Engine\Binaries\Win64\UnrealEditor-Cmd.exe",
-    "C:\Program Files\Epic Games\UE_5.7\Engine\Binaries\Win64\UnrealEditor-Cmd.exe",
-    "C:\Program Files\Epic Games\UE_5.6\Engine\Binaries\Win64\UnrealEditor-Cmd.exe",
-    "C:\Program Files\Epic Games\UE_5.5\Engine\Binaries\Win64\UnrealEditor-Cmd.exe"
-  )
-  foreach ($c in $candidates) {
-    if (Test-Path $c) { return $c }
-  }
-  throw "UnrealEditor-Cmd.exe not found. Set VELLUM_UE_CMD to the full path."
+. (Join-Path $PSScriptRoot "ue-hosts.ps1")
+$RepoRootEarly = Resolve-Path (Join-Path $PSScriptRoot "..\..")
+$UeHost = Get-UeHostProfile -RepoRoot $RepoRootEarly -HostName $HostName
+if (-not $Project) { $Project = $UeHost.project }
+if (-not $ContentRoot -or $ContentRoot -eq "/Game/FireworksV1") {
+  if ($UeHost.content_root) { $ContentRoot = $UeHost.content_root }
+}
+if (-not $EngineVersion -or $EngineVersion -eq "5.8") {
+  if ($UeHost.engine_version) { $EngineVersion = $UeHost.engine_version }
 }
 
 function Find-UeEditor {
   param([string]$CmdPath)
-  # -game stills need a real presented swapchain. UnrealEditor-Cmd -unattended
-  # often never flushes HighResShot. Prefer the GUI binary beside Cmd.
+  # Prefer the GUI binary beside Cmd when needed.
   if ($CmdPath -and $CmdPath -match "UnrealEditor-Cmd\.exe$") {
     $gui = $CmdPath -replace "UnrealEditor-Cmd\.exe$", "UnrealEditor.exe"
     if (Test-Path $gui) { return $gui }
   }
+  if ($UeHost.ue_editor -and (Test-Path -LiteralPath $UeHost.ue_editor)) {
+    return (Resolve-Path -LiteralPath $UeHost.ue_editor).Path
+  }
   foreach ($c in @(
+      "F:\Games\UE_5.8\Engine\Binaries\Win64\UnrealEditor.exe",
       "C:\Program Files\Epic Games\UE_5.8\Engine\Binaries\Win64\UnrealEditor.exe",
       "C:\Program Files\Epic Games\UE_5.7\Engine\Binaries\Win64\UnrealEditor.exe"
     )) {
@@ -202,9 +201,12 @@ $InventoryPySource = Join-Path $PSScriptRoot "vellum_capture.py"
 $BakePySource = Join-Path $PSScriptRoot "vellum_capture_bake_map.py"
 if (-not (Test-Path $InventoryPySource)) { throw "vellum_capture.py not found next to runner" }
 if (-not (Test-Path $BakePySource)) { throw "vellum_capture_bake_map.py not found next to runner" }
+if (-not $Project) {
+  $Project = Resolve-UprojectFromHost -HostProfile $UeHost
+}
 if (-not (Test-Path $Project)) { throw "Project not found: $Project" }
 
-$Ue = Find-UeCmd -Hint $UeCmd
+$Ue = Find-UeCmdFromHost -HostProfile $UeHost -Hint $UeCmd
 $UeGame = Find-UeEditor -CmdPath $Ue
 $ProjectDir = Split-Path $Project -Parent
 $OutDir = Join-Path $ProjectDir "Saved\VellumCapture"
@@ -225,7 +227,8 @@ Write-Host "UE (editor/inventory): $Ue"
 Write-Host "UE (game stills): $UeGame"
 Write-Host "Project: $ProjectUe"
 Write-Host "MaxSystems=$MaxSystems Width=$Width Height=$Height MapPath=$MapPath"
-Write-Host "Runner version: editor-scenecapture-noblack (2026-07-13)"
+Write-Host "Runner version: ue-hosts (2026-07-13)"
+Write-Host "UE host: $($UeHost.id) ($($UeHost.label))"
 if ($JobId) { Write-Host "JobId=$JobId (progress -> $VellumBase/api/jobs/$JobId/progress)" }
 
 $allErrors = New-Object System.Collections.ArrayList

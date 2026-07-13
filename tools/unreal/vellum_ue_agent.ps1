@@ -7,37 +7,29 @@
   Keep this running on the UE workstation. Operator uses the Vellum UI button
   "Capture from Unreal" — this agent does the Unreal work and reports back.
 
-  One-time:
-  - Enable Python Editor Script Plugin in the scratch project
-  - Optional: set VELLUM_UE_CMD
+  Hosts (profiles): config/ue-hosts.json — Aurora (primary) / Borealis (secondary).
+  Only one agent should poll at a time. Active host defaults from that file.
 
 .EXAMPLE
   pwsh -File tools/unreal/vellum_ue_agent.ps1
+  pwsh -File tools/unreal/vellum_ue_agent.ps1 -HostName aurora
+  $env:VELLUM_UE_HOST = "borealis"; pwsh -File tools/unreal/vellum_ue_agent.ps1
 #>
 param(
   [string]$VellumBase = "http://192.168.68.93:8770",
   [int]$PollSeconds = 5,
-  [string]$DefaultProject = "C:\epic\VellumImport\VellumImport.uproject",
+  [string]$HostName = "",
+  [string]$DefaultProject = $(if ($env:VELLUM_UE_PROJECT) { $env:VELLUM_UE_PROJECT } else { "" }),
   [string]$UeCmd = $env:VELLUM_UE_CMD
 )
 
 $ErrorActionPreference = "Stop"
 $RepoRoot = Resolve-Path (Join-Path $PSScriptRoot "..\..")
-$CapturePy = Join-Path $RepoRoot "tools\unreal\vellum_capture.py"
 $Runner = Join-Path $PSScriptRoot "run_vellum_capture.ps1"
+. (Join-Path $PSScriptRoot "ue-hosts.ps1")
 
-function Find-UeCmd {
-  param([string]$Hint)
-  if ($Hint -and (Test-Path $Hint)) { return (Resolve-Path $Hint).Path }
-  foreach ($c in @(
-      "C:\Program Files\Epic Games\UE_5.8\Engine\Binaries\Win64\UnrealEditor-Cmd.exe",
-      "C:\Program Files\Epic Games\UE_5.7\Engine\Binaries\Win64\UnrealEditor-Cmd.exe",
-      "C:\Program Files\Epic Games\UE_5.6\Engine\Binaries\Win64\UnrealEditor-Cmd.exe"
-    )) {
-    if (Test-Path $c) { return $c }
-  }
-  throw "UnrealEditor-Cmd.exe not found. Set VELLUM_UE_CMD."
-}
+$UeHost = Get-UeHostProfile -RepoRoot $RepoRoot -HostName $HostName
+if (-not $DefaultProject) { $DefaultProject = $UeHost.project }
 
 function Invoke-CaptureJob {
   param($Job)
@@ -45,20 +37,32 @@ function Invoke-CaptureJob {
   if (-not $payload) { $payload = @{} }
   $assetId = [string]$Job.asset_id
   $lane = if ($payload.lane) { [string]$payload.lane } else { "slots" }
-  $projectPath = if ($payload.project_path) { [string]$payload.project_path } else { Split-Path $DefaultProject -Parent }
-  $uproject = if (Test-Path (Join-Path $projectPath "VellumImport.uproject")) {
-    Join-Path $projectPath "VellumImport.uproject"
+  $projectPath = if ($payload.project_path) { [string]$payload.project_path } else { "" }
+  $uproject = Resolve-UprojectFromHost -HostProfile $UeHost `
+    -PayloadProjectPath $projectPath -FallbackUproject $DefaultProject
+  Write-Host "Using project: $uproject"
+  $contentRoot = if ($payload.content_root) {
+    [string]$payload.content_root
+  } elseif ($UeHost.content_root) {
+    [string]$UeHost.content_root
   } else {
-    $DefaultProject
+    "/Game/FireworksV1"
   }
-  $contentRoot = if ($payload.content_root) { [string]$payload.content_root } else { "/Game/FireworksV1" }
-  $engineVersion = if ($payload.engine_version) { [string]$payload.engine_version } else { "5.8" }
+  $engineVersion = if ($payload.engine_version) {
+    [string]$payload.engine_version
+  } elseif ($UeHost.engine_version) {
+    [string]$UeHost.engine_version
+  } else {
+    "5.8"
+  }
   $intakeRunId = [string]$Job.intake_run_id
   $maxSystems = if ($payload.max_systems) { [int]$payload.max_systems } else { 3 }
   $width = if ($payload.width) { [int]$payload.width } else { 1920 }
   $height = if ($payload.height) { [int]$payload.height } else { 1080 }
 
-  Write-Host "Running capture for $assetId ($($Job.job_id))"
+  $resolvedUe = Find-UeCmdFromHost -HostProfile $UeHost -Hint $UeCmd
+  Write-Host "Using UE Cmd: $resolvedUe"
+  Write-Host "Running capture for $assetId ($($Job.job_id)) on host $($UeHost.id)"
   $env:VELLUM_JOB_ID = [string]$Job.job_id
   & $Runner `
     -Project $uproject `
@@ -68,11 +72,12 @@ function Invoke-CaptureJob {
     -Lane $lane `
     -EngineVersion $engineVersion `
     -IntakeRunId $intakeRunId `
-    -UeCmd (Find-UeCmd -Hint $UeCmd) `
+    -UeCmd $resolvedUe `
     -MaxSystems $maxSystems `
     -Width $width `
     -Height $height `
-    -JobId ([string]$Job.job_id)
+    -JobId ([string]$Job.job_id) `
+    -HostName $UeHost.id
 
   $outDir = Join-Path (Split-Path $uproject -Parent) "Saved\VellumCapture"
   $manifestPath = Join-Path $outDir "manifest.json"
@@ -86,7 +91,8 @@ function Invoke-CaptureJob {
   $result = @{
     project_path       = (Split-Path $uproject -Parent)
     engine_version     = $engineVersion
-    notes              = "ue_agent capture"
+    notes              = "ue_agent capture host=$($UeHost.id)"
+    ue_host            = $UeHost.id
     niagara_systems    = if ($man) { $man.niagara_systems_found } else { 0 }
     stills             = if ($man) { @($man.stills).Count } else { 0 }
     manifest_ok        = [bool]$man.ok
@@ -125,14 +131,23 @@ function Invoke-CaptureJob {
 
 Write-Host "Vellum UE agent polling $VellumBase every ${PollSeconds}s"
 Write-Host "UI trigger: asset detail → Capture from Unreal"
+Write-Host "Host profile: $($UeHost.id) ($($UeHost.label), $($UeHost.role)) — config active=$($UeHost.active_in_config)"
 Write-Host "Agent scripts: $Runner"
 Write-Host "Repo root: $RepoRoot"
-Write-Host "Agent fingerprint: editor-scenecapture-noblack (2026-07-13)"
-# Fingerprint so we can tell if Windows is still on an old pull. Search the
-# whole file instead of a fixed line number so this survives runner edits.
+Write-Host "Agent fingerprint: ue-hosts (2026-07-13)"
 $runnerVersionLine = (Get-Content $Runner | Where-Object { $_ -match "Runner version:" } | Select-Object -First 1)
 if (-not $runnerVersionLine) { $runnerVersionLine = "(no 'Runner version:' line found — old pull?)" }
 Write-Host "Runner fingerprint: $($runnerVersionLine.Trim())"
+try {
+  Write-Host "Resolved UE Cmd (preflight): $(Find-UeCmdFromHost -HostProfile $UeHost -Hint $UeCmd)"
+} catch {
+  Write-Host "WARNING: $($_.Exception.Message)"
+}
+try {
+  Write-Host "Resolved project (preflight): $(Resolve-UprojectFromHost -HostProfile $UeHost -FallbackUproject $DefaultProject)"
+} catch {
+  Write-Host "WARNING: $($_.Exception.Message)"
+}
 
 while ($true) {
   try {

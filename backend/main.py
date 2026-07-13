@@ -16,6 +16,7 @@ from . import jobs as jobs_mod
 from . import lookdev as lookdev_mod
 from . import register as register_mod
 from . import scratch as scratch_mod
+from . import ue_hosts as ue_hosts_mod
 
 ROOT = Path(__file__).resolve().parents[1]
 WEB_ROOT = ROOT / "web"
@@ -342,8 +343,22 @@ def api_ue_capture(body: UeCaptureRequest) -> dict[str, Any]:
         raise HTTPException(status_code=404, detail="asset_not_found")
     asset = register_mod.get_asset(body.asset_id)
     assert asset is not None
-    project = (body.project_path or asset.get("scratch_project_path") or r"C:\epic\VellumImport").strip()
+    project = (
+        body.project_path
+        or ue_hosts_mod.default_project_dir()
+        or asset.get("scratch_project_path")
+        or r"F:\Games\VellumImport"
+    ).strip()
     content_root = (body.content_root or "/Game/FireworksV1").strip()
+    try:
+        host = ue_hosts_mod.get_host()
+        if not body.content_root and host.get("content_root"):
+            content_root = str(host["content_root"]).strip()
+        engine = (body.engine_version or host.get("engine_version") or "5.8").strip()
+        host_id = host.get("id")
+    except Exception:  # noqa: BLE001
+        engine = (body.engine_version or "5.8").strip()
+        host_id = None
     job = jobs_mod.enqueue_job(
         kind="ue_capture",
         asset_id=body.asset_id,
@@ -354,10 +369,20 @@ def api_ue_capture(body: UeCaptureRequest) -> dict[str, Any]:
             "lane": body.lane,
             "project_path": project,
             "content_root": content_root,
-            "engine_version": body.engine_version or "5.8",
+            "engine_version": engine,
+            "ue_host": host_id,
         },
     )
-    return {"schema_version": 1, "job": job}
+    return {"schema_version": 1, "job": job, "ue_host": host_id}
+
+
+@app.get("/api/ue/hosts")
+def api_ue_hosts() -> dict[str, Any]:
+    """Aurora / Borealis capture host profiles (active = preferred workstation)."""
+    try:
+        return ue_hosts_mod.public_hosts_payload()
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @app.get("/api/lookdev/lanes")

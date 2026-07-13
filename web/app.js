@@ -344,8 +344,28 @@ async function openDetail(id) {
   const captureHelp = document.createElement("p");
   captureHelp.className = "fit";
   captureHelp.textContent =
-    "Queues a job for the Windows UE agent (no Unreal clicking). Keep vellum_ue_agent.ps1 running on the UE box.";
+    "Queues a job for the Windows UE agent (no Unreal clicking). Keep vellum_ue_agent.ps1 running on the active host (Aurora primary / Borealis secondary — only one at a time).";
   host.appendChild(captureHelp);
+
+  const hostMeta = document.createElement("p");
+  hostMeta.className = "fit";
+  hostMeta.textContent = "Loading UE host profile…";
+  host.appendChild(hostMeta);
+
+  let activeHost = null;
+  try {
+    const hostsPayload = await fetchJson("/api/ue/hosts");
+    activeHost = hostsPayload.active_host || null;
+    const labels = (hostsPayload.hosts || [])
+      .map((h) => `${h.id}${h.active ? " (active)" : ""}`)
+      .join(", ");
+    hostMeta.textContent = activeHost
+      ? `Active host: ${activeHost.label || activeHost.id} · profiles: ${labels}`
+      : `UE hosts: ${labels}`;
+  } catch (err) {
+    hostMeta.textContent = "UE host profiles unavailable — using local defaults.";
+    console.warn(err);
+  }
 
   const scratchForm = document.createElement("div");
   scratchForm.className = "scratch-form";
@@ -355,8 +375,11 @@ async function openDetail(id) {
   pathSpan.textContent = "Unreal project path";
   const pathInput = document.createElement("input");
   pathInput.type = "text";
-  pathInput.placeholder = "C:\\epic\\VellumImport";
-  pathInput.value = a.scratch_project_path || "C:\\epic\\VellumImport";
+  const hostProject =
+    (activeHost && (activeHost.project_dir || activeHost.project)) || "";
+  pathInput.placeholder = hostProject || "F:\\Games\\VellumImport";
+  // Prefer active host (Aurora) over a stale Borealis path on the asset.
+  pathInput.value = hostProject || a.scratch_project_path || "F:\\Games\\VellumImport";
   pathLabel.appendChild(pathSpan);
   pathLabel.appendChild(pathInput);
   scratchForm.appendChild(pathLabel);
@@ -368,7 +391,10 @@ async function openDetail(id) {
   const engInput = document.createElement("input");
   engInput.type = "text";
   engInput.placeholder = "5.8";
-  engInput.value = a.scratch_engine_version || "5.8";
+  engInput.value =
+    (activeHost && activeHost.engine_version) ||
+    a.scratch_engine_version ||
+    "5.8";
   engLabel.appendChild(engSpan);
   engLabel.appendChild(engInput);
   scratchForm.appendChild(engLabel);

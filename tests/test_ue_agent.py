@@ -4,6 +4,7 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
+from backend import ue_hosts as ue_hosts_mod
 from backend.jobs import (
     LINUX_WORKER_KINDS,
     UE_AGENT_KINDS,
@@ -13,6 +14,15 @@ from backend.jobs import (
     process_one_job,
 )
 from backend.register import ensure_register
+
+
+def test_ue_hosts_aurora_is_active() -> None:
+    payload = ue_hosts_mod.public_hosts_payload()
+    assert payload["active"] == "aurora"
+    assert payload["active_host"]["id"] == "aurora"
+    assert "F:\\Games\\UE_5.8" in payload["active_host"]["ue_editor"]
+    ids = {h["id"] for h in payload["hosts"]}
+    assert ids == {"aurora", "borealis"}
 
 
 def test_ue_capture_claim_is_not_taken_by_linux_kinds(tmp_path: Path, monkeypatch) -> None:
@@ -41,12 +51,19 @@ def test_ue_capture_claim_is_not_taken_by_linux_kinds(tmp_path: Path, monkeypatc
     from backend.main import app
 
     client = TestClient(app)
+    hosts = client.get("/api/ue/hosts")
+    assert hosts.status_code == 200
+    assert hosts.json()["active"] == "aurora"
+
     enq = client.post(
         "/api/ue/capture",
         json={"asset_id": "fireworks-vol-1-niagara", "lane": "slots"},
     )
     assert enq.status_code == 200
-    assert enq.json()["job"]["kind"] == "ue_capture"
+    body = enq.json()
+    assert body["job"]["kind"] == "ue_capture"
+    assert body["ue_host"] == "aurora"
+    assert "F:\\Games" in body["job"]["payload"]["project_path"]
 
     claim = client.post("/api/jobs/claim", json={"kinds": ["ue_capture"]})
     assert claim.status_code == 200
@@ -55,8 +72,8 @@ def test_ue_capture_claim_is_not_taken_by_linux_kinds(tmp_path: Path, monkeypatc
     reported = client.post(
         f"/api/jobs/{jid}/report",
         json={
-            "result": {"notes": "test"},
-            "scratch_project_path": r"C:\epic\VellumImport",
+            "result": {"notes": "test", "ue_host": "aurora"},
+            "scratch_project_path": r"F:\Games\VellumImport",
             "engine_version": "5.8",
         },
     )
