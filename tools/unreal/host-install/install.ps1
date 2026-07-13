@@ -4,23 +4,25 @@
   Install Vellum UE host wrappers on Aurora (no babysat console).
 
 .DESCRIPTION
-  1) WinSW Windows Service: VellumUeAgent (polls Vellum, POSTs Lookdev Worker)
-  2) Scheduled Task at logon: VellumLookdevWorkerEnsure (warms Unreal on studio map)
-  3) Optional watchdog task: re-Ensure if health dies
+  Default: interactive logon Scheduled Task for VellumUeAgent (GPU session).
+  Optional: WinSW service is disabled for Capture — LocalSystem Session 0 hangs UnrealEditor-Cmd.
+  Legacy Lookdev Worker logon/watchdog tasks remain optional.
 
   Run elevated once on the GPU box after git pull.
 
 .EXAMPLE
   pwsh -File tools/unreal/host-install/install.ps1
-  pwsh -File tools/unreal/host-install/install.ps1 -HostName aurora -VellumBase http://192.168.68.93:8770
+  pwsh -File tools/unreal/host-install/install-agent-interactive.ps1
 #>
 param(
   [string]$HostName = "aurora",
   [string]$VellumBase = "http://192.168.68.93:8770",
   [string]$RepoRoot = "",
-  [switch]$SkipService,
+  # Capture agent must be interactive — do not install WinSW LocalSystem service.
+  [switch]$InstallWinSwService,
   [switch]$SkipLogonTask,
   [switch]$SkipWatchdog,
+  [switch]$SkipAgentTask,
   [switch]$StartWorkerNow
 )
 
@@ -83,11 +85,20 @@ $xml = $xml.Replace("{{LOG_DIR}}", $LogDir)
 Set-Content -Path $WinSwXml -Value $xml -Encoding UTF8
 Write-Host "Wrote $WinSwXml"
 
-# --- Service (admin) ---
-if (-not $SkipService) {
+# --- Capture agent: interactive Scheduled Task (default). WinSW LocalSystem is opt-in only. ---
+if (-not $SkipAgentTask) {
+  $InteractiveInstall = Join-Path $PSScriptRoot "install-agent-interactive.ps1"
+  if (-not (Test-Path $InteractiveInstall)) { throw "Missing $InteractiveInstall" }
+  & $Pwsh -NoProfile -ExecutionPolicy Bypass -File $InteractiveInstall `
+    -HostName $HostName -VellumBase $VellumBase -RepoRoot $RepoRoot
+}
+
+# --- Optional WinSW service (NOT recommended for Capture — Session 0 / no GPU) ---
+if ($InstallWinSwService) {
   if (-not (Test-IsAdmin)) {
-    throw "Service install needs elevation. Re-run from Admin PowerShell, or pass -SkipService."
+    throw "Service install needs elevation. Re-run from Admin PowerShell."
   }
+  Write-Host "WARNING: Installing WinSW LocalSystem agent — UnrealEditor-Cmd Capture will hang."
   $existing = Get-Service -Name "VellumUeAgent" -ErrorAction SilentlyContinue
   if ($existing) {
     Write-Host "Stopping existing VellumUeAgent…"

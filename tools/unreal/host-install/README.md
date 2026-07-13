@@ -4,28 +4,35 @@ Wraps Capture so you do **not** leave a PowerShell window open.
 
 | Piece | Mechanism | Why |
 | --- | --- | --- |
-| **VellumUeAgent** | Windows Service (WinSW) | Polls Vellum forever; restarts on crash |
-| **VellumLookdevWorkerEnsure** | Scheduled Task (At logon) | Starts warm Unreal in your interactive GPU session |
-| **VellumLookdevWorkerWatchdog** | Scheduled Task (every 5 min) | `host-heal.ps1`: git pull, Ensure worker, restart agent if code moved |
+| **VellumUeAgent** | Scheduled Task (At logon, **interactive**) | Polls Vellum; launches UnrealEditor-Cmd in your GPU desktop session |
+| **VellumLookdevWorkerEnsure** | Scheduled Task (At logon) | Optional warm Lookdev Worker (parked for Capture) |
+| **VellumLookdevWorkerWatchdog** | Scheduled Task (every 5 min) | `host-heal.ps1`: git pull + restart agent task if code moved |
 
-Unreal itself is **not** a Session 0 service (GPU/editor reality). The service is the agent; the editor is warmed at logon / by heal.
+**Do not** run the agent as a WinSW/LocalSystem service. Session 0 + `systemprofile` DDC hangs GPU Cmd (confirmed 2026-07-13).
 
-After install, **you do not run Capture setup commands**. The agent + watchdog self-heal. Operator action in Vellum: click Capture.
-
-## Install (once, Admin)
+## Fix Capture now (Aurora)
 
 ```powershell
-cd E:\Dev\vellum   # or your ue-hosts.json repo path
+cd E:\Dev\vellum
 git pull
-pwsh -File tools/unreal/host-install/install.ps1 -StartWorkerNow
+pwsh -File tools/unreal/host-install/install-agent-interactive.ps1
+```
+
+Then click Capture in Vellum.
+
+## Full install
+
+```powershell
+cd E:\Dev\vellum
+git pull
+pwsh -File tools/unreal/host-install/install.ps1
 ```
 
 ## Check
 
 ```powershell
-Get-Service VellumUeAgent
-Get-ScheduledTask VellumLookdev*
-Invoke-RestMethod http://127.0.0.1:8771/health
+Get-ScheduledTask VellumUeAgent, VellumLookdev*
+Get-Service VellumUeAgent -ErrorAction SilentlyContinue   # should be absent
 ```
 
 ## Uninstall
@@ -33,10 +40,3 @@ Invoke-RestMethod http://127.0.0.1:8771/health
 ```powershell
 pwsh -File tools/unreal/host-install/uninstall.ps1
 ```
-
-## Notes
-
-- `runtime/` (WinSW exe, stamped XML, logs) is local machine state — gitignored.
-- Delayed auto-start on the service gives logon a moment to bring UE up first.
-- The **agent service** runs as LocalSystem and must **not** launch Unreal; the **logon task** (or `-StartWorkerNow` / interactive Ensure) warms the GPU editor. If you Capture before anyone is logged in, the agent waits for health then fails clearly.
-- Auto-logon on a locked studio PC makes reboot → Capture fully hands-off; optional.

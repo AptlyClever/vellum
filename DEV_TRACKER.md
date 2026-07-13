@@ -3,7 +3,7 @@
 > **Current Active Issue:** Fireworks pack — **full automated lookdev** (all effects), then next purchased packs
 > **Governing CFD:** `cfd-inspiration-20260713-015950-vellum-control-alt-games-asset-vault-register-in` (slices A–F met; this is the post-CFD track)
 > **Capability spec:** `docs/ue-mrq-capture.md` (SoT — full fidelity; SceneCapture/HighResShot retired)
-> **Next Immediate Step:** Capture uses **legacy UnrealEditor-Cmd** by default again (worker path parked — it froze the editor). Wait ≤5 min for Aurora watchdog to pull + restart `VellumUeAgent`, then click Capture once. Do not re-run install or dig in Unreal.
+> **Next Immediate Step:** Agent must run as **interactive user**, not WinSW LocalSystem (Session 0 hangs Cmd). On Aurora: `pwsh -File tools/unreal/host-install/install-agent-interactive.ps1` then Capture in Vellum.
 
 ---
 

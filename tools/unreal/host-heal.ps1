@@ -133,20 +133,29 @@ try {
 
 $codeChanged = ($beforeSha -and $afterSha -and ($beforeSha -ne $afterSha))
 if ($RestartAgentService -or $codeChanged) {
-  $svc = Get-Service -Name "VellumUeAgent" -ErrorAction SilentlyContinue
-  if ($svc) {
-    Write-Host "Restarting Windows Service VellumUeAgent (code_changed=$codeChanged)…"
-    try {
-      Restart-Service -Name "VellumUeAgent" -Force -ErrorAction Stop
-    } catch {
-      # WinSW path
-      $exe = Join-Path $RepoRoot "tools\unreal\host-install\runtime\VellumUeAgent.exe"
-      if (Test-Path $exe) {
-        Push-Location (Split-Path $exe -Parent)
-        try { & .\VellumUeAgent.exe restart | Out-Host } catch { Write-Host $_ }
-        Pop-Location
-      } else {
-        Write-Host "WARNING: could not restart agent service: $($_.Exception.Message)"
+  # Prefer interactive Scheduled Task — WinSW/LocalSystem cannot run GPU UnrealEditor-Cmd.
+  $task = Get-ScheduledTask -TaskName "VellumUeAgent" -ErrorAction SilentlyContinue
+  if ($task) {
+    Write-Host "Restarting Scheduled Task VellumUeAgent (code_changed=$codeChanged)…"
+    Get-CimInstance Win32_Process -Filter "Name='pwsh.exe' OR Name='powershell.exe'" -ErrorAction SilentlyContinue |
+      Where-Object { $_.CommandLine -and $_.CommandLine -match 'vellum_ue_agent\.ps1' } |
+      ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+    Start-Sleep -Seconds 1
+    Start-ScheduledTask -TaskName "VellumUeAgent"
+  } else {
+    $svc = Get-Service -Name "VellumUeAgent" -ErrorAction SilentlyContinue
+    if ($svc) {
+      Write-Host "WARNING: VellumUeAgent still a Windows Service (LocalSystem). Capture will hang on GPU Cmd."
+      Write-Host "Run: pwsh -File tools/unreal/host-install/install-agent-interactive.ps1"
+      try {
+        Restart-Service -Name "VellumUeAgent" -Force -ErrorAction Stop
+      } catch {
+        $exe = Join-Path $RepoRoot "tools\unreal\host-install\runtime\VellumUeAgent.exe"
+        if (Test-Path $exe) {
+          Push-Location (Split-Path $exe -Parent)
+          try { & .\VellumUeAgent.exe restart | Out-Host } catch { Write-Host $_ }
+          Pop-Location
+        }
       }
     }
   }
