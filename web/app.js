@@ -35,6 +35,147 @@ function clear(node) {
   while (node.firstChild) node.removeChild(node.firstChild);
 }
 
+let captureWatchTimer = null;
+
+function stopCaptureWatch() {
+  if (captureWatchTimer != null) {
+    clearInterval(captureWatchTimer);
+    captureWatchTimer = null;
+  }
+}
+
+function humanPhaseFromProgressLog(log) {
+  const messages = [];
+  for (const line of String(log || "").split("\n")) {
+    if (line.startsWith("  |") || line.trim() === "---" || !line.trim()) continue;
+    const bar = line.indexOf(" | ");
+    if (bar < 0) continue;
+    messages.push(line.slice(bar + 3).trim());
+  }
+  return messages.length ? messages[messages.length - 1] : "Waiting for agent…";
+}
+
+function recentPhasesFromProgressLog(log, limit = 8) {
+  const messages = [];
+  for (const line of String(log || "").split("\n")) {
+    if (line.startsWith("  |") || line.trim() === "---" || !line.trim()) continue;
+    const bar = line.indexOf(" | ");
+    if (bar < 0) continue;
+    const msg = line.slice(bar + 3).trim();
+    if (!msg) continue;
+    if (messages.length && messages[messages.length - 1] === msg) continue;
+    messages.push(msg);
+  }
+  return messages.slice(-limit);
+}
+
+function renderLookdevGrid(lookdevHost, outputs, { emptyText, limit = 24 } = {}) {
+  clear(lookdevHost);
+  const list = Array.isArray(outputs) ? outputs : [];
+  if (!list.length) {
+    const empty = document.createElement("p");
+    empty.className = "fit";
+    empty.textContent =
+      emptyText ||
+      "No derived stills yet. Requires staged pack with png/jpg textures.";
+    lookdevHost.appendChild(empty);
+    return;
+  }
+  for (const out of list.slice(0, limit)) {
+    const card = document.createElement("figure");
+    card.className = "lookdev-card";
+    if (out.kind === "niagara-render") card.classList.add("lookdev-card-live");
+    const img = document.createElement("img");
+    img.src = `/api/lookdev/outputs/${encodeURIComponent(out.id)}/file`;
+    img.alt = `${out.lane} ${out.kind}`;
+    img.loading = "lazy";
+    card.appendChild(img);
+    const cap = document.createElement("figcaption");
+    const note = (out.note || "").replace(/\s+/g, " ").trim();
+    const shortNote =
+      note.length > 42 ? `${note.slice(0, 40)}…` : note;
+    cap.textContent = shortNote
+      ? `${out.lane} · ${shortNote}`
+      : `${out.lane} · ${out.kind}`;
+    card.appendChild(cap);
+    lookdevHost.appendChild(card);
+  }
+}
+
+function startCaptureWatch({
+  assetId,
+  jobId,
+  liveRoot,
+  phaseEl,
+  metaEl,
+  feedEl,
+  lookdevHost,
+  captureBtn,
+}) {
+  stopCaptureWatch();
+  liveRoot.hidden = false;
+  let lastOutputCount = -1;
+  let ticksAfterDone = 0;
+
+  const tick = async () => {
+    try {
+      const [job, progress, derived] = await Promise.all([
+        fetchJson(`/api/jobs/${encodeURIComponent(jobId)}`),
+        fetchJson(`/api/jobs/${encodeURIComponent(jobId)}/progress`),
+        fetchJson(
+          `/api/lookdev/outputs?asset_id=${encodeURIComponent(assetId)}&limit=48`
+        ),
+      ]);
+      const status = job.status || progress.status || "running";
+      const phase = humanPhaseFromProgressLog(progress.log);
+      const phases = recentPhasesFromProgressLog(progress.log, 10);
+      const outputs = derived.outputs || [];
+      const niagara = outputs.filter((o) => o.kind === "niagara-render");
+
+      phaseEl.textContent = phase;
+      metaEl.textContent = `${status} · ${jobId} · lookdev ${niagara.length} niagara / ${outputs.length} total`;
+      clear(feedEl);
+      for (const msg of phases.slice().reverse()) {
+        const li = document.createElement("li");
+        li.textContent = msg;
+        feedEl.appendChild(li);
+      }
+
+      if (outputs.length !== lastOutputCount) {
+        lastOutputCount = outputs.length;
+        renderLookdevGrid(lookdevHost, outputs, {
+          emptyText: "Waiting for first lookdev frames to land…",
+          limit: 36,
+        });
+      }
+
+      const terminal = status === "succeeded" || status === "failed";
+      if (terminal) {
+        ticksAfterDone += 1;
+        if (captureBtn) {
+          captureBtn.disabled = false;
+          captureBtn.textContent =
+            status === "succeeded"
+              ? "Capture finished — run again for remaining"
+              : "Capture failed — try again";
+        }
+        liveRoot.dataset.state = status;
+        // One extra refresh after report so late ingest shows up.
+        if (ticksAfterDone >= 2) stopCaptureWatch();
+      } else if (captureBtn) {
+        captureBtn.disabled = true;
+        captureBtn.textContent = "Capturing pack…";
+      }
+    } catch (err) {
+      phaseEl.textContent = "Live update interrupted — retrying…";
+      console.warn(err);
+    }
+  };
+
+  tick();
+  captureWatchTimer = setInterval(tick, 4000);
+}
+
 async function loadStats() {
   const s = await fetchJson("/api/register/summary");
   const host = $("stats");
@@ -217,6 +358,7 @@ async function proposeIntake(assetId) {
 }
 
 async function openDetail(id) {
+  stopCaptureWatch();
   const a = await fetchJson(`/api/assets/${encodeURIComponent(id)}`);
   const host = $("detail-body");
   clear(host);
@@ -415,43 +557,31 @@ async function openDetail(id) {
   captureBtn.type = "button";
   captureBtn.className = "btn";
   captureBtn.textContent = "Capture entire pack";
-  captureBtn.addEventListener("click", async () => {
-    captureBtn.disabled = true;
-    captureBtn.textContent = "Queuing…";
-    try {
-      let intakeRunId = null;
-      try {
-        const listed = await fetchJson(
-          `/api/intake?asset_id=${encodeURIComponent(a.id)}&limit=1`
-        );
-        intakeRunId = (listed.runs && listed.runs[0] && listed.runs[0].run_id) || null;
-      } catch {
-        /* ignore */
-      }
-      const res = await fetch("/api/ue/capture", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          asset_id: a.id,
-          lane: "slots",
-          project_path: pathInput.value.trim(),
-          engine_version: engInput.value.trim(),
-          intake_run_id: intakeRunId,
-          content_root: "/Game/FireworksV1",
-          force: !!forceInput.checked,
-        }),
-      });
-      if (!res.ok) throw new Error(`ue capture ${res.status}`);
-      const body = await res.json();
-      captureBtn.textContent = `Queued ${body.job && body.job.job_id ? body.job.job_id : ""}`;
-      setTimeout(() => openDetail(a.id), 1500);
-    } catch (err) {
-      captureBtn.textContent = "Queue failed";
-      console.error(err);
-    }
-  });
   scratchForm.appendChild(captureBtn);
   host.appendChild(scratchForm);
+
+  const liveRoot = document.createElement("section");
+  liveRoot.className = "capture-live";
+  liveRoot.hidden = true;
+  liveRoot.setAttribute("aria-live", "polite");
+  const liveHead = document.createElement("div");
+  liveHead.className = "capture-live-head";
+  const liveTitle = document.createElement("h3");
+  liveTitle.textContent = "Live import";
+  liveHead.appendChild(liveTitle);
+  const liveMeta = document.createElement("p");
+  liveMeta.className = "capture-live-meta";
+  liveMeta.textContent = "—";
+  liveHead.appendChild(liveMeta);
+  liveRoot.appendChild(liveHead);
+  const livePhase = document.createElement("p");
+  livePhase.className = "capture-live-phase";
+  livePhase.textContent = "Waiting for agent…";
+  liveRoot.appendChild(livePhase);
+  const liveFeed = document.createElement("ul");
+  liveFeed.className = "capture-live-feed";
+  liveRoot.appendChild(liveFeed);
+  host.appendChild(liveRoot);
 
   const lookdevHead = document.createElement("h3");
   lookdevHead.textContent = "Lookdev";
@@ -520,34 +650,80 @@ async function openDetail(id) {
   lookdevHost.className = "lookdev-grid";
   host.appendChild(lookdevHost);
 
+  const startWatchForJob = (jobId) => {
+    startCaptureWatch({
+      assetId: a.id,
+      jobId,
+      liveRoot,
+      phaseEl: livePhase,
+      metaEl: liveMeta,
+      feedEl: liveFeed,
+      lookdevHost,
+      captureBtn,
+    });
+  };
+
+  captureBtn.addEventListener("click", async () => {
+    captureBtn.disabled = true;
+    captureBtn.textContent = "Queuing…";
+    try {
+      let intakeRunId = null;
+      try {
+        const listed = await fetchJson(
+          `/api/intake?asset_id=${encodeURIComponent(a.id)}&limit=1`
+        );
+        intakeRunId = (listed.runs && listed.runs[0] && listed.runs[0].run_id) || null;
+      } catch {
+        /* ignore */
+      }
+      const res = await fetch("/api/ue/capture", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          asset_id: a.id,
+          lane: "slots",
+          project_path: pathInput.value.trim(),
+          engine_version: engInput.value.trim(),
+          intake_run_id: intakeRunId,
+          content_root: "/Game/FireworksV1",
+          force: !!forceInput.checked,
+        }),
+      });
+      if (!res.ok) throw new Error(`ue capture ${res.status}`);
+      const body = await res.json();
+      const jobId = body.job && body.job.job_id;
+      if (!jobId) throw new Error("missing job_id");
+      captureBtn.textContent = "Capturing pack…";
+      startWatchForJob(jobId);
+    } catch (err) {
+      captureBtn.disabled = false;
+      captureBtn.textContent = "Queue failed";
+      console.error(err);
+    }
+  });
+
   try {
     const derived = await fetchJson(
-      `/api/lookdev/outputs?asset_id=${encodeURIComponent(a.id)}`
+      `/api/lookdev/outputs?asset_id=${encodeURIComponent(a.id)}&limit=48`
     );
-    const outputs = derived.outputs || [];
-    if (!outputs.length) {
-      const empty = document.createElement("p");
-      empty.className = "fit";
-      empty.textContent =
-        "No derived stills yet. Requires staged pack with png/jpg textures.";
-      lookdevHost.appendChild(empty);
-    } else {
-      for (const out of outputs.slice(0, 12)) {
-        const card = document.createElement("figure");
-        card.className = "lookdev-card";
-        const img = document.createElement("img");
-        img.src = `/api/lookdev/outputs/${encodeURIComponent(out.id)}/file`;
-        img.alt = `${out.lane} ${out.kind}`;
-        img.loading = "lazy";
-        card.appendChild(img);
-        const cap = document.createElement("figcaption");
-        cap.textContent = `${out.lane} · ${out.kind}`;
-        card.appendChild(cap);
-        lookdevHost.appendChild(card);
-      }
-    }
+    renderLookdevGrid(lookdevHost, derived.outputs || []);
   } catch (err) {
     console.error(err);
+  }
+
+  // Resume live panel if Capture is already running for this asset.
+  try {
+    const jobsListed = await fetchJson(
+      `/api/jobs?asset_id=${encodeURIComponent(a.id)}`
+    );
+    const active = (jobsListed.jobs || []).find(
+      (j) =>
+        j.kind === "ue_capture" &&
+        (j.status === "running" || j.status === "queued")
+    );
+    if (active && active.job_id) startWatchForJob(active.job_id);
+  } catch (err) {
+    console.warn(err);
   }
 
   $("detail").hidden = false;
@@ -575,6 +751,7 @@ function debounce(fn, ms) {
 }
 
 $("detail-close").addEventListener("click", () => {
+  stopCaptureWatch();
   $("detail").hidden = true;
 });
 

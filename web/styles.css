@@ -326,6 +326,80 @@ table.assets tbody tr:last-child td {
   margin: 0.75rem 0 1rem;
 }
 
+.capture-live {
+  margin: 0.25rem 0 1.25rem;
+  padding: 0.9rem 1rem 1rem;
+  background:
+    linear-gradient(135deg, rgba(47, 107, 79, 0.08), transparent 55%),
+    var(--panel);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+}
+
+.capture-live[data-state="succeeded"] {
+  border-left-color: var(--open);
+}
+
+.capture-live[data-state="failed"] {
+  border-left-color: var(--expired);
+}
+
+.capture-live-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.capture-live-head h3 {
+  margin: 0;
+  font-size: 1rem;
+  letter-spacing: -0.01em;
+}
+
+.capture-live-meta {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+
+.capture-live-phase {
+  margin: 0.65rem 0 0.5rem;
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--ink);
+  line-height: 1.35;
+}
+
+.capture-live-feed {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: 9.5rem;
+  overflow: auto;
+  border-top: 1px solid var(--line);
+  padding-top: 0.45rem;
+}
+
+.capture-live-feed li {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  color: var(--muted);
+  padding: 0.18rem 0;
+  border-bottom: 1px dashed rgba(212, 205, 192, 0.7);
+}
+
+.capture-live-feed li:first-child {
+  color: var(--ink);
+  font-weight: 500;
+}
+
+.lookdev-card-live {
+  outline: 1px solid rgba(47, 107, 79, 0.35);
+}
+
 .file-btn {
   cursor: pointer;
   display: inline-flex;
