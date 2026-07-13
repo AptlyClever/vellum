@@ -139,6 +139,34 @@ function Find-RecentImages {
   return @($found.ToArray() | Sort-Object LastWriteTime -Descending)
 }
 
+function Get-VellumLogTailShared {
+  # AbsLog is locked exclusive-ish by Unreal; Get-Content can hang forever.
+  # Open with FileShare.ReadWrite and only sample the end.
+  param([string]$LogPath, [int]$MaxBytes = 4096)
+  if (-not $LogPath -or -not (Test-Path -LiteralPath $LogPath)) { return "" }
+  try {
+    $fs = [System.IO.File]::Open(
+      $LogPath,
+      [System.IO.FileMode]::Open,
+      [System.IO.FileAccess]::Read,
+      [System.IO.FileShare]::ReadWrite
+    )
+    try {
+      $len = $fs.Length
+      if ($len -le 0) { return "" }
+      $start = [Math]::Max(0, $len - $MaxBytes)
+      [void]$fs.Seek($start, [System.IO.SeekOrigin]::Begin)
+      $buf = New-Object byte[] ([int]($len - $start))
+      $read = $fs.Read($buf, 0, $buf.Length)
+      $text = [System.Text.Encoding]::UTF8.GetString($buf, 0, $read)
+      $lines = $text -split "`r?`n"
+      return (($lines | Select-Object -Last 12) -join "`n")
+    } finally { $fs.Dispose() }
+  } catch {
+    return ""
+  }
+}
+
 function Send-VellumProgress {
   param(
     [string]$Message,
@@ -147,11 +175,7 @@ function Send-VellumProgress {
   Write-Host $Message
   if (-not $JobId -or -not $VellumBase) { return }
   $tail = ""
-  if ($LogPath -and (Test-Path $LogPath)) {
-    try {
-      $tail = ((Get-Content -Path $LogPath -Tail 12 -ErrorAction SilentlyContinue) -join "`n")
-    } catch { $tail = "" }
-  }
+  if ($LogPath) { $tail = Get-VellumLogTailShared -LogPath $LogPath }
   $body = @{ message = $Message; log_tail = $tail } | ConvertTo-Json -Compress
   try {
     Invoke-RestMethod -Method Post -Uri "$VellumBase/api/jobs/$JobId/progress" `
