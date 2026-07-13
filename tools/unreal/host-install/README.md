@@ -6,9 +6,11 @@ Wraps Capture so you do **not** leave a PowerShell window open.
 | --- | --- | --- |
 | **VellumUeAgent** | Windows Service (WinSW) | Polls Vellum forever; restarts on crash |
 | **VellumLookdevWorkerEnsure** | Scheduled Task (At logon) | Starts warm Unreal in your interactive GPU session |
-| **VellumLookdevWorkerWatchdog** | Scheduled Task (every 5 min) | Re-Ensure if `http://127.0.0.1:8771/health` dies |
+| **VellumLookdevWorkerWatchdog** | Scheduled Task (every 5 min) | `host-heal.ps1`: git pull, Ensure worker, restart agent if code moved |
 
-Unreal itself is **not** a Session 0 service (GPU/editor reality). The service is the agent; the editor is warmed at logon.
+Unreal itself is **not** a Session 0 service (GPU/editor reality). The service is the agent; the editor is warmed at logon / by heal.
+
+After install, **you do not run Capture setup commands**. The agent + watchdog self-heal. Operator action in Vellum: click Capture.
 
 ## Install (once, Admin)
 

@@ -131,35 +131,29 @@ if (-not $SkipLogonTask) {
   Write-Host "Scheduled Task '$taskWorker' registered (At logon, interactive)."
 }
 
-# --- Watchdog every 5 minutes ---
+# --- Watchdog every 5 minutes: self-heal (git pull + Ensure + restart agent if code moved) ---
 $taskWatch = "VellumLookdevWorkerWatchdog"
+$HealPs1 = Join-Path $RepoRoot "tools\unreal\host-heal.ps1"
 if (-not $SkipWatchdog) {
-  $watchBody = @"
-`$h = `$null
-try { `$h = Invoke-RestMethod -Uri 'http://127.0.0.1:8771/health' -TimeoutSec 3 } catch {}
-if (-not `$h -or -not `$h.ok) {
-  & '$Pwsh' -NoProfile -ExecutionPolicy Bypass -File '$WorkerPs1' -Ensure -HostName $HostName
-}
-"@
-  $watchPs1 = Join-Path $InstallDir "watchdog.ps1"
-  Set-Content -Path $watchPs1 -Value $watchBody -Encoding UTF8
+  if (-not (Test-Path $HealPs1)) { throw "Missing host-heal.ps1: $HealPs1" }
   $action = New-ScheduledTaskAction `
     -Execute $Pwsh `
-    -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$watchPs1`"" `
+    -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$HealPs1`" -HostName $HostName -VellumBase $VellumBase -RestartAgentService" `
     -WorkingDirectory $RepoRoot
   $trigger = New-ScheduledTaskTrigger -Once -At ((Get-Date).AddMinutes(1)) `
     -RepetitionInterval (New-TimeSpan -Minutes 5) `
     -RepetitionDuration (New-TimeSpan -Days 3650)
-  $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -ExecutionTimeLimit (New-TimeSpan -Minutes 15)
+  $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -ExecutionTimeLimit (New-TimeSpan -Minutes 20)
   $principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive -RunLevel Highest
   Register-ScheduledTask -TaskName $taskWatch -Action $action -Trigger $trigger `
     -Settings $settings -Principal $principal -Force | Out-Null
-  Write-Host "Scheduled Task '$taskWatch' registered (every 5 min health → Ensure)."
+  Write-Host "Scheduled Task '$taskWatch' registered (every 5 min host-heal)."
 }
 
 if ($StartWorkerNow) {
-  Write-Host "Starting Lookdev Worker Ensure now…"
-  & $Pwsh -NoProfile -ExecutionPolicy Bypass -File $WorkerPs1 -Ensure -HostName $HostName
+  Write-Host "Running host-heal now…"
+  $HealPs1 = Join-Path $RepoRoot "tools\unreal\host-heal.ps1"
+  & $Pwsh -NoProfile -ExecutionPolicy Bypass -File $HealPs1 -HostName $HostName -VellumBase $VellumBase
 }
 
 Write-Host ""

@@ -29,6 +29,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $RepoRoot = Resolve-Path (Join-Path $PSScriptRoot "..\..")
+$Heal = Join-Path $PSScriptRoot "host-heal.ps1"
 $Runner = Join-Path $PSScriptRoot "run_vellum_capture.ps1"
 $WorkerSupervisor = Join-Path $PSScriptRoot "vellum_ue_worker.ps1"
 $Recover = Join-Path $PSScriptRoot "recover_vellum_capture.ps1"
@@ -121,9 +122,16 @@ function Send-JobReport {
 
 function Invoke-CaptureViaWorker {
   param($Ctx)
-  Write-Host "Ensure Lookdev Worker on $WorkerUrl …"
-  & $WorkerSupervisor -Ensure -HostName $UeHost.id -Port $WorkerPort
-  if ($LASTEXITCODE -ne 0) { throw "worker_ensure_failed" }
+  # Pull + restage + Ensure before every Capture so the operator never babysits.
+  if (Test-Path $Heal) {
+    Write-Host "Host self-heal before Capture…"
+    & $Heal -HostName $UeHost.id -VellumBase $VellumBase
+    if ($LASTEXITCODE -ne 0) { throw "host_heal_failed" }
+  } else {
+    Write-Host "Ensure Lookdev Worker on $WorkerUrl …"
+    & $WorkerSupervisor -Ensure -HostName $UeHost.id -Port $WorkerPort
+    if ($LASTEXITCODE -ne 0) { throw "worker_ensure_failed" }
+  }
 
   $progressUri = "$VellumBase/api/jobs/$($Ctx.JobId)/progress"
   try {
@@ -226,10 +234,20 @@ Write-Host "Host profile: $($UeHost.id) ($($UeHost.label), $($UeHost.role)) — 
 Write-Host "Agent scripts: $Runner"
 Write-Host "Repo root: $RepoRoot"
 Write-Host "Agent fingerprint: lookdev-worker (2026-07-13)"
-Write-Host "Capture mode: $(if ($LegacyCmdRunner) { 'legacy Cmd-per-phase' } else { "Lookdev Worker $WorkerUrl (fallback=legacy)" })"
+Write-Host "Capture mode: $(if ($LegacyCmdRunner) { 'legacy Cmd-per-phase' } else { "Lookdev Worker $WorkerUrl (self-heal on each job)" })"
 $runnerVersionLine = (Get-Content $Runner | Where-Object { $_ -match "Runner version:" } | Select-Object -First 1)
 if (-not $runnerVersionLine) { $runnerVersionLine = "(no 'Runner version:' line found — old pull?)" }
 Write-Host "Legacy runner fingerprint: $($runnerVersionLine.Trim())"
+
+# Startup heal once (git pull + Ensure). Watchdog may restart this service afterward.
+if ((-not $LegacyCmdRunner) -and (Test-Path $Heal) -and (-not $RecoverOnly) -and (-not $ReportHostSpecs)) {
+  try {
+    Write-Host "Startup host-heal…"
+    & $Heal -HostName $UeHost.id -VellumBase $VellumBase
+  } catch {
+    Write-Host "WARNING: startup host-heal failed: $($_.Exception.Message)"
+  }
+}
 try {
   Write-Host "Resolved UE Cmd (preflight): $(Find-UeCmdFromHost -HostProfile $UeHost -Hint $UeCmd)"
 } catch {

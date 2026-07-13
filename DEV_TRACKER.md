@@ -3,7 +3,7 @@
 > **Current Active Issue:** Fireworks pack — **full automated lookdev** (all effects), then next purchased packs
 > **Governing CFD:** `cfd-inspiration-20260713-015950-vellum-control-alt-games-asset-vault-register-in` (slices A–F met; this is the post-CFD track)
 > **Capability spec:** `docs/ue-mrq-capture.md` (SoT — full fidelity; SceneCapture/HighResShot retired)
-> **Next Immediate Step:** Aurora Admin once: `pwsh -File tools/unreal/host-install/install.ps1 -StartWorkerNow` — then Capture from Vellum (no parked console). SoT: `docs/ue-lookdev-worker.md` + `tools/unreal/host-install/README.md`.
+> **Next Immediate Step:** Aurora Admin **once more**: `git pull` then `pwsh -File tools/unreal/host-install/install.ps1 -StartWorkerNow` — after that only click Capture in Vellum (`host-heal` self-pulls).
 
 ---
 
