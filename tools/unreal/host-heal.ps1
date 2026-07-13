@@ -68,6 +68,24 @@ try {
   Write-Host "WARNING: worker health not reachable yet: $($_.Exception.Message)"
 }
 
+# Old worker builds blocked the editor (serve_forever on main). Hard-restart Unreal
+# when version is stale so Capture does not sit forever on a frozen session.
+$needWorkerRestart = $false
+if (-not $health -or -not $health.ok) { $needWorkerRestart = $true }
+elseif ("$($health.version)" -notmatch "lookdev-worker-2") { $needWorkerRestart = $true }
+if ($needWorkerRestart) {
+  Write-Host "Restarting UnrealEditor to load lookdev-worker-2…"
+  Get-Process -Name "UnrealEditor","UnrealEditor-Cmd" -ErrorAction SilentlyContinue | ForEach-Object {
+    try { Stop-Process -Id $_.Id -Force -ErrorAction Stop } catch { }
+  }
+  Start-Sleep -Seconds 3
+  & $WorkerPs1 -Ensure -HostName $UeHost.id -Port $Port
+  $ensureCode = $LASTEXITCODE
+  try {
+    $health = Invoke-RestMethod -Method Get -Uri "http://127.0.0.1:$Port/health" -TimeoutSec 5
+  } catch { $health = $null }
+}
+
 # Publish heal status into host_specs.lookdev_worker (merge — do not wipe hardware).
 try {
   $healBlob = @{
