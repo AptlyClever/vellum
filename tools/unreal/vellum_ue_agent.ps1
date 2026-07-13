@@ -142,7 +142,8 @@ function Invoke-CaptureViaWorker {
     frame_rate     = 30
     map_path       = "/Game/Vellum/Maps/VellumLookdevStudio"
     force          = [bool]$Ctx.ForceCapture
-    force_studio   = $false
+    # Rebuild studio when Force — also auto-rebuilds if studio_build is stale.
+    force_studio   = [bool]$Ctx.ForceCapture
     vellum_base    = $VellumBase
   } | ConvertTo-Json -Depth 6
 
@@ -211,12 +212,10 @@ function Invoke-CaptureJob {
   $ctx = Get-CaptureJobContext -Job $Job
   Write-Host "Using project: $($ctx.Uproject)"
   if (-not $LegacyCmdRunner) {
-    try {
-      Invoke-CaptureViaWorker -Ctx $ctx
-      return
-    } catch {
-      Write-Host "Worker capture failed ($($_.Exception.Message)) — falling back to legacy Cmd runner"
-    }
+    # Primary path: warm Lookdev Worker. Do NOT silently fall back to Cmd-per-phase —
+    # that reopens desert-map E2E and hides real worker failures from Vellum.
+    Invoke-CaptureViaWorker -Ctx $ctx
+    return
   }
   Invoke-CaptureViaLegacyRunner -Ctx $ctx
 }

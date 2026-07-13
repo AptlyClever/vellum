@@ -62,6 +62,64 @@ def _log(msg: str) -> None:
         print(f"[VellumWorker] {msg}", flush=True)
 
 
+
+def _vellum_progress(job: dict[str, Any], message: str) -> None:
+    base = str(job.get("vellum_base") or os.environ.get("VELLUM_BASE") or "").rstrip("/")
+    job_id = str(job.get("job_id") or os.environ.get("VELLUM_JOB_ID") or "")
+    if not base or not job_id:
+        return
+    try:
+        import urllib.request
+
+        req = urllib.request.Request(
+            f"{base}/api/jobs/{job_id}/progress",
+            data=json.dumps({"message": message}).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        urllib.request.urlopen(req, timeout=10).read()
+    except Exception as exc:  # noqa: BLE001
+        _log(f"progress_failed:{exc}")
+
+
+def _vault_covered_systems(job: dict[str, Any], notes: list[str]) -> set[str]:
+    """Systems that already have lookdev on both slots + hail-overlay."""
+    if bool(job.get("force")):
+        notes.append("vault_skip_disabled_force")
+        return set()
+    base = str(job.get("vellum_base") or os.environ.get("VELLUM_BASE") or "").rstrip("/")
+    asset_id = str(job.get("asset_id") or "")
+    if not base or not asset_id:
+        notes.append("vault_skip_no_base_or_asset")
+        return set()
+    try:
+        import urllib.parse
+        import urllib.request
+
+        q = urllib.parse.urlencode({"asset_id": asset_id, "limit": "500"})
+        with urllib.request.urlopen(f"{base}/api/lookdev/outputs?{q}", timeout=45) as resp:
+            doc = json.loads(resp.read().decode("utf-8"))
+    except Exception as exc:  # noqa: BLE001
+        notes.append(f"vault_skip_fetch_failed:{exc}")
+        return set()
+
+    lanes_needed = {"slots", "hail-overlay"}
+    by_system: dict[str, set[str]] = {}
+    for item in list(doc.get("outputs") or doc.get("items") or []):
+        sys_name = str(item.get("system_name") or "").strip()
+        lane = str(item.get("lane") or "").strip()
+        kind = str(item.get("kind") or "")
+        if not sys_name or not lane:
+            continue
+        if kind and kind not in ("niagara-render", "niagara-sequence"):
+            continue
+        by_system.setdefault(sys_name, set()).add(lane)
+
+    covered = {name for name, lanes in by_system.items() if lanes_needed.issubset(lanes)}
+    notes.append(f"vault_covered:{len(covered)}")
+    return covered
+
+
 def _current_map_path() -> str:
     try:
         import unreal  # type: ignore
@@ -298,7 +356,7 @@ def _run_capture_job(job: dict[str, Any]) -> dict[str, Any]:
     notes: list[str] = []
     errors: list[str] = []
 
-    ensure = _ensure_studio(force=bool(job.get("force_studio")))
+    ensure = _ensure_studio(force=bool(job.get("force_studio") or job.get("force")))
     notes.extend(ensure.get("notes") or [])
     if not ensure.get("ok"):
         return {
@@ -325,11 +383,14 @@ def _run_capture_job(job: dict[str, Any]) -> dict[str, Any]:
                 os.environ["VELLUM_MAX_SYSTEMS"] = str(max_systems)
                 if hasattr(inv, "main"):
                     inv.main()
-                inv_json = out / "inventory.json"
+                inv_json = out / "manifest-inventory.json"
+                if not inv_json.is_file():
+                    inv_json = out / "inventory.json"
                 if inv_json.is_file():
                     doc = json.loads(inv_json.read_text(encoding="utf-8"))
-                    systems = list(doc.get("systems") or doc.get("niagara_systems") or [])
+                    systems = list(doc.get("niagara_systems") or doc.get("systems") or [])
             notes.append(f"inventory_count:{len(systems)}")
+            _vellum_progress(job, f"Inventory: {len(systems)} systems")
         except Exception as exc:  # noqa: BLE001
             errors.append(f"inventory_failed:{exc}")
             notes.append(traceback.format_exc()[-1500:])
@@ -343,6 +404,36 @@ def _run_capture_job(job: dict[str, Any]) -> dict[str, Any]:
             "niagara_systems": 0,
         }
 
+    covered = _vault_covered_systems(job, notes)
+    if covered:
+        before = len(systems)
+        systems = [
+            s
+            for s in systems
+            if str(s.get("asset_name") or s.get("system_name") or "") not in covered
+        ]
+        notes.append(f"vault_skip_applied:{before - len(systems)}_of_{before}")
+        _vellum_progress(job, f"Vault skip: rendering {len(systems)} (skipped {before - len(systems)})")
+        if not systems:
+            manifest = {
+                "ok": True,
+                "mode": "lookdev-worker",
+                "worker_version": WORKER_VERSION,
+                "niagara_systems_found": before,
+                "authored": 0,
+                "frame_total": 0,
+                "stills_attempted": False,
+                "stills": [],
+                "skipped_vault": sorted(covered),
+                "errors": [],
+                "notes": notes,
+                "mrq_ok": True,
+                "error": "",
+            }
+            (out / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+            return manifest
+
+    _vellum_progress(job, f"Authoring {len(systems)} systems on Lookdev Studio…")
     mrq_root = out / "mrq"
     mrq_root.mkdir(parents=True, exist_ok=True)
     author_systems: list[dict[str, Any]] = []
