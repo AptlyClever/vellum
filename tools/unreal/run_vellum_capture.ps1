@@ -109,7 +109,7 @@ $OutDirUe = ConvertTo-UePath $OutDir
 Write-Host "UE: $Ue"
 Write-Host "Project: $ProjectUe"
 Write-Host "MaxSystems=$MaxSystems Width=$Width Height=$Height MapPath=$MapPath"
-Write-Host "Runner version: game-mode-capture-map (2026-07-13)"
+Write-Host "Runner version: game-mode-capture-map-settled (2026-07-13)"
 
 $allErrors = New-Object System.Collections.Generic.List[string]
 $stills = New-Object System.Collections.Generic.List[object]
@@ -216,47 +216,99 @@ foreach ($sys in $pickedSystems) {
     continue
   }
 
-  # Real render loop: `-game` has a live viewport, unlike editor -unattended.
+  # Real render loop. Do NOT put `quit` in the same ExecCmds as HighResShot —
+  # HighResShot is async (captures end-of-frame / next frame) and same-line
+  # quit aborts before the PNG is flushed (exit=0, stills=0).
   $shotStart = Get-Date
   $GameLog = Join-Path $OutDir "ue-game-$slotIndex.log"
   if (Test-Path $GameLog) { Remove-Item -Force $GameLog }
-  $ExecCmds = "-ExecCmds=HighResShot ${Width}x${Height},quit"
 
+  $stillLeaf = "VellumCapture/stills/{0}-{1}" -f $AssetId, (Safe-Name $systemName)
+  # No spaces in ExecCmds filename= path — avoids quote mangling on Start-Process.
+  $ExecCmds = "r.MotionBlurQuality 0,HighResShot ${Width}x${Height} filename=$stillLeaf"
+
+  $gameArgs = @(
+    $ProjectUe,
+    $MapPath,
+    "-game",
+    "-windowed",
+    "-ResX=$Width",
+    "-ResY=$Height",
+    "-unattended",
+    "-nosplash",
+    "-nop4",
+    "-stdout",
+    "-FullStdOutLogOutput",
+    "-ExecCmds=$ExecCmds"
+  )
+  Write-Host "Phase B [$slotIndex] -game launch (no quit-in-ExecCmds; kill after settle)"
+
+  $gameProc = $null
   $gameExit = 0
   try {
-    & $Ue $ProjectUe $MapPath "-game" "-windowed" "-ResX=$Width" "-ResY=$Height" "-unattended" "-nosplash" $ExecCmds 2>&1 |
-      Tee-Object -FilePath $GameLog
-    $gameExit = $LASTEXITCODE
+    # Don't redirect stdout — UnrealEditor-Cmd + redirected handles is flaky on
+    # Windows; engine log still lands under Saved/Logs/. We only need the PNG.
+    $gameProc = Start-Process -FilePath $Ue -ArgumentList $gameArgs -PassThru -WindowStyle Minimized
+    $settleSeconds = 8
+    if (-not $gameProc.WaitForExit($settleSeconds * 1000)) {
+      Write-Host "Phase B [$slotIndex] settle ${settleSeconds}s elapsed — stopping UE"
+      try { Stop-Process -Id $gameProc.Id -Force -ErrorAction SilentlyContinue } catch { }
+      try { $gameProc.WaitForExit(20000) | Out-Null } catch { }
+    }
+    try { $gameExit = $gameProc.ExitCode } catch { $gameExit = 0 }
+    if ($null -eq $gameExit) { $gameExit = 0 }
+    # Best-effort copy of the newest engine log for this slot.
+    $engineLogs = Join-Path $ProjectDir "Saved\Logs"
+    if (Test-Path $engineLogs) {
+      $newestLog = Get-ChildItem $engineLogs -Filter "*.log" |
+        Sort-Object LastWriteTime -Descending |
+        Select-Object -First 1
+      if ($newestLog) { Copy-Item -Force $newestLog.FullName $GameLog }
+    }
   } catch {
     $gameExit = 1
     $_ | Out-File -FilePath $GameLog -Append
   }
   Write-Host "Phase B [$slotIndex] -game exit code: $gameExit"
 
-  $ScreensRoot = Join-Path $ProjectDir "Saved\Screenshots"
-  $newPng = $null
-  if (Test-Path $ScreensRoot) {
-    $newPng = Get-ChildItem -Path $ScreensRoot -Recurse -Filter "*.png" -ErrorAction SilentlyContinue |
-      Where-Object { $_.LastWriteTime -ge $shotStart.AddSeconds(-2) } |
-      Sort-Object LastWriteTime -Descending |
-      Select-Object -First 1
+  # HighResShot with filename= writes under Saved/<filename>.png (and sometimes
+  # also under Saved/Screenshots/). Search both.
+  $candidates = New-Object System.Collections.Generic.List[object]
+  $searchRoots = @(
+    $StillsDir,
+    (Join-Path $ProjectDir "Saved\VellumCapture\stills"),
+    (Join-Path $ProjectDir "Saved\Screenshots"),
+    (Join-Path $ProjectDir "Saved")
+  )
+  foreach ($root in $searchRoots) {
+    if (-not (Test-Path $root)) { continue }
+    Get-ChildItem -Path $root -Recurse -Include *.png,*.jpg -ErrorAction SilentlyContinue |
+      Where-Object { $_.LastWriteTime -ge $shotStart.AddSeconds(-5) } |
+      ForEach-Object { $candidates.Add($_) }
   }
+  $newPng = $candidates |
+    Sort-Object LastWriteTime -Descending |
+    Select-Object -First 1
 
   if (-not $newPng) {
     $allErrors.Add("no_png:$systemName`:exit=$gameExit")
+    Write-Host "Phase B [$slotIndex] no PNG found under Saved/ after -game (see $GameLog)"
   } else {
     $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
     $safe = Safe-Name $systemName
     $dest = Join-Path $StillsDir "$AssetId-$safe-$stamp.png"
-    Copy-Item -Force -Path $newPng.FullName -Destination $dest
+    if ($newPng.FullName -ne $dest) {
+      Copy-Item -Force -Path $newPng.FullName -Destination $dest
+    }
     $stills.Add(@{
         path        = $dest
         kind        = "niagara-render"
         system      = $systemName
         object_path = $objectPath
-        method      = "game-mode-highresshot"
+        method      = "game-mode-highresshot-settled"
+        source      = $newPng.FullName
       })
-    Write-Host "Phase B [$slotIndex] captured still $dest"
+    Write-Host "Phase B [$slotIndex] captured still $dest (from $($newPng.FullName))"
   }
 
   $slotIndex++

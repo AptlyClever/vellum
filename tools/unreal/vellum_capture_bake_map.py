@@ -180,6 +180,20 @@ def _spawn_niagara(unreal_mod, actor_sub, system_asset, location, notes: list[st
             notes.append("auto_activate_set")
         except Exception as exc:  # noqa: BLE001
             notes.append(f"auto_activate_failed:{exc}")
+        # Warm up so particles exist on the first rendered -game frame
+        # (HighResShot often fires before a multi-second fireworks bloom).
+        for prop, val in (
+            ("warmup_time", 1.75),
+            ("WarmupTime", 1.75),
+            ("warmup_tick_count", 60),
+            ("WarmupTickCount", 60),
+        ):
+            try:
+                comp.set_editor_property(prop, val)
+                notes.append(f"set_{prop}={val}")
+                break
+            except Exception:  # noqa: BLE001
+                continue
     return actor
 
 
@@ -278,6 +292,12 @@ def main() -> None:
         _stage_lighting(unreal, actor_sub, notes)
 
         system_asset = unreal.EditorAssetLibrary.load_asset(system_object_path)
+        if system_asset is None and "." not in system_object_path.split("/")[-1]:
+            # Tolerate package-only paths.
+            system_asset = unreal.EditorAssetLibrary.load_asset(system_object_path)
+        if system_asset is None and " " in system_object_path:
+            # Tolerate "NiagaraSystem /Game/Foo.Foo" soft-path dumps.
+            system_asset = unreal.EditorAssetLibrary.load_asset(system_object_path.split()[-1])
         if system_asset is None:
             raise RuntimeError(f"load_failed:{system_object_path}")
 
