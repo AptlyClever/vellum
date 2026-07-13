@@ -32,16 +32,20 @@ inventory can find Niagara systems. `job-20260713-181144-c1ce27` failed with
 Also enable **Movie Render Queue** (+ Python Editor Script Plugin) in that project
 before the new capture backend can run.
 
-## Agent (host plumbing)
+## Agent (your only Unreal-side step)
 
 ```powershell
 cd E:\Dev\vellum
 git pull
+# Optional first proof: fewer systems
+$env:VELLUM_MAX_SYSTEMS = "1"
+# pick_heroes.py needs python/py on PATH
 pwsh -ExecutionPolicy Bypass -File .\tools\unreal\vellum_ue_agent.ps1
 ```
 
-Preflight should resolve Aurora UE Cmd + `AuroraVellum.uproject`. Until MRQ lands,
-do not expect usable Niagara lookdev from the retired SceneCapture runner.
+Expect fingerprint **`mrq-sequencer (2026-07-13)`**. Then Vellum → Fireworks → **Capture from Unreal**.
+
+Until that fingerprint shows, you’re on an old pull.
 
 ## What stays human
 
