@@ -1,8 +1,8 @@
 # Development Tracker: Vellum
 
-> **Current Active Issue:** Fireworks — Unreal scratch inspect → Niagara render stills
+> **Current Active Issue:** Fireworks — automate Unreal scratch inspect + Niagara stills
 > **Governing CFD:** `cfd-inspiration-20260713-015950-vellum-control-alt-games-asset-vault-register-in`
-> **Next Immediate Step:** Operator opens `C:\epic\VellumImport`, confirms Niagara systems, records scratch in UI; then upload viewport stills
+> **Next Immediate Step:** On Windows UE box, enable Python plugin once, run `tools/unreal/run_vellum_capture.ps1`
 
 ---
 
@@ -22,12 +22,12 @@
 
 ## 2. The Active Issue (Do Not Add Steps Here!)
 
-* **What success looks like:** Fireworks scratch inspect recorded; at least one true Niagara viewport still ingested as `niagara-render` (separate from texture lookdev).
+* **What success looks like:** One PowerShell command on the UE workstation records scratch inspect and ingests ≥1 still without Vellum UI clicks.
 * **Sub-Tasks:**
-  - [x] Scratch record API + UI + runbook
-  - [x] Niagara render upload ingest
-  - [ ] Operator confirms systems in Unreal + records scratch
-  - [ ] Operator uploads ≥1 Niagara viewport still
+  - [x] Scratch record + Niagara upload APIs/UI (fallback)
+  - [x] `tools/unreal/vellum_capture.py` + `run_vellum_capture.ps1`
+  - [ ] Operator one-time: Python plugin + first capture run
+  - [ ] Improve capture framing (spawn specific Niagara systems) once first run works
 
 ---
 
@@ -49,3 +49,4 @@
 * **2026-07-13** — Added `vellum` to handoff `registry/projects.yaml`; Axiom mount + bind-cfd verified.
 * **2026-07-13** — **Slices A–F shipped** (register → intake → worker → Axiom Read → Epic stage Fireworks → lookdev texture stills).
 * **2026-07-13** — **Next track:** Unreal scratch inspect + Niagara viewport stills for Fireworks; Unity reconcile parked. APIs `/api/scratch/record`, `/api/lookdev/ingest-render`; `docs/scratch-inspect-niagara.md`.
+* **2026-07-13** — Automation-first capture: `tools/unreal/run_vellum_capture.ps1` drives UnrealEditor-Cmd + posts results to Vellum (manual UI is fallback only).

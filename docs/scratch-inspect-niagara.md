@@ -1,69 +1,59 @@
-# Unreal scratch inspect + Niagara renders (Fireworks pilot)
+# Unreal scratch inspect + Niagara renders (Fireworks) — automation-first
 
-Unity tier reconcile is **parked**. This path uses **Fireworks Vol. 1 - Niagara** only.
+Unity tier reconcile is **parked**. Manual UI clicks are the fallback; prefer the Windows capture runner.
 
-## 1. Scratch inspect (you · Unreal)
+## What stays human (for now)
 
-Your scratch project is already:
+- Humble → Epic **redeem** / first **Add to Project** (Epic has no download button for UE packs).
+- Enabling the **Python Editor Script Plugin** once in the scratch project.
 
-`C:\epic\VellumImport` (Content includes `FireworksV1`)
+## Automated path (preferred)
 
-Checklist in Unreal 5.8:
+On the Windows machine that has UE 5.8 + `C:\epic\VellumImport`:
 
-1. Open `VellumImport.uproject`.
-2. Content Browser → `FireworksV1` (or Maps / Particles).
-3. Open a map or drop a Niagara system into an empty level.
-4. Confirm systems simulate (timeline / Niagara viewport).
-5. Note which systems look useful for Slots / Hail.
+```powershell
+# One-time: clone/sync vellum repo OR copy tools/unreal/* next to the project
+# One-time: enable Edit → Plugins → "Python Editor Script Plugin" in VellumImport
 
-Then in Vellum (asset detail → **Scratch inspect**):
+$env:VELLUM_UE_CMD = "C:\Program Files\Epic Games\UE_5.8\Engine\Binaries\Win64\UnrealEditor-Cmd.exe"  # if needed
 
-- Path: `C:\epic\VellumImport`
-- Engine: `5.8`
-- **Record scratch inspect**
-
-Or:
-
-```bash
-curl -sS -X POST http://192.168.68.93:8770/api/scratch/record \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "asset_id": "fireworks-vol-1-niagara",
-    "scratch_project_path": "C:\\epic\\VellumImport",
-    "engine_version": "5.8",
-    "notes": "Fireworks Niagara systems load",
-    "intake_run_id": "intake-20260713-035932-40f887"
-  }'
+pwsh -File \\192.168.68.93\…\vellum\tools\unreal\run_vellum_capture.ps1
+# or from a local checkout:
+pwsh -File C:\path\to\vellum\tools\unreal\run_vellum_capture.ps1
 ```
 
-Vault hint folder (notes only, not the .uproject):  
-`/mnt/data/vault/vellum/03-scratch-projects/unreal/cag_asset_inspection/`
+That script:
 
-## 2. True Niagara render stills (after inspect)
+1. Runs `UnrealEditor-Cmd` with `vellum_capture.py` (unattended)
+2. Inventories Niagara systems under `/Game/FireworksV1`
+3. Attempts a HighResShot still
+4. POSTs ` /api/scratch/record` + `/api/lookdev/ingest-render` to Vellum (`:8770`)
 
-Texture stills from Slice F are **not** Niagara renders. For real viewport stills:
+No Vellum UI clicking required when it succeeds.
 
-1. In Unreal, frame a Niagara system (dark bg helps fireworks).
-2. Capture: Editor **High Resolution Screenshot**, or Win+Print → crop, or Movie Render Queue still.
-3. Save a png/jpg on the Windows box.
-4. In Vellum detail → **Upload Niagara render** (defaults to `slots` lane),  
-   or:
+### Outputs
 
-```bash
-curl -sS -X POST http://192.168.68.93:8770/api/lookdev/ingest-render \
-  -F asset_id=fireworks-vol-1-niagara \
-  -F lane=slots \
-  -F note='Niagara viewport still' \
-  -F file=@/path/to/fireworks-still.png
-```
+- Manifest: `C:\epic\VellumImport\Saved\VellumCapture\manifest.json`
+- Stills: `…\Saved\VellumCapture\stills\`
+- Register: `scratch_project_status=inspected`
+- DerivedOutput kind: `niagara-render` (when a still file is produced)
 
-Files land under:
+## Fallback (manual)
 
-`05-derived-renders/<lane>/fireworks-vol-1-niagara/niagara/`  
-(kind: `niagara-render` in the DerivedOutput catalog)
+If Python plugin / HighResShot fails: open the project, capture one still yourself, use **Upload Niagara render** in Vellum — see older checklist below.
 
-## 3. Boundaries
+<details>
+<summary>Manual checklist</summary>
 
-- Do not copy raw `.uasset` packs into product git repos.
-- Scratch `.uproject` can stay on the Windows workstation.
-- Keys stay out of git / Vellum logs.
+1. Open `C:\epic\VellumImport`
+2. Confirm Fireworks Niagara systems simulate
+3. Vellum → Record scratch inspect
+4. HighResShot / screenshot → Upload Niagara render
+
+</details>
+
+## Boundaries
+
+- Does not automate Epic Launcher redeem/download.
+- Does not copy `.uasset` packs into product git repos.
+- Capture quality will improve once we add pack-specific Niagara framing (next iteration).
