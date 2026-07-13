@@ -87,18 +87,25 @@ if (Test-Path $UeLog) { Remove-Item -Force $UeLog }
 Write-Host "UE: $Ue"
 Write-Host "Project: $ProjectUe"
 Write-Host "Staged script: $CapturePyUe"
-Write-Host "Runner version: stage-to-project + env-args (2026-07-13)"
 
 # Env vars — Unreal CLI quoting is unreliable for script arguments.
 $env:VELLUM_ASSET_ID = $AssetId
 $env:VELLUM_CONTENT_ROOT = $ContentRoot
 $env:VELLUM_OUT_DIR = $OutDirUe
 $env:VELLUM_MAX_SYSTEMS = "3"
+# Default OFF: AutomationLibrary HighResShot AVs UnrealEditor-Cmd (FunctionalTesting).
+# Inventory/manifest is the scratch_inspect success path; enable later when framed.
+if (-not $env:VELLUM_CAPTURE_STILLS) {
+  $env:VELLUM_CAPTURE_STILLS = "0"
+}
 
 # Path-only ExecutePythonScript (no trailing args / nested quotes).
 $ExecFlag = "-ExecutePythonScript=$CapturePyUe"
 Write-Host "ExecutePythonScript: $CapturePyUe"
 Write-Host "VELLUM_OUT_DIR=$OutDirUe"
+Write-Host "VELLUM_CAPTURE_STILLS=$($env:VELLUM_CAPTURE_STILLS)"
+Write-Host "Runner version: stage-to-project + env-args + no-AutomationLibrary-shot (2026-07-13)"
+
 
 $ueExit = 0
 try {
