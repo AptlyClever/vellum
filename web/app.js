@@ -506,11 +506,69 @@ async function openDetail(id) {
       : `UE hosts: ${labels}`;
     if (activeHost && activeHost.host_specs) {
       const s = activeHost.host_specs;
-      const cpu = (s.cpu && s.cpu[0] && s.cpu[0].name) || "CPU ?";
-      const ram = s.ram_gb != null ? `${s.ram_gb} GB RAM` : "RAM ?";
-      const gpu =
-        (s.gpus && s.gpus[0] && s.gpus[0].name) || "GPU ?";
-      hostMeta.textContent += ` · ${cpu} · ${ram} · ${gpu}`;
+      const cpu = (s.cpu && s.cpu[0]) || {};
+      const gpus = Array.isArray(s.gpus) ? s.gpus : [];
+      const discrete =
+        gpus.find(
+          (g) =>
+            g &&
+            g.name &&
+            !/remote display|microsoft basic|meta.*virtual/i.test(g.name)
+        ) || gpus[0];
+      const vols = Array.isArray(s.volumes) ? s.volumes : [];
+      const volTxt = vols
+        .map((v) => `${v.device_id} ${v.free_gb ?? "?"}/${v.size_gb ?? "?"} GB free`)
+        .join(" · ");
+
+      const specsPanel = document.createElement("div");
+      specsPanel.className = "host-specs";
+      const specsTitle = document.createElement("p");
+      specsTitle.className = "host-specs-title";
+      specsTitle.textContent = "Aurora hardware (from agent)";
+      specsPanel.appendChild(specsTitle);
+      const specsDl = document.createElement("dl");
+      specsDl.className = "host-specs-dl";
+      const rows = [
+        ["Machine", `${s.hostname || "?"} · ${s.manufacturer || ""} ${s.model || ""}`.trim()],
+        ["OS", `${s.os_caption || "?"} (${s.os_arch || "?"})`],
+        [
+          "CPU",
+          cpu.name
+            ? `${cpu.name} · ${cpu.cores || "?"}c / ${cpu.logical_processors || "?"}t`
+            : "?",
+        ],
+        ["RAM", s.ram_gb != null ? `${s.ram_gb} GB` : "?"],
+        [
+          "GPU",
+          s.nvidia_gpus && s.nvidia_gpus[0]
+            ? `${s.nvidia_gpus[0].name} · ${s.nvidia_gpus[0].vram_gb} GB VRAM (nvidia-smi)`
+            : discrete && discrete.name
+              ? `${discrete.name}${
+                  discrete.adapter_ram_gb != null
+                    ? ` · Win32 VRAM report ${discrete.adapter_ram_gb} GB (often undercounts)`
+                    : ""
+                }`
+              : "?",
+        ],
+        [
+          "Other adapters",
+          gpus
+            .filter((g) => g && discrete && g.name !== discrete.name)
+            .map((g) => g.name)
+            .join(", ") || "—",
+        ],
+        ["Volumes", volTxt || "—"],
+        ["UE", `${s.ue_editor || activeHost.ue_editor || "?"} · ${s.ue_project || ""}`],
+      ];
+      for (const [k, v] of rows) {
+        const dt = document.createElement("dt");
+        dt.textContent = k;
+        const dd = document.createElement("dd");
+        dd.textContent = v;
+        specsDl.append(dt, dd);
+      }
+      specsPanel.appendChild(specsDl);
+      hostMeta.after(specsPanel);
     } else if (activeHost) {
       hostMeta.textContent +=
         " · host specs pending (restart UE agent after pull)";

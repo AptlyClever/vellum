@@ -326,6 +326,43 @@ table.assets tbody tr:last-child td {
   margin: 0.75rem 0 1rem;
 }
 
+.host-specs {
+  margin: 0.35rem 0 1rem;
+  padding: 0.75rem 0.9rem;
+  background: var(--panel);
+  border: 1px solid var(--line);
+}
+
+.host-specs-title {
+  margin: 0 0 0.45rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.host-specs-dl {
+  display: grid;
+  grid-template-columns: 7.5rem 1fr;
+  gap: 0.25rem 0.75rem;
+  margin: 0;
+  font-size: 0.85rem;
+}
+
+.host-specs-dl dt {
+  margin: 0;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.72rem;
+}
+
+.host-specs-dl dd {
+  margin: 0;
+  color: var(--ink);
+  line-height: 1.35;
+}
+
 .capture-live {
   margin: 0.25rem 0 1.25rem;
   padding: 0.9rem 1rem 1rem;

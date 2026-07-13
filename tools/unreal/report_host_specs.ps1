@@ -36,6 +36,30 @@ $disks = @(Get-CimSafe "Win32_LogicalDisk" -Filter "DriveType=3")
 $totalRamBytes = 0
 foreach ($m in $mem) { $totalRamBytes += [int64]$m.Capacity }
 
+# Prefer nvidia-smi for real VRAM — Win32 AdapterRAM is a 32-bit field and often lies.
+$nvidia = @()
+try {
+  $smi = Get-Command nvidia-smi -ErrorAction SilentlyContinue
+  if ($smi) {
+    $raw = & nvidia-smi --query-gpu=name,memory.total,driver_version,utilization.gpu,utilization.memory --format=csv,noheader,nounits 2>$null
+    foreach ($line in @($raw)) {
+      if (-not $line) { continue }
+      $parts = @($line -split "," | ForEach-Object { $_.Trim() })
+      if ($parts.Count -lt 2) { continue }
+      $nvidia += [ordered]@{
+        name            = [string]$parts[0]
+        vram_mb         = [int]($parts[1] -as [double])
+        vram_gb         = [math]::Round(([double]$parts[1]) / 1024.0, 1)
+        driver_version  = if ($parts.Count -gt 2) { [string]$parts[2] } else { $null }
+        util_gpu_pct    = if ($parts.Count -gt 3) { [int]($parts[3] -as [double]) } else { $null }
+        util_mem_pct    = if ($parts.Count -gt 4) { [int]($parts[4] -as [double]) } else { $null }
+      }
+    }
+  }
+} catch {
+  $nvidia = @()
+}
+
 $specs = [ordered]@{
   collected_by     = "report_host_specs.ps1"
   hostname         = $env:COMPUTERNAME
@@ -66,6 +90,12 @@ $specs = [ordered]@{
         video_mode      = [string]$_.VideoModeDescription
       }
     })
+  nvidia_gpus      = $nvidia
+  primary_gpu      = if ($nvidia.Count -gt 0) { $nvidia[0].name } elseif (
+      ($gpus | Where-Object { $_.Name -notmatch 'Remote Display|Microsoft Basic' } | Select-Object -First 1)
+    ) {
+      ($gpus | Where-Object { $_.Name -notmatch 'Remote Display|Microsoft Basic' } | Select-Object -First 1).Name
+    } else { $null }
   volumes = @($disks | ForEach-Object {
       [ordered]@{
         device_id   = [string]$_.DeviceID
@@ -91,4 +121,7 @@ Write-Host "Stored specs updated_at=$($res.updated_at)"
 Write-Host ("CPU: " + (($specs.cpu | ForEach-Object { $_.name }) -join "; "))
 Write-Host ("RAM: {0} GB" -f $specs.ram_gb)
 Write-Host ("GPU: " + (($specs.gpus | ForEach-Object { $_.name }) -join "; "))
+if ($nvidia.Count -gt 0) {
+  Write-Host ("NVIDIA: " + (($nvidia | ForEach-Object { "{0} ({1} GB)" -f $_.name, $_.vram_gb }) -join "; "))
+}
 $specs | ConvertTo-Json -Depth 6
