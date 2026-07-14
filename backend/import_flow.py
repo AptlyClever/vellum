@@ -1051,6 +1051,13 @@ def import_queue(*, engine: str | None = "unreal", limit: int = 40) -> dict[str,
     deferred_epic: list[dict[str, Any]] = []
     for a in assets:
         aid = str(a["id"])
+        if str(a.get("redemption_status") or "").lower() in {
+            "superseded",
+            "retired",
+            "archived",
+            "deleted",
+        }:
+            continue
         row = by.get(aid) or {}
         state = str(row.get("state") or "need_download")
         detail = str(row.get("detail") or "")

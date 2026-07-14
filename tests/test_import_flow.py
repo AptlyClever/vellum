@@ -142,6 +142,15 @@ def test_import_queue(tmp_path: Path, monkeypatch) -> None:
         assert item["next_step"] == fab_library_mod.METHOD_FAB_ADD_UNSEEN
         assert "Add to Project" in item["acquisition"]["operator_hint"]
 
+    # Superseded register rows (replaced by a renamed/merged row) must not
+    # resurface as blocked work in the queue.
+    superseded_id = body["blocked_epic"][0]["asset_id"]
+    register_mod.patch_asset(superseded_id, redemption_status="superseded")
+    import_flow_mod.clear_ops_caches()
+    body2 = client.get("/api/import/queue?engine=unreal&limit=100").json()
+    assert superseded_id not in {i["asset_id"] for i in body2["blocked_epic"]}
+    assert superseded_id not in {i["asset_id"] for i in body2["items"]}
+
 
 def test_skip_folders_excludes_python_tooling() -> None:
     assert "Python" in import_flow_mod.SKIP_FOLDERS
