@@ -247,6 +247,46 @@ try {
     }
   }
 
+  # ---- 7b. Launcher must be able to SEE the Library project -------------------
+  # Fab "Add to Project" only lists projects the launcher discovers via
+  # CreatedProjectPaths, and the entry must be the PARENT folder of the
+  # project dir (F:/Games), not the project dir itself — a known launcher
+  # quirk that silently hides the project.
+  $launcherIni = Join-Path $env:LOCALAPPDATA "EpicGamesLauncher\Saved\Config\WindowsEditor\GameUserSettings.ini"
+  $wantParent = (Split-Path $ProjectRoot -Parent).Replace("\", "/")
+  if (Test-Path $launcherIni) {
+    $iniLines = Get-Content $launcherIni
+    $paths = @($iniLines | Where-Object { $_ -match "^CreatedProjectPaths=" } |
+      ForEach-Object { ($_ -split "=", 2)[1].Trim().TrimEnd("/") })
+    if ($paths -notcontains $wantParent) {
+      $launcherRunning = @(Get-Process EpicGamesLauncher -ErrorAction SilentlyContinue).Count -gt 0
+      if ($launcherRunning) {
+        Add-Exception "launcher_config" $launcherIni `
+          "CreatedProjectPaths missing '$wantParent' (project invisible to Fab Add to Project)" `
+          "Close Epic Launcher fully (system tray too); reconcile will fix the ini on next run."
+      } else {
+        Copy-Item $launcherIni "$launcherIni.bak-vellum" -Force
+        $filtered = @($iniLines | Where-Object {
+            -not ($_ -match "^CreatedProjectPaths=" -and
+              (($_ -split "=", 2)[1].Trim().TrimEnd("/")) -ieq $ProjectRoot.Replace("\", "/"))
+          })
+        $idx = [Array]::IndexOf($filtered, "[Launcher]")
+        if ($idx -ge 0) {
+          $before = $filtered[0..$idx]
+          $after = if ($idx + 1 -le $filtered.Count - 1) { $filtered[($idx + 1)..($filtered.Count - 1)] } else { @() }
+          $filtered = @($before) + @("CreatedProjectPaths=$wantParent") + @($after)
+        } else {
+          $filtered += @("[Launcher]", "CreatedProjectPaths=$wantParent")
+        }
+        Set-Content -Path $launcherIni -Value $filtered -Encoding utf8
+        $actions.Add("launcher_created_project_paths_fixed:$wantParent")
+      }
+    }
+  } else {
+    Add-Exception "launcher_config" $launcherIni "Epic Launcher settings not found" `
+      "Launch Epic Games Launcher once so it writes its config, then rerun reconcile."
+  }
+
   # ---- 8. Stray Unreal projects (Fab installed into wrong project) ------------
   Write-Host "== 8/8 stray project scan"
   foreach ($root in @("C:\dev", "F:\Games", "$env:USERPROFILE\Documents\Unreal Projects")) {

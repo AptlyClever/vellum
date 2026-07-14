@@ -44,7 +44,10 @@ operator bookkeeping:
 6. `p4 reconcile` + submit Content changes
 7. Unreal load-check (`inventory-pack`) new/changed packs
 8. Corrupt-package scan + quarantine report
-9. Stray-project scan (Fab installed into the wrong project)
+9. Launcher visibility guard — keeps `CreatedProjectPaths=F:/Games` (the
+   **parent** folder, not the project folder) in the launcher ini so
+   AuroraVellum always appears in Fab's *Add to Project* dropdown
+10. Stray-project scan (Fab installed into the wrong project)
 
 Everything it cannot fix lands in
 `F:\Games\AuroraVellum\Saved\VellumReconcile\reconcile_report.json`
