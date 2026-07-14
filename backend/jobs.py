@@ -11,7 +11,7 @@ import secrets
 import sqlite3
 import time
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterator
 
@@ -31,7 +31,22 @@ LINUX_WORKER_KINDS = frozenset(
     {"prepare_stage", "record_paths", "confirm_project_fit", "derive_lookdev"}
 )
 # Handled by Windows UE agent (tools/unreal/vellum_ue_agent.ps1).
-UE_AGENT_KINDS = frozenset({"ue_capture"})
+UE_AGENT_KINDS = frozenset(
+    {
+        "ue_capture",
+        "ue_stage",
+        "host_stage",
+        "host_scan",
+        "host_open_editor",
+        "host_fab_install",
+    }
+)
+
+# Running UE-agent jobs with no progress/claim heartbeat longer than this are
+# failed so a dead PowerShell/Unreal does not block the single-flight queue forever.
+# 180s was too aggressive for MRQ author/render quiet periods (worker kept going;
+# recover still ingested while claim path thought the job was abandoned).
+DEFAULT_STALE_SILENCE_SEC = int(os.environ.get("VELLUM_STALE_JOB_SEC", "1800"))
 
 
 def jobs_db_path() -> Path:
@@ -176,9 +191,125 @@ def list_jobs(
     return [_row_to_job(r) for r in rows]
 
 
+def _parse_ts(value: str | None) -> datetime | None:
+    raw = (value or "").strip()
+    if not raw:
+        return None
+    try:
+        if raw.endswith("Z"):
+            raw = raw[:-1] + "+00:00"
+        return datetime.fromisoformat(raw)
+    except ValueError:
+        return None
+
+
+def fail_stale_running_agent_jobs(
+    *,
+    max_silence_sec: int | None = None,
+    kinds: frozenset[str] | None = None,
+) -> list[dict[str, Any]]:
+    """Fail UE-agent jobs that look abandoned (no updated_at heartbeat).
+
+    Root cause this fixes: agent/task restart or hung Wait leaves status=running
+    forever, which also blocks single-flight ue_capture claims.
+    """
+    silence = (
+        DEFAULT_STALE_SILENCE_SEC if max_silence_sec is None else int(max_silence_sec)
+    )
+    silence = max(30, silence)
+    watch = kinds if kinds is not None else UE_AGENT_KINDS
+    now = datetime.now(timezone.utc)
+    cutoff = now - timedelta(seconds=silence)
+    failed: list[dict[str, Any]] = []
+    for job in list_jobs(status="running", limit=200):
+        kind = str(job.get("kind") or "")
+        if kind not in watch:
+            continue
+        # Prefer progress heartbeat (updated_at), fall back to started_at.
+        stamp = _parse_ts(str(job.get("updated_at") or "")) or _parse_ts(
+            str(job.get("started_at") or "")
+        )
+        if stamp is None:
+            continue
+        if stamp.tzinfo is None:
+            stamp = stamp.replace(tzinfo=timezone.utc)
+        if stamp > cutoff:
+            continue
+        age = int((now - stamp).total_seconds())
+        reason = (
+            f"stale_agent_silence:{age}s>{silence}s "
+            f"kind={kind} last={stamp.isoformat()}"
+        )
+        done = complete_job(
+            str(job["job_id"]),
+            error=reason,
+            result={
+                "stale": True,
+                "silence_sec": age,
+                "max_silence_sec": silence,
+                "asset_id": job.get("asset_id"),
+            },
+        )
+        failed.append(done)
+    return failed
+
+
 def claim_next_job(*, kinds: frozenset[str] | None = None) -> dict[str, Any] | None:
+    # Clear abandoned Windows claims before single-flight / claim selection.
+    fail_stale_running_agent_jobs()
     now = _now()
     with _conn() as conn:
+        # Single-flight UE captures: never claim a second while one is running.
+        # Prevents dual UnrealEditor MRQ races when multiple captures were queued.
+        effective = set(kinds) if kinds is not None else None
+        if effective is None or "ue_capture" in effective:
+            running = conn.execute(
+                """
+                SELECT 1 FROM jobs
+                WHERE kind = 'ue_capture' AND status = 'running'
+                LIMIT 1
+                """
+            ).fetchone()
+            if running:
+                if effective is None:
+                    # Claiming any kind: skip captures while one runs.
+                    row = conn.execute(
+                        """
+                        SELECT job_id FROM jobs
+                        WHERE status = 'queued' AND kind != 'ue_capture'
+                        ORDER BY created_at ASC
+                        LIMIT 1
+                        """
+                    ).fetchone()
+                else:
+                    others = sorted(effective - {"ue_capture"})
+                    if not others:
+                        return None
+                    placeholders = ",".join("?" for _ in others)
+                    row = conn.execute(
+                        f"""
+                        SELECT job_id FROM jobs
+                        WHERE status = 'queued' AND kind IN ({placeholders})
+                        ORDER BY created_at ASC
+                        LIMIT 1
+                        """,
+                        tuple(others),
+                    ).fetchone()
+                if not row:
+                    return None
+                job_id = row["job_id"]
+                conn.execute(
+                    """
+                    UPDATE jobs
+                    SET status = 'running', started_at = ?, updated_at = ?
+                    WHERE job_id = ? AND status = 'queued'
+                    """,
+                    (now, now, job_id),
+                )
+                if conn.total_changes == 0:
+                    return None
+                return get_job(job_id)
+
         if kinds:
             placeholders = ",".join("?" for _ in kinds)
             row = conn.execute(
@@ -291,6 +422,24 @@ def complete_job(
         )
     job = get_job(job_id)
     assert job is not None
+    return job
+
+
+def patch_job_result(job_id: str, result: dict[str, Any]) -> dict[str, Any]:
+    """Update result payload on an already-finished job (follow-up pointers)."""
+    now = _now()
+    with _conn() as conn:
+        conn.execute(
+            """
+            UPDATE jobs
+            SET result_json = ?, updated_at = ?
+            WHERE job_id = ?
+            """,
+            (json.dumps(result), now, job_id),
+        )
+    job = get_job(job_id)
+    if not job:
+        raise KeyError(job_id)
     return job
 
 

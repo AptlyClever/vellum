@@ -1,10 +1,12 @@
-# Vellum UE Lookdev Worker — long-lived UnrealEditor process.
+# Vellum Lookdev Worker — FROZEN warm UnrealEditor experiment.
 #
-# Hosting authority: Content/Python/init_unreal.py calls start_worker() and keeps
-# a strong _WorkerRuntime (slate tick + HTTP). Capture runs on the editor thread.
+# BINDING: docs/capture-hosting-decision.md (2026-07-14).
+# Primary capture is Epic batch Cmd (run_vellum_capture.ps1). Do not hot-patch
+# this file for production capture unless operator says: Unpark: Lookdev Worker.
+#
+# Hosting authority (when unparked): Content/Python/init_unreal.py calls start_worker()
+# and keeps a strong _WorkerRuntime (slate tick + HTTP). Capture runs on the editor thread.
 # HTTP threads enqueue only — never call unreal.* from them.
-#
-# Do not run via UnrealEditor-Cmd as a one-shot: the editor must stay warm.
 
 from __future__ import annotations
 

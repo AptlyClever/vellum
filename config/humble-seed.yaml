@@ -12,7 +12,7 @@ assets:
   package_type: Unreal Engine environment
   engine: unreal
   redemption_deadline: '2027-07-06T11:00:00-07:00'
-  redemption_status: not_recorded
+  redemption_status: redeemed
   project_fit: Threshold Affairs evidence stills; liminal commercial corridor; Hail
     scene cards.
   source_bundle: humble-all-in-one-unreal-unity-gamedev
@@ -26,7 +26,7 @@ assets:
   package_type: Unreal Engine environment
   engine: unreal
   redemption_deadline: '2027-07-06T11:00:00-07:00'
-  redemption_status: not_recorded
+  redemption_status: redeemed
   project_fit: Threshold Affairs interiors; motel anomaly scenes; Hail incident stills.
   source_bundle: humble-all-in-one-unreal-unity-gamedev
   raw_location: null
@@ -39,7 +39,7 @@ assets:
   package_type: Unreal Engine environment
   engine: unreal
   redemption_deadline: '2027-07-06T11:00:00-07:00'
-  redemption_status: not_recorded
+  redemption_status: redeemed
   project_fit: Field Command lookdev; threshold ruins; underground anomaly scenes.
   source_bundle: humble-all-in-one-unreal-unity-gamedev
   raw_location: null
@@ -52,7 +52,7 @@ assets:
   package_type: Unreal Engine material pack
   engine: unreal
   redemption_deadline: '2027-07-06T11:00:00-07:00'
-  redemption_status: not_recorded
+  redemption_status: redeemed
   project_fit: Institute interiors, formal spaces, LCARD/Hail scene polish.
   source_bundle: humble-all-in-one-unreal-unity-gamedev
   raw_location: null
@@ -65,7 +65,7 @@ assets:
   package_type: Unreal Engine Niagara VFX
   engine: unreal
   redemption_deadline: '2027-07-06T11:00:00-07:00'
-  redemption_status: not_recorded
+  redemption_status: redeemed
   project_fit: Field Command attacks/abilities; Hail combat effects.
   source_bundle: humble-all-in-one-unreal-unity-gamedev
   raw_location: null
@@ -78,7 +78,7 @@ assets:
   package_type: Unreal Engine VFX
   engine: unreal
   redemption_deadline: '2027-07-06T11:00:00-07:00'
-  redemption_status: not_recorded
+  redemption_status: redeemed
   project_fit: Threshold instability, portal ambience, Hail visual loops.
   source_bundle: humble-all-in-one-unreal-unity-gamedev
   raw_location: null
@@ -91,7 +91,7 @@ assets:
   package_type: Unreal Engine environment
   engine: unreal
   redemption_deadline: '2027-07-06T11:00:00-07:00'
-  redemption_status: not_recorded
+  redemption_status: redeemed
   project_fit: Case-file location variety; unusual threshold architecture.
   source_bundle: humble-all-in-one-unreal-unity-gamedev
   raw_location: null
@@ -104,7 +104,7 @@ assets:
   package_type: Unreal Engine environment
   engine: unreal
   redemption_deadline: '2027-07-06T11:00:00-07:00'
-  redemption_status: not_recorded
+  redemption_status: redeemed
   project_fit: Case hub interiors; reception-desk anomaly scenes.
   source_bundle: humble-all-in-one-unreal-unity-gamedev
   raw_location: null
@@ -117,7 +117,7 @@ assets:
   package_type: Unreal Engine modular environment
   engine: unreal
   redemption_deadline: '2027-07-06T11:00:00-07:00'
-  redemption_status: not_recorded
+  redemption_status: redeemed
   project_fit: Threshold Affairs institutional weirdness; Hail; LCARD visual punctuation.
   source_bundle: humble-all-in-one-unreal-unity-gamedev
   raw_location: null
@@ -130,7 +130,7 @@ assets:
   package_type: Unreal Engine environment
   engine: unreal
   redemption_deadline: '2027-07-06T11:00:00-07:00'
-  redemption_status: not_recorded
+  redemption_status: redeemed
   project_fit: Field Command map lookdev; fortress/defense visuals.
   source_bundle: humble-all-in-one-unreal-unity-gamedev
   raw_location: null
@@ -143,7 +143,7 @@ assets:
   package_type: Unreal Engine environment
   engine: unreal
   redemption_deadline: '2027-07-06T11:00:00-07:00'
-  redemption_status: not_recorded
+  redemption_status: redeemed
   project_fit: Field Command region variation; stylized mission cards.
   source_bundle: humble-all-in-one-unreal-unity-gamedev
   raw_location: null
@@ -156,7 +156,7 @@ assets:
   package_type: Unreal Engine environment
   engine: unreal
   redemption_deadline: '2027-07-06T11:00:00-07:00'
-  redemption_status: not_recorded
+  redemption_status: redeemed
   project_fit: Threshold Affairs elite/interior scenes; Dobsonian executive weirdness.
   source_bundle: humble-all-in-one-unreal-unity-gamedev
   raw_location: null
@@ -169,7 +169,7 @@ assets:
   package_type: Unreal Engine environment
   engine: unreal
   redemption_deadline: '2027-07-06T11:00:00-07:00'
-  redemption_status: not_recorded
+  redemption_status: redeemed
   project_fit: Hail location card; waterfront Field Command/threshold scene.
   source_bundle: humble-all-in-one-unreal-unity-gamedev
   raw_location: null
@@ -182,7 +182,7 @@ assets:
   package_type: Unreal Engine environment
   engine: unreal
   redemption_deadline: '2027-07-06T11:00:00-07:00'
-  redemption_status: not_recorded
+  redemption_status: redeemed
   project_fit: Strong Field Command lane/battlefield candidate; industrial evidence
     stills.
   source_bundle: humble-all-in-one-unreal-unity-gamedev
@@ -196,7 +196,7 @@ assets:
   package_type: Unreal Engine environment
   engine: unreal
   redemption_deadline: '2027-07-06T11:00:00-07:00'
-  redemption_status: not_recorded
+  redemption_status: redeemed
   project_fit: Dobsonian/Field Command atmosphere; anomaly village.
   source_bundle: humble-all-in-one-unreal-unity-gamedev
   raw_location: null
@@ -209,7 +209,7 @@ assets:
   package_type: Unreal Engine environment
   engine: unreal
   redemption_deadline: '2027-07-06T11:00:00-07:00'
-  redemption_status: not_recorded
+  redemption_status: redeemed
   project_fit: Threshold/ritual/official setting; Anchor-zone study.
   source_bundle: humble-all-in-one-unreal-unity-gamedev
   raw_location: null
@@ -222,7 +222,7 @@ assets:
   package_type: Unreal Engine environment
   engine: unreal
   redemption_deadline: '2027-07-06T11:00:00-07:00'
-  redemption_status: not_recorded
+  redemption_status: redeemed
   project_fit: Small atmospheric case location; threshold misalignment scene.
   source_bundle: humble-all-in-one-unreal-unity-gamedev
   raw_location: null
@@ -235,7 +235,7 @@ assets:
   package_type: Unreal Engine environment
   engine: unreal
   redemption_deadline: '2027-07-06T11:00:00-07:00'
-  redemption_status: not_recorded
+  redemption_status: redeemed
   project_fit: Industrial mission field; Hail incident visuals; offshore Field Command
     map.
   source_bundle: humble-all-in-one-unreal-unity-gamedev
@@ -249,7 +249,7 @@ assets:
   package_type: Unreal Engine environment
   engine: unreal
   redemption_deadline: '2027-07-06T11:00:00-07:00'
-  redemption_status: not_recorded
+  redemption_status: redeemed
   project_fit: Exterior location variety; Field Command region study.
   source_bundle: humble-all-in-one-unreal-unity-gamedev
   raw_location: null
@@ -262,7 +262,7 @@ assets:
   package_type: Unreal Engine environment
   engine: unreal
   redemption_deadline: '2027-07-06T11:00:00-07:00'
-  redemption_status: not_recorded
+  redemption_status: redeemed
   project_fit: Excellent Field Command/Hail/LCARD sci-fi industrial setting.
   source_bundle: humble-all-in-one-unreal-unity-gamedev
   raw_location: null
@@ -275,7 +275,7 @@ assets:
   package_type: Unreal Engine environment
   engine: unreal
   redemption_deadline: '2027-07-06T11:00:00-07:00'
-  redemption_status: not_recorded
+  redemption_status: redeemed
   project_fit: Threshold Affairs evidence stills; Hail cards; Field Command test arena.
   source_bundle: humble-all-in-one-unreal-unity-gamedev
   raw_location: null
@@ -288,7 +288,7 @@ assets:
   package_type: Unreal Engine environment
   engine: unreal
   redemption_deadline: '2027-07-06T11:00:00-07:00'
-  redemption_status: not_recorded
+  redemption_status: redeemed
   project_fit: Urban/tactical Field Command map; future game spark.
   source_bundle: humble-all-in-one-unreal-unity-gamedev
   raw_location: null
@@ -301,7 +301,7 @@ assets:
   package_type: Unreal Engine material pack
   engine: unreal
   redemption_deadline: '2027-07-06T11:00:00-07:00'
-  redemption_status: not_recorded
+  redemption_status: redeemed
   project_fit: Liminal/abandoned set dressing; gritty Field Command/case visuals.
   source_bundle: humble-all-in-one-unreal-unity-gamedev
   raw_location: null
@@ -314,7 +314,7 @@ assets:
   package_type: Unreal Engine material pack
   engine: unreal
   redemption_deadline: '2027-07-06T11:00:00-07:00'
-  redemption_status: not_recorded
+  redemption_status: redeemed
   project_fit: Scene polish; interiors; props.
   source_bundle: humble-all-in-one-unreal-unity-gamedev
   raw_location: null
@@ -327,7 +327,7 @@ assets:
   package_type: Unreal Engine material pack
   engine: unreal
   redemption_deadline: '2027-07-06T11:00:00-07:00'
-  redemption_status: not_recorded
+  redemption_status: redeemed
   project_fit: Office/institutional interiors; threshold containment visuals.
   source_bundle: humble-all-in-one-unreal-unity-gamedev
   raw_location: null
@@ -340,7 +340,7 @@ assets:
   package_type: Unreal Engine Niagara VFX
   engine: unreal
   redemption_deadline: '2027-07-06T11:00:00-07:00'
-  redemption_status: not_recorded
+  redemption_status: redeemed
   project_fit: Slots wins, Hail stingers, Arcade celebrations.
   source_bundle: humble-all-in-one-unreal-unity-gamedev
   raw_location: null
@@ -353,7 +353,7 @@ assets:
   package_type: Unreal Engine Niagara VFX
   engine: unreal
   redemption_deadline: '2027-07-06T11:00:00-07:00'
-  redemption_status: not_recorded
+  redemption_status: redeemed
   project_fit: Stylized Field Command abilities; playful Hail/Slots moments.
   source_bundle: humble-all-in-one-unreal-unity-gamedev
   raw_location: null
@@ -366,7 +366,7 @@ assets:
   package_type: Unreal Engine Niagara VFX
   engine: unreal
   redemption_deadline: '2027-07-06T11:00:00-07:00'
-  redemption_status: not_recorded
+  redemption_status: redeemed
   project_fit: Slots reward visuals; Arcade/Hail reward stingers.
   source_bundle: humble-all-in-one-unreal-unity-gamedev
   raw_location: null
@@ -379,7 +379,7 @@ assets:
   package_type: Unreal Engine Niagara VFX
   engine: unreal
   redemption_deadline: '2027-07-06T11:00:00-07:00'
-  redemption_status: not_recorded
+  redemption_status: redeemed
   project_fit: Field Command abilities; Anchor and threshold stabilization effects.
   source_bundle: humble-all-in-one-unreal-unity-gamedev
   raw_location: null
@@ -392,7 +392,7 @@ assets:
   package_type: Unreal Engine Niagara VFX
   engine: unreal
   redemption_deadline: '2027-07-06T11:00:00-07:00'
-  redemption_status: not_recorded
+  redemption_status: redeemed
   project_fit: General VFX library for Hail, Field Command, Slots, thresholds.
   source_bundle: humble-all-in-one-unreal-unity-gamedev
   raw_location: null
@@ -405,7 +405,7 @@ assets:
   package_type: Unity bundle/tier redemption
   engine: unity
   redemption_deadline: '2027-06-30T11:00:00-07:00'
-  redemption_status: not_recorded
+  redemption_status: redeemed
   project_fit: Unity-side access bucket; exact contents need post-redemption reconciliation.
   source_bundle: humble-all-in-one-unreal-unity-gamedev
   raw_location: null
@@ -418,7 +418,7 @@ assets:
   package_type: Unreal Engine VFX
   engine: unreal
   redemption_deadline: '2027-07-06T11:00:00-07:00'
-  redemption_status: not_recorded
+  redemption_status: redeemed
   project_fit: Prime Dobsonian threshold asset; Hail portal events; Field Command
     Anchor effects.
   source_bundle: humble-all-in-one-unreal-unity-gamedev
@@ -432,7 +432,7 @@ assets:
   package_type: Unreal Engine VFX
   engine: unreal
   redemption_deadline: '2027-07-06T11:00:00-07:00'
-  redemption_status: not_recorded
+  redemption_status: redeemed
   project_fit: Field Command unit actions; threshold ritual/containment visuals.
   source_bundle: humble-all-in-one-unreal-unity-gamedev
   raw_location: null
@@ -445,7 +445,7 @@ assets:
   package_type: Unreal Engine VFX
   engine: unreal
   redemption_deadline: '2027-07-06T11:00:00-07:00'
-  redemption_status: not_recorded
+  redemption_status: redeemed
   project_fit: Incident escalation; Field Command hazards; Hail alerts.
   source_bundle: humble-all-in-one-unreal-unity-gamedev
   raw_location: null
@@ -458,7 +458,7 @@ assets:
   package_type: Unreal Engine VFX
   engine: unreal
   redemption_deadline: '2027-07-06T11:00:00-07:00'
-  redemption_status: not_recorded
+  redemption_status: redeemed
   project_fit: Field Command impact events; Hail escalation cards.
   source_bundle: humble-all-in-one-unreal-unity-gamedev
   raw_location: null
@@ -471,7 +471,7 @@ assets:
   package_type: Unreal Engine VFX
   engine: unreal
   redemption_deadline: '2027-07-06T11:00:00-07:00'
-  redemption_status: not_recorded
+  redemption_status: redeemed
   project_fit: Tactical impacts; hostile breach/instability effects.
   source_bundle: humble-all-in-one-unreal-unity-gamedev
   raw_location: null
@@ -484,7 +484,7 @@ assets:
   package_type: Unreal Engine modular environment
   engine: unreal
   redemption_deadline: '2027-07-06T11:00:00-07:00'
-  redemption_status: not_recorded
+  redemption_status: redeemed
   project_fit: Strong new spark asset; Slots theme, Hail attract mode, Dobsonian machinery/transport
     weirdness.
   source_bundle: humble-all-in-one-unreal-unity-gamedev

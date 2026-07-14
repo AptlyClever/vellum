@@ -20,8 +20,9 @@
         <p class="lede">
           Control Alt Games asset vault + pipeline: register packs, stage into the Library,
           convert to <strong>game-ready</strong> elements (glTF, VFX clips, textures), and
-          publish into project lanes. Redeem-by lights are indicators only.
+          publish into project lanes. Watch Live ops for Ready % and running jobs.
         </p>
+        <div id="live-ops" class="live-ops" aria-live="polite" aria-label="Live ops"></div>
         <div class="stats" id="stats" aria-live="polite"></div>
       </header>
 
@@ -39,11 +40,15 @@
           </select>
         </label>
         <label class="field">
-          <span>Redeem window</span>
-          <select id="redeem">
-            <option value="">All</option>
-            <option value="open">Open (green)</option>
-            <option value="expired">Expired (red)</option>
+          <span>Scope</span>
+          <select id="available">
+            <option value="on_machine" selected>On Aurora (F:)</option>
+            <option value="">All owned packs</option>
+            <option value="ready">Ready</option>
+            <option value="on_disk">On disk</option>
+            <option value="vault">Vault only</option>
+            <option value="installable">Installable</option>
+            <option value="need_download">Need download (unfinished)</option>
           </select>
         </label>
       </section>
@@ -57,7 +62,7 @@
               <th>Asset</th>
               <th>Engine</th>
               <th>Type</th>
-              <th>Redeem by</th>
+              <th>Available</th>
               <th>Fit</th>
             </tr>
           </thead>

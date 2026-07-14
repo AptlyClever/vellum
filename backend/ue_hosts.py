@@ -58,6 +58,21 @@ def save_host_specs(host_id: str, specs: dict[str, Any]) -> dict[str, Any]:
     return doc
 
 
+def merge_host_specs(host_id: str, patch: dict[str, Any]) -> dict[str, Any]:
+    """Shallow-merge top-level keys into existing specs (utilization heartbeats)."""
+    hid = host_id.strip().lower()
+    existing = load_host_specs(hid) or {}
+    specs = dict(existing.get("specs") or {}) if isinstance(existing, dict) else {}
+    for key, value in (patch or {}).items():
+        if isinstance(value, dict) and isinstance(specs.get(key), dict):
+            merged = dict(specs[key])
+            merged.update(value)
+            specs[key] = merged
+        else:
+            specs[key] = value
+    return save_host_specs(hid, specs)
+
+
 def load_hosts() -> dict[str, Any]:
     path = hosts_path()
     if not path.is_file():
@@ -108,6 +123,48 @@ def public_hosts_payload() -> dict[str, Any]:
         "hosts": hosts_out,
         "active_host": get_host(active, data),
     }
+
+
+def list_content_folders(host_id: str | None = None) -> dict[str, Any]:
+    host = get_host(host_id)
+    specs = host.get("host_specs") or {}
+    folders = specs.get("content_folders") or []
+    if not isinstance(folders, list):
+        folders = []
+    return {
+        "schema_version": 1,
+        "host_id": host.get("id"),
+        "updated_at": host.get("host_specs_updated_at"),
+        "content_root_path": specs.get("content_root_path") or host.get("project_dir"),
+        "content_scan_roots": specs.get("content_scan_roots")
+        or host.get("content_scan_roots")
+        or [],
+        "fab_target_project": specs.get("fab_target_project")
+        or host.get("fab_target_project")
+        or host.get("project"),
+        "fab_target_label": specs.get("fab_target_label")
+        or host.get("fab_target_label")
+        or host.get("label"),
+        "folders": folders,
+        "count": len(folders),
+    }
+
+
+def normalize_host_path(path: str) -> str:
+    return (path or "").strip().replace("/", "\\").rstrip("\\").lower()
+
+
+def path_known_in_content_scan(path: str, host_id: str | None = None) -> dict[str, Any] | None:
+    """Return matching content_folders row if path was seen by latest host_scan."""
+    want = normalize_host_path(path)
+    if not want:
+        return None
+    for folder in list_content_folders(host_id).get("folders") or []:
+        if not isinstance(folder, dict):
+            continue
+        if normalize_host_path(str(folder.get("path") or "")) == want:
+            return folder
+    return None
 
 
 def default_project_dir() -> str:

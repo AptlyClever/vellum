@@ -10,8 +10,11 @@ from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
+import zipfile
 
+from . import attach as attach_mod
 from . import game_ready as game_ready_mod
+from . import import_flow as import_flow_mod
 from . import intake as intake_mod
 from . import jobs as jobs_mod
 from . import lookdev as lookdev_mod
@@ -64,6 +67,56 @@ class AssetPatchRequest(BaseModel):
     scratch_project_status: str | None = Field(default=None, max_length=64)
     scratch_engine_version: str | None = Field(default=None, max_length=64)
     scratch_notes: str | None = Field(default=None, max_length=4000)
+    content_root: str | None = Field(default=None, max_length=200)
+    host_content_path: str | None = Field(default=None, max_length=1000)
+    ue_in_project: str | None = Field(default=None, max_length=64)
+
+
+class AssetCreateRequest(BaseModel):
+    display_name: str = Field(min_length=1, max_length=300)
+    asset_id: str | None = Field(default=None, max_length=200)
+    engine: str = Field(default="unreal", max_length=32)
+    package_type: str = Field(default="Unreal Engine pack", max_length=120)
+    store_lane: str = Field(default="epic-games-store", max_length=64)
+    store_label: str = Field(default="Epic Games Store (free / extra)", max_length=120)
+    source_bundle: str = Field(default="epic-free-or-extra", max_length=120)
+    project_fit: str = Field(default="", max_length=4000)
+    content_folder_name: str | None = Field(default=None, max_length=200)
+    host_content_path: str | None = Field(default=None, max_length=1000)
+    tags: list[str] | None = None
+
+
+class ImportMarkRequest(BaseModel):
+    step: str = Field(min_length=1, max_length=32)
+    host_content_path: str | None = Field(default=None, max_length=1000)
+    notes: str | None = Field(default=None, max_length=4000)
+
+
+class ImportStageRequest(BaseModel):
+    host_content_path: str = Field(min_length=3, max_length=1000)
+    content_folder_name: str | None = Field(default=None, max_length=200)
+    ue_host: str | None = Field(default=None, max_length=64)
+
+
+class ImportFabInstallRequest(BaseModel):
+    ue_host: str | None = Field(default=None, max_length=64)
+    auto_stage: bool = Field(
+        default=True,
+        description="After VaultCache→Content copy, enqueue host_stage",
+    )
+
+
+class ImportFabInstallBatchRequest(BaseModel):
+    ue_host: str | None = Field(default=None, max_length=64)
+    auto_stage: bool = Field(default=True)
+    limit: int = Field(default=20, ge=1, le=50)
+
+
+class ImportRegisterOrphansRequest(BaseModel):
+    ue_host: str | None = Field(default=None, max_length=64)
+    auto_stage: bool = Field(default=True)
+    folders: list[str] | None = None
+    limit: int = Field(default=40, ge=1, le=80)
 
 
 class LookdevDeriveRequest(BaseModel):
@@ -80,6 +133,13 @@ class GameReadyIngestManifestRequest(BaseModel):
 
 class GameReadyPublishRequest(BaseModel):
     lane: str = Field(min_length=1, max_length=64)
+
+
+class AttachRequest(BaseModel):
+    target: str = Field(min_length=1, max_length=32)
+    derived_output_id: str | None = Field(default=None, max_length=200)
+    asset_id: str | None = Field(default=None, max_length=200)
+    register_glyph: bool = True
 
 
 class UeCaptureRequest(BaseModel):
@@ -157,13 +217,118 @@ def api_list_assets(
     q: str | None = Query(default=None),
     engine: str | None = Query(default=None),
     redeem_window: str | None = Query(default=None, alias="redeem"),
+    available: str | None = Query(default=None),
+    lite: bool = Query(default=False),
 ) -> dict[str, Any]:
     assets = register_mod.list_assets(q=q, engine=engine, redeem_window_filter=redeem_window)
+    assets = import_flow_mod.attach_availability(
+        assets, engine=engine, available=available
+    )
+    if lite:
+        thin = []
+        for a in assets:
+            av = a.get("availability") if isinstance(a.get("availability"), dict) else {}
+            thin.append(
+                {
+                    "id": a.get("id"),
+                    "display_name": a.get("display_name"),
+                    "engine": a.get("engine"),
+                    "package_type": a.get("package_type"),
+                    "project_fit": a.get("project_fit"),
+                    "availability": {
+                        "state": av.get("state"),
+                        "label": av.get("label"),
+                        "detail": av.get("detail"),
+                    },
+                }
+            )
+        assets = thin
     return {
         "schema_version": 1,
         "count": len(assets),
         "assets": assets,
+        "lite": lite,
     }
+
+
+@app.get("/api/import/availability")
+def api_import_availability(
+    engine: str = Query(default="unreal"),
+    host_id: str | None = Query(default=None),
+) -> dict[str, Any]:
+    """Bulk Ready / On disk / Vault / Installable / Need download for list UI."""
+    return import_flow_mod.availability_index(engine=engine, host_id=host_id)
+
+
+@app.get("/api/ops/pulse")
+def api_ops_pulse(
+    engine: str = Query(default="unreal"),
+    host_id: str | None = Query(default=None),
+) -> dict[str, Any]:
+    """Cheap Live-ops / homepage poll (counts + capture heartbeats)."""
+    return import_flow_mod.ops_pulse(engine=engine, host_id=host_id)
+
+
+@app.get("/api/ops/now")
+def api_ops_now(
+    engine: str = Query(default="unreal"),
+    host_id: str | None = Query(default=None),
+) -> dict[str, Any]:
+    """Binding live ops snapshot (mission + scoreboard + capture queue)."""
+    return import_flow_mod.ops_now(engine=engine, host_id=host_id)
+
+
+@app.post("/api/ops/drain")
+def api_ops_drain(
+    engine: str = Query(default="unreal"),
+    host_id: str | None = Query(default=None),
+    limit: int = Query(default=2, ge=1, le=8),
+) -> dict[str, Any]:
+    """Auto-enqueue on-disk lookdev so the warm GPU editor is never starved idle."""
+    return import_flow_mod.drain_on_disk_lookdev(
+        engine=engine, host_id=host_id, limit=limit
+    )
+
+
+@app.post("/api/assets")
+def api_create_asset(body: AssetCreateRequest) -> dict[str, Any]:
+    """Register a free/extra Epic pack that is not in the Humble seed inventory."""
+    try:
+        asset = register_mod.create_asset(
+            display_name=body.display_name,
+            asset_id=body.asset_id,
+            engine=body.engine,
+            package_type=body.package_type,
+            store_lane=body.store_lane,
+            store_label=body.store_label,
+            source_bundle=body.source_bundle,
+            project_fit=body.project_fit,
+            content_folder_name=body.content_folder_name,
+            host_content_path=body.host_content_path,
+            tags=body.tags,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except KeyError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return {"schema_version": 1, "asset": asset}
+
+
+@app.get("/api/import/coverage")
+def api_import_coverage(
+    engine: str = Query(default="unreal"),
+    host_id: str | None = Query(default=None),
+) -> dict[str, Any]:
+    """On-disk vs vault-staged vs still need Fab download (+ Content orphans)."""
+    return import_flow_mod.coverage(engine=engine, host_id=host_id)
+
+
+@app.get("/api/import/queue")
+def api_import_queue(
+    engine: str | None = Query(default="unreal"),
+    limit: int = Query(default=40, ge=1, le=100),
+) -> dict[str, Any]:
+    return import_flow_mod.import_queue(engine=engine, limit=limit)
 
 
 @app.get("/api/assets/{asset_id}")
@@ -176,18 +341,19 @@ def api_get_asset(asset_id: str) -> dict[str, Any]:
 
 @app.patch("/api/assets/{asset_id}")
 def api_patch_asset(asset_id: str, body: AssetPatchRequest) -> dict[str, Any]:
-    if all(
-        getattr(body, field) is None
-        for field in (
-            "redemption_status",
-            "raw_location",
-            "intake_notes",
-            "scratch_project_path",
-            "scratch_project_status",
-            "scratch_engine_version",
-            "scratch_notes",
-        )
-    ):
+    fields = (
+        "redemption_status",
+        "raw_location",
+        "intake_notes",
+        "scratch_project_path",
+        "scratch_project_status",
+        "scratch_engine_version",
+        "scratch_notes",
+        "content_root",
+        "host_content_path",
+        "ue_in_project",
+    )
+    if all(getattr(body, field) is None for field in fields):
         raise HTTPException(status_code=400, detail="no_fields")
     try:
         return register_mod.patch_asset(
@@ -199,9 +365,244 @@ def api_patch_asset(asset_id: str, body: AssetPatchRequest) -> dict[str, Any]:
             scratch_project_status=body.scratch_project_status,
             scratch_engine_version=body.scratch_engine_version,
             scratch_notes=body.scratch_notes,
+            content_root=body.content_root,
+            host_content_path=body.host_content_path,
+            ue_in_project=body.ue_in_project,
         )
     except KeyError:
         raise HTTPException(status_code=404, detail="asset_not_found") from None
+
+
+@app.get("/api/assets/{asset_id}/import")
+def api_asset_import_status(asset_id: str) -> dict[str, Any]:
+    try:
+        return import_flow_mod.import_status(asset_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="asset_not_found") from None
+
+
+@app.post("/api/assets/{asset_id}/import/mark")
+def api_asset_import_mark(asset_id: str, body: ImportMarkRequest) -> dict[str, Any]:
+    """Operator buttons: redeemed | in_project (path must appear in latest host_scan)."""
+    if register_mod.get_asset(asset_id) is None:
+        raise HTTPException(status_code=404, detail="asset_not_found")
+    step = body.step.strip().lower()
+    kwargs: dict[str, Any] = {}
+    if body.notes:
+        kwargs["intake_notes"] = body.notes
+    if body.host_content_path:
+        kwargs["host_content_path"] = body.host_content_path.strip()
+    if step == "redeemed":
+        kwargs["redemption_status"] = "redeemed"
+    elif step == "in_project":
+        host_path = (kwargs.get("host_content_path") or "").strip()
+        if not host_path:
+            existing = register_mod.get_asset(asset_id) or {}
+            host_path = str(existing.get("host_content_path") or "").strip()
+        if not host_path:
+            raise HTTPException(
+                status_code=400,
+                detail="host_content_path_required",
+            )
+        match = ue_hosts_mod.path_known_in_content_scan(host_path)
+        if not match:
+            raise HTTPException(
+                status_code=400,
+                detail="host_path_not_in_scan",
+            )
+        kwargs["host_content_path"] = host_path
+        kwargs["ue_in_project"] = "in_project"
+        if match.get("name"):
+            kwargs["content_root"] = import_flow_mod.content_root_from_folder_name(
+                str(match.get("name"))
+            )
+    else:
+        raise HTTPException(status_code=400, detail="unknown_step")
+    updated = register_mod.patch_asset(asset_id, **kwargs)
+    return {"schema_version": 1, "asset": updated, "import": import_flow_mod.import_status(asset_id)}
+
+
+@app.post("/api/assets/{asset_id}/import/stage")
+def api_asset_import_stage(asset_id: str, body: ImportStageRequest) -> dict[str, Any]:
+    """Enqueue host_stage for Windows agent: zip host Content/Unity folder → vault upload."""
+    if register_mod.get_asset(asset_id) is None:
+        raise HTTPException(status_code=404, detail="asset_not_found")
+    host_path = body.host_content_path.strip()
+    if not host_path:
+        raise HTTPException(status_code=400, detail="host_content_path_required")
+    try:
+        host = ue_hosts_mod.get_host(body.ue_host) if body.ue_host else ue_hosts_mod.get_host()
+        host_id = host.get("id")
+    except Exception:  # noqa: BLE001
+        host_id = body.ue_host or "aurora"
+    match = ue_hosts_mod.path_known_in_content_scan(host_path, host_id)
+    if not match:
+        raise HTTPException(
+            status_code=400,
+            detail="host_path_not_in_scan",
+        )
+    folder_name = (body.content_folder_name or "").strip() or str(match.get("name") or "")
+    register_mod.patch_asset(
+        asset_id,
+        host_content_path=host_path,
+        ue_in_project="in_project",
+        content_root=import_flow_mod.content_root_from_folder_name(folder_name)
+        if folder_name
+        else None,
+    )
+    job = jobs_mod.enqueue_job(
+        kind="host_stage",
+        asset_id=asset_id,
+        step_id="stage_vault",
+        payload={
+            "source": "api_import_stage",
+            "host_content_path": host_path,
+            "content_folder_name": folder_name or None,
+            "ue_host": host_id,
+            "engine": str((register_mod.get_asset(asset_id) or {}).get("engine") or "unreal"),
+        },
+    )
+    return {"schema_version": 1, "job": job, "import": import_flow_mod.import_status(asset_id)}
+
+
+@app.post("/api/assets/{asset_id}/import/fab-install")
+def api_asset_fab_install(asset_id: str, body: ImportFabInstallRequest) -> dict[str, Any]:
+    """Enqueue host_fab_install: copy Epic VaultCache pack into AuroraVellum Content."""
+    if register_mod.get_asset(asset_id) is None:
+        raise HTTPException(status_code=404, detail="asset_not_found")
+    try:
+        result = import_flow_mod.enqueue_fab_install(
+            asset_id,
+            ue_host=body.ue_host,
+            auto_stage=body.auto_stage,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"schema_version": 1, **result}
+
+
+@app.post("/api/import/fab-install-batch")
+def api_fab_install_batch(body: ImportFabInstallBatchRequest) -> dict[str, Any]:
+    """Enqueue host_fab_install for vault-installable packs missing from F: Content."""
+    cov = import_flow_mod.coverage(engine="unreal", host_id=body.ue_host)
+    jobs_out: list[dict[str, Any]] = []
+    errors: list[dict[str, str]] = []
+    for item in (cov.get("vault_installable") or [])[: body.limit]:
+        aid = str(item.get("asset_id") or "")
+        if not aid:
+            continue
+        try:
+            result = import_flow_mod.enqueue_fab_install(
+                aid,
+                ue_host=body.ue_host,
+                auto_stage=body.auto_stage,
+            )
+            jobs_out.append({"asset_id": aid, "job": result["job"]})
+        except ValueError as exc:
+            errors.append({"asset_id": aid, "error": str(exc)})
+    return {
+        "schema_version": 1,
+        "enqueued": len(jobs_out),
+        "jobs": jobs_out,
+        "errors": errors,
+        "vault_installable_count": cov.get("vault_installable_count"),
+    }
+
+
+@app.post("/api/import/register-orphans")
+def api_register_orphans(body: ImportRegisterOrphansRequest) -> dict[str, Any]:
+    """Register free/extra Content folders (orphans) and enqueue stage."""
+    return import_flow_mod.register_orphans_batch(
+        ue_host=body.ue_host,
+        auto_stage=body.auto_stage,
+        folders=body.folders,
+        limit=body.limit,
+    )
+
+@app.get("/api/ue/hosts/content-folders")
+def api_ue_content_folders(host_id: str | None = Query(default=None)) -> dict[str, Any]:
+    try:
+        return ue_hosts_mod.list_content_folders(host_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.post("/api/ue/hosts/content-folders/refresh")
+def api_ue_content_folders_refresh(host_id: str | None = Query(default=None)) -> dict[str, Any]:
+    """Enqueue host_scan so Aurora re-runs report_host_specs (includes Content/*)."""
+    try:
+        host = ue_hosts_mod.get_host(host_id)
+        hid = host.get("id")
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    job = jobs_mod.enqueue_job(
+        kind="host_scan",
+        asset_id=None,
+        step_id="host_scan",
+        payload={"source": "api_content_refresh", "ue_host": hid},
+    )
+    return {"schema_version": 1, "job": job}
+
+
+@app.post("/api/ue/hosts/open-editor")
+def api_ue_open_editor(host_id: str | None = Query(default=None)) -> dict[str, Any]:
+    """Enqueue host_open_editor — open canonical AuroraVellum in UE for Fab-in-Editor."""
+    try:
+        host = ue_hosts_mod.get_host(host_id)
+        hid = host.get("id")
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    job = jobs_mod.enqueue_job(
+        kind="host_open_editor",
+        asset_id=None,
+        step_id="open_editor",
+        payload={
+            "source": "api_open_editor",
+            "ue_host": hid,
+            "project": host.get("fab_target_project") or host.get("project"),
+        },
+    )
+    return {"schema_version": 1, "job": job}
+
+@app.post("/api/assets/{asset_id}/import/stage-upload")
+async def api_asset_import_stage_upload(
+    asset_id: str,
+    host_content_path: str = Form(...),
+    content_folder_name: str | None = Form(default=None),
+    archive: UploadFile = File(...),
+) -> dict[str, Any]:
+    """Windows agent uploads a store-zip of the pack Content folder."""
+    if register_mod.get_asset(asset_id) is None:
+        raise HTTPException(status_code=404, detail="asset_not_found")
+    name = archive.filename or "pack.zip"
+    if not name.lower().endswith(".zip"):
+        raise HTTPException(status_code=400, detail="expected_zip")
+    import tempfile
+
+    with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as tmp:
+        tmp_path = Path(tmp.name)
+        while True:
+            chunk = await archive.read(1024 * 1024)
+            if not chunk:
+                break
+            tmp.write(chunk)
+    try:
+        result = import_flow_mod.apply_stage_upload(
+            asset_id,
+            archive_path=tmp_path,
+            host_content_path=host_content_path,
+            content_folder_name=content_folder_name,
+        )
+    except KeyError:
+        raise HTTPException(status_code=404, detail="asset_not_found") from None
+    except zipfile.BadZipFile as e:
+        raise HTTPException(status_code=400, detail="bad_zip") from e
+    finally:
+        try:
+            tmp_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+    return {"schema_version": 1, **result, "import": import_flow_mod.import_status(asset_id)}
 
 
 @app.post("/api/intake/propose")
@@ -305,8 +706,32 @@ def api_jobs_claim(body: JobClaimRequest) -> dict[str, Any]:
     unknown = kinds - jobs_mod.UE_AGENT_KINDS - jobs_mod.LINUX_WORKER_KINDS
     if unknown:
         raise HTTPException(status_code=400, detail=f"unknown kinds: {sorted(unknown)}")
+    stale = jobs_mod.fail_stale_running_agent_jobs()
     job = jobs_mod.claim_next_job(kinds=kinds)
-    return {"schema_version": 1, "job": job}
+    return {
+        "schema_version": 1,
+        "job": job,
+        "stale_failed": [
+            {"job_id": j.get("job_id"), "asset_id": j.get("asset_id"), "error": j.get("error")}
+            for j in stale
+        ],
+    }
+
+
+@app.post("/api/jobs/sweep-stale")
+def api_jobs_sweep_stale(
+    max_silence_sec: int | None = Query(default=None, ge=30, le=7200),
+) -> dict[str, Any]:
+    """Fail abandoned UE-agent running jobs (no progress heartbeat)."""
+    failed = jobs_mod.fail_stale_running_agent_jobs(max_silence_sec=max_silence_sec)
+    return {
+        "schema_version": 1,
+        "failed_count": len(failed),
+        "jobs": failed,
+        "max_silence_sec": max_silence_sec
+        if max_silence_sec is not None
+        else jobs_mod.DEFAULT_STALE_SILENCE_SEC,
+    }
 
 
 class JobCancelRequest(BaseModel):
@@ -355,6 +780,41 @@ def api_jobs_report(job_id: str, body: JobReportRequest) -> dict[str, Any]:
         result=result if result else None,
         error=body.error,
     )
+    # Structured chain: successful vault stage → required lookdev job (derive XOR capture).
+    if (
+        not body.error
+        and completed.get("status") == "succeeded"
+        and completed.get("kind") in {"host_stage", "ue_stage"}
+        and completed.get("asset_id")
+    ):
+        try:
+            follow = import_flow_mod.enqueue_post_stage_lookdev(str(completed["asset_id"]))
+            if follow:
+                completed = dict(completed)
+                merged = dict(completed.get("result") or {})
+                pointer: dict[str, Any] = {
+                    "lookdev_mode": follow.get("lookdev_mode"),
+                    "skipped": follow.get("skipped"),
+                    "reason": follow.get("reason"),
+                }
+                job = follow.get("job")
+                if isinstance(job, dict):
+                    pointer["job_id"] = job.get("job_id")
+                    pointer["kind"] = job.get("kind")
+                merged["post_stage_lookdev"] = {
+                    k: v for k, v in pointer.items() if v is not None
+                }
+                completed["result"] = merged
+                jobs_mod.patch_job_result(job_id, merged)
+        except Exception as exc:  # noqa: BLE001
+            completed = dict(completed)
+            merged = dict(completed.get("result") or {})
+            merged["post_stage_lookdev_error"] = str(exc)
+            completed["result"] = merged
+            try:
+                jobs_mod.patch_job_result(job_id, merged)
+            except Exception:  # noqa: BLE001
+                pass
     return {"schema_version": 1, "job": completed}
 
 
@@ -392,16 +852,44 @@ def api_ue_capture(body: UeCaptureRequest) -> dict[str, Any]:
         or asset.get("scratch_project_path")
         or r"F:\Games\AuroraVellum"
     ).strip()
-    content_root = (body.content_root or "/Game/FireworksV1").strip()
+    content_root = (body.content_root or "").strip()
+    if not content_root:
+        content_root = str(asset.get("content_root") or "").strip()
+    if not content_root:
+        # Infer /Game/<Folder> from vault stage leaf or host Content folder name.
+        host_p = str(asset.get("host_content_path") or "").strip()
+        raw_p = str(asset.get("raw_location") or "").strip()
+        leaf = ""
+        if host_p:
+            leaf = Path(host_p.replace("\\", "/")).name
+        elif raw_p:
+            # Prefer inner Content child if present
+            raw_path = Path(raw_p)
+            content_kids = [
+                p.name
+                for p in raw_path.iterdir()
+                if raw_path.is_dir() and p.is_dir() and not p.name.startswith(".")
+            ] if raw_path.is_dir() else []
+            if len(content_kids) == 1:
+                leaf = content_kids[0]
+            elif "FireworksV1" in content_kids:
+                leaf = "FireworksV1"
+        if leaf:
+            content_root = import_flow_mod.content_root_from_folder_name(leaf)
     try:
         host = ue_hosts_mod.get_host()
-        if not body.content_root and host.get("content_root"):
+        if not content_root and host.get("content_root"):
             content_root = str(host["content_root"]).strip()
         engine = (body.engine_version or host.get("engine_version") or "5.8").strip()
         host_id = host.get("id")
     except Exception:  # noqa: BLE001
         engine = (body.engine_version or "5.8").strip()
         host_id = None
+    if not content_root:
+        raise HTTPException(
+            status_code=400,
+            detail="content_root_required — stage pack first or set content_root on asset",
+        )
     job = jobs_mod.enqueue_job(
         kind="ue_capture",
         asset_id=body.asset_id,
@@ -435,6 +923,16 @@ def api_ue_hosts_specs(body: UeHostSpecsRequest) -> dict[str, Any]:
     """Persist workstation hardware snapshot from the Windows UE agent."""
     try:
         saved = ue_hosts_mod.save_host_specs(body.host_id, body.specs)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {"schema_version": 1, **saved}
+
+
+@app.post("/api/ue/hosts/util")
+def api_ue_hosts_util(body: UeHostSpecsRequest) -> dict[str, Any]:
+    """Cheap heartbeat merge (gpu util / editor RSS) — does not wipe full specs."""
+    try:
+        saved = ue_hosts_mod.merge_host_specs(body.host_id, body.specs)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return {"schema_version": 1, **saved}
@@ -666,6 +1164,43 @@ def api_game_ready_publish(element_id: str, body: GameReadyPublishRequest) -> di
     except (FileNotFoundError, PermissionError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"schema_version": 1, "element": row}
+
+
+@app.get("/api/attach/targets")
+def api_attach_targets() -> dict[str, Any]:
+    return attach_mod.targets_status()
+
+
+@app.get("/api/attach")
+def api_attach_list(
+    asset_id: str | None = Query(default=None),
+    target: str | None = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=500),
+) -> dict[str, Any]:
+    rows = attach_mod.list_attachments(asset_id=asset_id, target=target, limit=limit)
+    return {"schema_version": 1, "count": len(rows), "attachments": rows}
+
+
+@app.post("/api/attach")
+def api_attach(body: AttachRequest) -> dict[str, Any]:
+    try:
+        row = attach_mod.attach(
+            derived_output_id=body.derived_output_id,
+            asset_id=body.asset_id,
+            target=body.target,
+            register_glyph=bool(body.register_glyph),
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from None
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from None
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from None
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from None
+    return {"schema_version": 1, "attachment": row}
 
 
 @app.post("/api/scratch/record")

@@ -23,3 +23,15 @@ Collected by `tools/unreal/report_host_specs.ps1` → `POST /api/ue/hosts/specs`
 - **8c/16t + 64 GB** is comfortable for Editor inventory/author; bottleneck remains **UE process cold starts** and **serial MRQ**, not RAM.
 - Prefer work on **F:** (UE + capture I/O) where free space is largest.
 - When judging GPU util over **RDP**, ignore the Remote Display adapter; look at the 4070 / nvidia-smi.
+
+## Utilization doctrine (not ghetto, not Horde)
+
+| Do | Don't |
+| --- | --- |
+| **One** warm `UnrealEditor` on AuroraVellum for MRQ (same `.uproject` = DDC/asset lock) | Spin two Editors on the same project and call it “scale” |
+| Auto-`POST /api/ops/drain` so on-disk packs keep the worker fed | Leave Ready% stuck while agent idles with work on F: |
+| Sidecar agent (`-SidecarOnly`) for `host_fab_install` / scan / stage overlapping capture | Block the whole Windows agent on one MRQ wait with CPU/disk idle |
+| Publish `nvidia-smi` util into Live ops (`/api/ue/hosts/util` → pulse.host) | Assume the machine is busy because a job row says `running` |
+| Linux `vellum-worker` for `derive_lookdev` concurrent with Windows capture | Serialize texture derive behind MRQ |
+
+**Not yet:** second project clone / Horde multi-machine. That is a deliberate future cut when single-project MRQ is proven green.

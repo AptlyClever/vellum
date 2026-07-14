@@ -65,21 +65,41 @@ def _empty_catalog() -> dict[str, Any]:
     return {"schema_version": 1, "outputs": []}
 
 
+_CATALOG_CACHE: dict[str, Any] | None = None
+_CATALOG_MTIME: float | None = None
+
+
 def load_catalog() -> dict[str, Any]:
+    global _CATALOG_CACHE, _CATALOG_MTIME
     path = catalog_path()
+    try:
+        mtime = path.stat().st_mtime if path.is_file() else None
+    except OSError:
+        mtime = None
+    if (
+        _CATALOG_CACHE is not None
+        and mtime is not None
+        and _CATALOG_MTIME == mtime
+    ):
+        return _CATALOG_CACHE
     if not path.is_file():
-        return _empty_catalog()
+        _CATALOG_CACHE = _empty_catalog()
+        _CATALOG_MTIME = mtime
+        return _CATALOG_CACHE
     raw = yaml.safe_load(path.read_text(encoding="utf-8"))
     if not isinstance(raw, dict):
-        return _empty_catalog()
+        raw = _empty_catalog()
     outputs = raw.get("outputs")
     if not isinstance(outputs, list):
         raw["outputs"] = []
     raw.setdefault("schema_version", 1)
+    _CATALOG_CACHE = raw
+    _CATALOG_MTIME = mtime
     return raw
 
 
 def save_catalog(doc: dict[str, Any]) -> None:
+    global _CATALOG_CACHE, _CATALOG_MTIME
     path = catalog_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     text = yaml.dump(doc, sort_keys=False, allow_unicode=True)
@@ -88,6 +108,11 @@ def save_catalog(doc: dict[str, Any]) -> None:
     if mirror is not None:
         mirror.parent.mkdir(parents=True, exist_ok=True)
         mirror.write_text(text, encoding="utf-8")
+    _CATALOG_CACHE = doc
+    try:
+        _CATALOG_MTIME = path.stat().st_mtime
+    except OSError:
+        _CATALOG_MTIME = None
 
 
 def list_lanes() -> list[dict[str, Any]]:
@@ -180,13 +205,139 @@ def _candidate_stills(stage: Path, *, limit: int = 6) -> list[Path]:
     return found
 
 
+def _fab_listings_db() -> Path:
+    raw = (os.environ.get("VELLUM_FAB_LISTINGS_DB") or "").strip()
+    if raw:
+        return Path(raw)
+    return ROOT / "data" / "fab-listings.db"
+
+
+def resolve_fab_thumbnail_url(display_name: str) -> str | None:
+    """Match a register display_name to a Fab library catalog thumbnail URL."""
+    import re
+    import sqlite3
+
+    name = (display_name or "").strip()
+    if not name:
+        return None
+    db = _fab_listings_db()
+    if not db.is_file():
+        return None
+
+    def _norm(s: str) -> str:
+        return re.sub(r"[^a-z0-9]+", " ", s.lower()).strip()
+
+    name_n = _norm(name)
+    try:
+        conn = sqlite3.connect(str(db))
+    except sqlite3.Error:
+        return None
+    try:
+        rows = conn.execute("SELECT title, thumbnail FROM catalog").fetchall()
+        best: tuple[int, str] | None = None
+        for title, thumb in rows:
+            if not thumb:
+                continue
+            t = str(title or "")
+            tn = _norm(t)
+            if not tn:
+                continue
+            score = 0
+            if tn == name_n:
+                score = 1000
+            elif name_n and (name_n in tn or tn in name_n):
+                score = 800 - abs(len(tn) - len(name_n))
+            else:
+                # First significant phrase before parenthetical / em-dash clutter.
+                head = _norm(name.split("(")[0].split(" - ")[0])
+                if len(head) >= 6 and (head in tn or tn.startswith(head)):
+                    score = 600 - abs(len(tn) - len(head))
+            if score > 0 and (best is None or score > best[0]):
+                best = (score, str(thumb).strip())
+        return best[1] if best else None
+    finally:
+        conn.close()
+
+
+def _download_fab_thumbnail(url: str, dest: Path) -> Path:
+    import urllib.request
+
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    req = urllib.request.Request(url, headers={"User-Agent": "vellum-lookdev/1.0"})
+    with urllib.request.urlopen(req, timeout=60) as resp:
+        data = resp.read()
+        ctype = (resp.headers.get("Content-Type") or "").lower()
+    if len(data) < 100:
+        raise ValueError("fab_thumbnail_too_small")
+    suffix = ".jpg"
+    if "png" in ctype:
+        suffix = ".png"
+    elif "webp" in ctype:
+        suffix = ".webp"
+    out = dest.with_suffix(suffix)
+    out.write_bytes(data)
+    return out
+
+
+def _png_chunk(tag: bytes, data: bytes) -> bytes:
+    import struct
+    import zlib
+
+    return (
+        struct.pack(">I", len(data))
+        + tag
+        + data
+        + struct.pack(">I", zlib.crc32(tag + data) & 0xFFFFFFFF)
+    )
+
+
+def render_placeholder_still(
+    dest: Path,
+    *,
+    title: str,
+    subtitle: str = "Vellum lookdev placeholder",
+    width: int = 960,
+    height: int = 540,
+) -> Path:
+    """Solid PNG hero when pack has no loose stills and no Fab catalog thumb.
+
+    Kept dependency-free (no Pillow in the API image). For texture packs this
+    unblocks Ready; Niagara packs still require MRQ for real lookdev.
+    """
+    import struct
+    import zlib
+
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    # Dark slate background (#1a1f26)
+    r, g, b = 26, 31, 38
+    row = bytes([0, r, g, b] * width)  # filter None + RGB
+    raw = row * height
+    ihdr = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)
+    png = (
+        b"\x89PNG\r\n\x1a\n"
+        + _png_chunk(b"IHDR", ihdr)
+        + _png_chunk(b"IDAT", zlib.compress(raw, 9))
+        + _png_chunk(b"IEND", b"")
+    )
+    out = dest.with_suffix(".png")
+    out.write_bytes(png)
+    # Title is recorded in DerivedOutput.note — pixel text needs a font stack.
+    _ = title, subtitle
+    return out
+
+
 def derive_stills_for_asset(
     asset_id: str,
     *,
     lanes: list[str] | None = None,
     max_stills: int = 4,
 ) -> dict[str, Any]:
-    """Copy preview stills from staged pack into lookdev + derived-renders lanes."""
+    """Copy preview stills from staged pack into lookdev + derived-renders lanes.
+
+    Fallback order when stage has no loose png/jpg:
+    1) Fab library catalog thumbnail
+    2) Generated placeholder PNG (so texture packs still get a vault hero)
+    """
     asset = register_mod.get_asset(asset_id)
     if not asset:
         raise KeyError(f"asset_not_found:{asset_id}")
@@ -198,8 +349,29 @@ def derive_stills_for_asset(
         raise FileNotFoundError(f"stage_missing:{stage}")
 
     stills = _candidate_stills(stage, limit=max_stills)
+    source_note = (
+        "Reference still copied from staged pack textures "
+        "(not a Niagara viewport render). Raw .uasset packs stay in 01-source-bundles."
+    )
     if not stills:
-        raise ValueError("no_preview_stills")
+        url = resolve_fab_thumbnail_url(str(asset.get("display_name") or ""))
+        thumb_dir = vault_root() / "06-readouts" / "_fab-thumbs"
+        if url:
+            stills = [_download_fab_thumbnail(url, thumb_dir / f"{asset_id}.img")]
+            source_note = (
+                f"Fab catalog thumbnail ({url}) — pack stage has no loose png/jpg previews."
+            )
+        else:
+            stills = [
+                render_placeholder_still(
+                    thumb_dir / f"{asset_id}-placeholder.png",
+                    title=str(asset.get("display_name") or asset_id),
+                )
+            ]
+            source_note = (
+                "Generated placeholder still — no loose pack previews and no Fab "
+                "catalog thumbnail match."
+            )
 
     target_lanes = lanes or infer_lanes(asset.get("project_fit"))
     for lane in target_lanes:
@@ -239,10 +411,7 @@ def derive_stills_for_asset(
                 "path": str(path_out),
                 "source_path": str(src),
                 "created_at": _now(),
-                "note": (
-                    "Reference still copied from staged pack textures "
-                    "(not a Niagara viewport render). Raw .uasset packs stay in 01-source-bundles."
-                ),
+                "note": source_note,
             }
             outputs.append(row)
             created.append(row)

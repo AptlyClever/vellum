@@ -2,6 +2,12 @@
 
 End-to-end path driven for **Fireworks Vol. 1 - Niagara** (`fireworks-vol-1-niagara`).
 
+**Preferred (2026-07-14+):** use Vellum UI **Import pack** on the asset detail
+(redeem → Fab Add to Project → **F:\Games\AuroraVellum** → Refresh folders → Stage → Derive/Capture).
+See `docs/api-import.md`. The curl/scp steps below are the historical pilot record.
+
+**Fab target:** only `F:\Games\AuroraVellum\AuroraVellum.uproject`. Older packs may require forcing engine **5.8** in Fab; Vellum verifies land via Content scan — do not trust Mark without a scanned folder. `C:\dev\AuroraVellum` is retired (packs consolidated to F:).
+
 ## What “download” means on Epic
 
 Unreal packs do **not** get a Launcher Download button. Flow:

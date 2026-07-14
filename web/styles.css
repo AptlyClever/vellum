@@ -95,6 +95,74 @@ h1 {
   margin-top: 1.15rem;
 }
 
+.live-ops {
+  margin-top: 1.1rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  display: grid;
+  gap: 0.55rem;
+}
+
+.live-ops[data-state="done"] {
+  border-color: color-mix(in srgb, var(--open) 55%, var(--line));
+}
+
+.live-ops[data-state="stalled"] {
+  border-color: color-mix(in srgb, #c45c26 55%, var(--line));
+}
+
+.live-ops-top {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1.25rem;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.live-ops-title {
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.live-ops-pct {
+  font-family: var(--mono);
+  font-size: 1.35rem;
+  font-weight: 500;
+}
+
+.live-ops-bar {
+  height: 0.45rem;
+  background: color-mix(in srgb, var(--line) 70%, transparent);
+  overflow: hidden;
+}
+
+.live-ops-bar > span {
+  display: block;
+  height: 100%;
+  background: var(--ink);
+  width: 0%;
+  transition: width 0.4s ease;
+}
+
+.live-ops-bar[data-stalled="1"] > span {
+  background: #c45c26;
+}
+
+.live-ops-line {
+  font-size: 0.92rem;
+  line-height: 1.35;
+}
+
+.live-ops-sub {
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
 .stat {
   background: var(--panel);
   border: 1px solid var(--line);
@@ -241,6 +309,31 @@ table.assets tbody tr:last-child td {
   background: #f5e6c8;
 }
 
+.pill.avail-ready {
+  color: var(--open);
+  background: var(--open-bg);
+}
+
+.pill.avail-on_disk {
+  color: #b45309;
+  background: rgba(180, 83, 9, 0.12);
+}
+
+.pill.avail-vault {
+  color: #0369a1;
+  background: rgba(3, 105, 161, 0.12);
+}
+
+.pill.avail-installable {
+  color: #6d28d9;
+  background: rgba(109, 40, 217, 0.12);
+}
+
+.pill.avail-need_download {
+  color: var(--muted);
+  background: rgba(120, 120, 120, 0.12);
+}
+
 .deadline {
   display: block;
   margin-top: 0.25rem;
@@ -316,6 +409,20 @@ table.assets tbody tr:last-child td {
   font-size: 0.75rem;
   color: var(--muted);
   font-family: var(--mono);
+}
+
+.lookdev-attach-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  padding: 0 0.5rem 0.55rem;
+}
+
+.lookdev-attach-actions .btn {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 0.68rem;
+  padding: 0.25rem 0.35rem;
 }
 
 .scratch-form {
@@ -664,4 +771,118 @@ table.assets tbody tr:last-child td {
   table.assets td:nth-child(6) {
     display: none;
   }
+}
+
+.import-checklist {
+  list-style: none;
+  padding: 0;
+  margin: 0.5rem 0 1rem;
+}
+
+.import-checklist li {
+  padding: 0.35rem 0;
+  font-family: var(--mono);
+  font-size: 0.85rem;
+}
+
+.import-checklist li.done {
+  color: var(--open);
+}
+
+.import-checklist li.todo {
+  color: var(--muted);
+}
+
+.import-path-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.import-path-row label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+  width: 100%;
+}
+
+.import-path {
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--ink);
+  border-radius: 4px;
+  width: 100%;
+}
+
+.post-stage-hint {
+  color: var(--open);
+  margin: 0 0 0.75rem;
+}
+
+.fab-target-banner {
+  margin: 0.35rem 0 0.25rem;
+}
+
+.mono-path {
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  color: var(--muted);
+  margin: 0 0 0.75rem;
+  word-break: break-all;
+}
+
+.scan-warn {
+  color: var(--warn, #c08040);
+  margin: 0 0 0.75rem;
+}
+
+.import-queue {
+  margin: 1rem 0 0;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  border-radius: 6px;
+}
+
+.import-queue-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.5rem;
+}
+
+.import-queue h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.import-queue ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.import-queue li {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.35rem 0;
+  border-top: 1px solid var(--line);
+  font-size: 0.9rem;
+}
+
+.import-queue button.linkish {
+  background: none;
+  border: none;
+  color: var(--accent);
+  cursor: pointer;
+  font: inherit;
+  text-decoration: underline;
 }

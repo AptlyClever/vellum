@@ -15,13 +15,40 @@ services:
       VELLUM_INTAKE_RUNS_PATH: /app/data/intake-runs.yaml
       VELLUM_JOBS_DB_PATH: /app/data/jobs.sqlite3
       VELLUM_DERIVED_PATH: /app/data/derived-outputs.yaml
+      VELLUM_ATTACHMENTS_PATH: /app/data/attachments.yaml
       VELLUM_VAULT_ROOT: /mnt/data/vault/vellum
       VELLUM_VAULT_REGISTER_PATH: /mnt/data/vault/vellum/02-index/asset-register.yaml
       VELLUM_VAULT_INTAKE_RUNS_PATH: /mnt/data/vault/vellum/02-index/intake-runs.yaml
       VELLUM_VAULT_DERIVED_PATH: /mnt/data/vault/vellum/02-index/derived-outputs.yaml
+      VELLUM_VAULT_ATTACHMENTS_PATH: /mnt/data/vault/vellum/02-index/attachments.yaml
+      AXIOM_BASE_URL: http://192.168.68.93:7895
+      AXIOM_PUBLIC_BASE_URL: http://192.168.68.93:7895
+      AXIOM_GLYPH_HERO_IMAGES: /mnt/temp/config/ctrl-alt-axiom/config/hails/glyph-hero-images
+      LCARD_VELLUM_MEDIA_DIR: /mnt/temp/config/control-alt-lcard/app/media/vellum
+      LCARD_BASE_URL: http://192.168.68.93:8184
+      BANDIT_VELLUM_STATIC_DIR: /mnt/temp/config/bandit/web/vellum
+      BANDIT_BASE_URL: http://192.168.68.93:8766
+      # MRQ author/render often goes quiet >3m; do not kill live captures early.
+      VELLUM_STALE_JOB_SEC: "1800"
     volumes:
       - ./data:/app/data
+      - ./backend:/app/backend
+      - ./web:/app/web
       - /mnt/data/vault/vellum:/mnt/data/vault/vellum
+      - /mnt/temp/config/ctrl-alt-axiom/config/hails/glyph-hero-images:/mnt/temp/config/ctrl-alt-axiom/config/hails/glyph-hero-images
+      - /mnt/temp/config/control-alt-lcard/app/media:/mnt/temp/config/control-alt-lcard/app/media
+      - /mnt/temp/config/bandit/web:/mnt/temp/config/bandit/web
+    # Hot-reload UI/API from host mounts (ops strip must not wait on image rebuild).
+    command:
+      [
+        "uvicorn",
+        "backend.main:app",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8770",
+        "--reload",
+      ]
     healthcheck:
       test:
         [
@@ -47,13 +74,26 @@ services:
       VELLUM_INTAKE_RUNS_PATH: /app/data/intake-runs.yaml
       VELLUM_JOBS_DB_PATH: /app/data/jobs.sqlite3
       VELLUM_DERIVED_PATH: /app/data/derived-outputs.yaml
+      VELLUM_ATTACHMENTS_PATH: /app/data/attachments.yaml
       VELLUM_VAULT_ROOT: /mnt/data/vault/vellum
       VELLUM_VAULT_REGISTER_PATH: /mnt/data/vault/vellum/02-index/asset-register.yaml
       VELLUM_VAULT_INTAKE_RUNS_PATH: /mnt/data/vault/vellum/02-index/intake-runs.yaml
       VELLUM_VAULT_DERIVED_PATH: /mnt/data/vault/vellum/02-index/derived-outputs.yaml
+      VELLUM_VAULT_ATTACHMENTS_PATH: /mnt/data/vault/vellum/02-index/attachments.yaml
+      AXIOM_BASE_URL: http://192.168.68.93:7895
+      AXIOM_PUBLIC_BASE_URL: http://192.168.68.93:7895
+      AXIOM_GLYPH_HERO_IMAGES: /mnt/temp/config/ctrl-alt-axiom/config/hails/glyph-hero-images
+      LCARD_VELLUM_MEDIA_DIR: /mnt/temp/config/control-alt-lcard/app/media/vellum
+      LCARD_BASE_URL: http://192.168.68.93:8184
+      BANDIT_VELLUM_STATIC_DIR: /mnt/temp/config/bandit/web/vellum
+      BANDIT_BASE_URL: http://192.168.68.93:8766
+      VELLUM_STALE_JOB_SEC: "1800"
     volumes:
       - ./data:/app/data
       - /mnt/data/vault/vellum:/mnt/data/vault/vellum
+      - /mnt/temp/config/ctrl-alt-axiom/config/hails/glyph-hero-images:/mnt/temp/config/ctrl-alt-axiom/config/hails/glyph-hero-images
+      - /mnt/temp/config/control-alt-lcard/app/media:/mnt/temp/config/control-alt-lcard/app/media
+      - /mnt/temp/config/bandit/web:/mnt/temp/config/bandit/web
     depends_on:
       - app
 
@@ -70,4 +110,8 @@ services:
       VELLUM_INTAKE_RUNS_PATH: /tmp/vellum-test-intake.yaml
       VELLUM_JOBS_DB_PATH: /tmp/vellum-test-jobs.sqlite3
       VELLUM_DERIVED_PATH: /tmp/vellum-test-derived.yaml
+      VELLUM_ATTACHMENTS_PATH: /tmp/vellum-test-attachments.yaml
       VELLUM_VAULT_ROOT: /tmp/vellum-test-vault
+      AXIOM_GLYPH_HERO_IMAGES: /tmp/vellum-test-glyph-images
+      LCARD_VELLUM_MEDIA_DIR: /tmp/vellum-test-lcard-media
+      BANDIT_VELLUM_STATIC_DIR: /tmp/vellum-test-bandit-web/vellum

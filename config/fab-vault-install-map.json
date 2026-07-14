@@ -68,6 +68,42 @@
     },
     "metal-material-3": {
       "content_rel_paths": ["MetalMaterial3"]
+    },
+    "arabic-dock": {
+      "content_rel_paths": ["Arabic_Dock"]
+    },
+    "cappadocia-anatolian-cave-hotel-environment": {
+      "content_rel_paths": ["BefourStudios\\CappadociaAnatolianCaveEnvironment", "CappadociaAnatolianCaveEnvironment"]
+    },
+    "glass-bundle-material": {
+      "content_rel_paths": ["GlassBundle"]
+    },
+    "magic-abilities-vol-3-niagara": {
+      "content_rel_paths": ["MagicAbilitiesV3"]
+    },
+    "magic-projectiles-vol-3-niagara": {
+      "content_rel_paths": ["MagicProjectilesVol3"]
+    },
+    "master-mega-dirty-wall-pack-material-4k": {
+      "content_rel_paths": ["DirtyWall"]
+    },
+    "middle-eastern-town": {
+      "content_rel_paths": ["MiddleEastern"]
+    },
+    "motel-reception-interior-environment": {
+      "content_rel_paths": ["BefourStudios\\MotelReceptionInterior", "MotelReceptionInterior"]
+    },
+    "niagara-mega-pack-vol-3": {
+      "content_rel_paths": ["NiagaraMegaPackVol3"]
+    },
+    "oil-rig-liope": {
+      "content_rel_paths": ["Liope_Tr"]
+    },
+    "stylized-vfx-water": {
+      "content_rel_paths": ["StylizedVFX-Water"]
+    },
+    "vertical-warehouse": {
+      "content_rel_paths": ["Warehouse"]
     }
   }
 }
