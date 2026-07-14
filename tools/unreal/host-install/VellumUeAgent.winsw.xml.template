@@ -6,9 +6,9 @@
 <service>
   <id>VellumUeAgent</id>
   <name>Vellum UE Agent</name>
-  <description>Polls Vellum for ue_capture jobs and talks to the warm Lookdev Worker on loopback. Do not babysit a PowerShell window.</description>
+  <description>Polls Vellum for ue_capture jobs and runs Epic batch Movie Render Queue capture. Do not babysit a PowerShell window.</description>
   <executable>{{PWSH}}</executable>
-  <arguments>-NoProfile -ExecutionPolicy Bypass -File "{{AGENT_PS1}}" -VellumBase "{{VELLUM_BASE}}" -HostName "{{HOST_NAME}}" -LegacyCmdRunner</arguments>
+  <arguments>-NoProfile -ExecutionPolicy Bypass -File "{{AGENT_PS1}}" -VellumBase "{{VELLUM_BASE}}" -HostName "{{HOST_NAME}}"</arguments>
   <workingdirectory>{{REPO_ROOT}}</workingdirectory>
   <logpath>{{LOG_DIR}}</logpath>
   <log mode="roll-by-size">

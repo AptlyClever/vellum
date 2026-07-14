@@ -4,9 +4,9 @@
   Install Vellum UE host wrappers on Aurora (no babysat console).
 
 .DESCRIPTION
-  Default: interactive logon Scheduled Task for VellumUeAgent (GPU session).
-  Optional: WinSW service is disabled for Capture - LocalSystem Session 0 hangs UnrealEditor-Cmd.
-  Legacy Lookdev Worker logon/watchdog tasks remain optional.
+  Default: interactive logon Scheduled Task for VellumUeAgent (Lookdev Worker path).
+  Registers VellumLookdevWorkerEnsure (-LaunchGui) and watchdog.
+  Optional WinSW service is disabled for Capture - LocalSystem Session 0 cannot own the GPU editor.
 
   Run elevated once on the GPU box after git pull.
 
@@ -67,6 +67,31 @@ Write-Host "RepoRoot=$RepoRoot"
 Write-Host "HostName=$HostName VellumBase=$VellumBase"
 Write-Host "Pwsh=$Pwsh"
 
+# --- Python (required for pick_heroes.py on Capture / Recover) ---
+$pythonOk = $false
+foreach ($pyCand in @(
+    "C:\Python312\python.exe",
+    "C:\Program Files\Python312\python.exe"
+  )) {
+  if ((Test-Path $pyCand) -and ((Get-Item $pyCand).Length -gt 1024)) {
+    Write-Host "Python OK: $pyCand (& $($(& $pyCand --version) -join ' '))"
+    $pythonOk = $true
+    break
+  }
+}
+if (-not $pythonOk) {
+  $choco = Get-Command choco -ErrorAction SilentlyContinue
+  if (-not $choco) {
+    throw "Python 3.12 missing and chocolatey not on PATH. Install: https://chocolatey.org then choco install python312 -y"
+  }
+  Write-Host "Installing Python 3.12 via chocolatey (required for capture hero pick)..."
+  & choco install python312 -y --no-progress
+  if (-not (Test-Path "C:\Python312\python.exe")) {
+    throw "choco install python312 finished but C:\Python312\python.exe missing"
+  }
+  Write-Host "Python installed: $((& C:\Python312\python.exe --version) -join ' ')"
+}
+
 # --- WinSW binary ---
 if (-not (Test-Path $WinSwExe)) {
   Write-Host "Downloading WinSW 2.12.0..."
@@ -126,7 +151,7 @@ $taskWorker = "VellumLookdevWorkerEnsure"
 if (-not $SkipLogonTask) {
   $action = New-ScheduledTaskAction `
     -Execute $Pwsh `
-    -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$WorkerPs1`" -Ensure -HostName $HostName" `
+    -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$WorkerPs1`" -Ensure -LaunchGui -HostName $HostName" `
     -WorkingDirectory $RepoRoot
   $trigger = New-ScheduledTaskTrigger -AtLogOn
   $settings = New-ScheduledTaskSettingsSet `

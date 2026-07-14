@@ -5,6 +5,7 @@ Wraps Capture so you do **not** leave a PowerShell window open.
 | Piece | Mechanism | Why |
 | --- | --- | --- |
 | **VellumUeAgent** | Scheduled Task (At logon, **interactive**) | Polls Vellum; launches UnrealEditor-Cmd in your GPU desktop session |
+| **Python 3.12** | `choco install python312` → `C:\Python312\python.exe` | `pick_heroes.py` (stdlib). Install script installs this if missing. Do **not** rely on WindowsApps store stubs or old 3.10 RC. |
 | **VellumLookdevWorkerEnsure** | Scheduled Task (At logon) | Optional warm Lookdev Worker (parked for Capture) |
 | **VellumLookdevWorkerWatchdog** | Scheduled Task (every 5 min) | `host-heal.ps1`: git pull + restart agent task if code moved |
 

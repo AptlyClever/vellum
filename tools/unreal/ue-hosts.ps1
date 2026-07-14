@@ -52,18 +52,28 @@ function Get-UeHostProfile {
     throw "Unknown UE host '$id'. Known: $known. Set config/ue-hosts.json active or VELLUM_UE_HOST."
   }
   $profile = $hosts.$id
+  $scanRoots = @()
+  if ($profile.content_scan_roots) {
+    foreach ($r in @($profile.content_scan_roots)) {
+      if ($r) { $scanRoots += [string]$r }
+    }
+  }
   return [pscustomobject]@{
-    id              = $id
-    label           = [string]$profile.label
-    role            = [string]$profile.role
-    repo            = [string]$profile.repo
-    ue_editor       = [string]$profile.ue_editor
-    ue_cmd          = [string]$profile.ue_cmd
-    project         = [string]$profile.project
-    project_dir     = [string]$profile.project_dir
-    content_root    = [string]$profile.content_root
-    engine_version  = [string]$profile.engine_version
-    active_in_config = ([string]$config.active).Trim().ToLowerInvariant()
+    id                 = $id
+    label              = [string]$profile.label
+    role               = [string]$profile.role
+    repo               = [string]$profile.repo
+    ue_editor          = [string]$profile.ue_editor
+    ue_cmd             = [string]$profile.ue_cmd
+    project            = [string]$profile.project
+    project_dir        = [string]$profile.project_dir
+    fab_target_project = [string]$profile.fab_target_project
+    fab_target_label   = [string]$profile.fab_target_label
+    content_root       = [string]$profile.content_root
+    engine_version     = [string]$profile.engine_version
+    content_scan_roots = $scanRoots
+    unity_packages_dir = [string]$profile.unity_packages_dir
+    active_in_config   = ([string]$config.active).Trim().ToLowerInvariant()
   }
 }
 

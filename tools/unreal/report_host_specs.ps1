@@ -9,7 +9,9 @@
 #>
 param(
   [string]$VellumBase = "http://192.168.68.93:8770",
-  [string]$HostName = ""
+  [string]$HostName = "",
+  # Nested pack roots (e.g. BefourStudios\JapaneseOldShoppingMall) to include in picker.
+  [string[]]$ExtraContentPaths = @()
 )
 
 $ErrorActionPreference = "Stop"
@@ -109,12 +111,102 @@ $specs = [ordered]@{
   ue_project       = [string]$UeHost.project
 }
 
+# Content/<Pack> folders for Import pack picker (multi-root: canonical F: + Fab dumps).
+$contentFolders = @()
+$projDir = [string]$UeHost.project_dir
+if (-not $projDir -and $UeHost.project) {
+  $projDir = Split-Path ([string]$UeHost.project) -Parent
+}
+$primaryContent = if ($projDir) { Join-Path $projDir "Content" } else { $null }
+$scanRoots = New-Object System.Collections.Generic.List[string]
+foreach ($r in @($UeHost.content_scan_roots)) {
+  if ($r) { [void]$scanRoots.Add([string]$r) }
+}
+if ($primaryContent -and -not ($scanRoots | Where-Object { $_ -ieq $primaryContent })) {
+  [void]$scanRoots.Insert(0, $primaryContent)
+}
+function Add-ContentFolderRow {
+  param(
+    [System.IO.DirectoryInfo]$Dir,
+    [string]$ProjectRoot,
+    [string]$ContentRootPath
+  )
+  $full = [string]$Dir.FullName
+  $key = $full.ToLowerInvariant()
+  if ($script:seenPaths.ContainsKey($key)) { return }
+  $script:seenPaths[$key] = $true
+  $pngApprox = 0
+  try {
+    $pngApprox = @(Get-ChildItem -Path $Dir.FullName -Recurse -File -Include *.uasset,*.umap -ErrorAction SilentlyContinue |
+      Select-Object -First 50).Count
+  } catch { $pngApprox = 0 }
+  $script:contentFolders += [ordered]@{
+    name          = [string]$Dir.Name
+    path          = $full
+    project_root  = [string]$ProjectRoot
+    content_root  = [string]$ContentRootPath
+    engine        = "unreal"
+    mtime_utc     = $Dir.LastWriteTimeUtc.ToString("o")
+    sample_assets = [int]$pngApprox
+  }
+}
+
+$seenPaths = @{}
+$VendorNestParents = @("BefourStudios")
+foreach ($contentRoot in $scanRoots) {
+  if (-not $contentRoot -or -not (Test-Path -LiteralPath $contentRoot)) { continue }
+  $projectRoot = Split-Path $contentRoot -Parent
+  foreach ($d in @(Get-ChildItem -LiteralPath $contentRoot -Directory -ErrorAction SilentlyContinue)) {
+    if ($d.Name -match '^(Collections|Developers|__ExternalActors__|__ExternalObjects__)$') { continue }
+    Add-ContentFolderRow -Dir $d -ProjectRoot $projectRoot -ContentRootPath $contentRoot
+    # Vendor packs nest one level (Japanese / Motel under BefourStudios).
+    if ($VendorNestParents -contains $d.Name) {
+      foreach ($child in @(Get-ChildItem -LiteralPath $d.FullName -Directory -ErrorAction SilentlyContinue)) {
+        Add-ContentFolderRow -Dir $child -ProjectRoot $projectRoot -ContentRootPath $contentRoot
+      }
+    }
+  }
+}
+foreach ($extra in @($ExtraContentPaths)) {
+  if (-not $extra -or -not (Test-Path -LiteralPath $extra)) { continue }
+  $item = Get-Item -LiteralPath $extra
+  if (-not $item.PSIsContainer) { continue }
+  $contentRootGuess = $primaryContent
+  if ($primaryContent -and $item.FullName.StartsWith($primaryContent, [StringComparison]::OrdinalIgnoreCase)) {
+    $contentRootGuess = $primaryContent
+  } else {
+    $contentRootGuess = Split-Path $item.FullName -Parent
+  }
+  $projectRootGuess = if ($projDir) { $projDir } else { Split-Path $contentRootGuess -Parent }
+  Add-ContentFolderRow -Dir $item -ProjectRoot $projectRootGuess -ContentRootPath $contentRootGuess
+}
+# Optional Unity package roots (host profile may set unity_packages_dir later).
+$unityRoot = [string]$UeHost.unity_packages_dir
+if ($unityRoot -and (Test-Path -LiteralPath $unityRoot)) {
+  foreach ($d in @(Get-ChildItem -LiteralPath $unityRoot -Directory -ErrorAction SilentlyContinue)) {
+    $contentFolders += [ordered]@{
+      name          = [string]$d.Name
+      path          = [string]$d.FullName
+      project_root  = [string]$unityRoot
+      content_root  = [string]$unityRoot
+      engine        = "unity"
+      mtime_utc     = $d.LastWriteTimeUtc.ToString("o")
+      sample_assets = 0
+    }
+  }
+}
+$specs["content_folders"] = $contentFolders
+$specs["content_root_path"] = $primaryContent
+$specs["content_scan_roots"] = @($scanRoots)
+$specs["fab_target_project"] = [string]$UeHost.fab_target_project
+$specs["fab_target_label"] = [string]$UeHost.fab_target_label
+
 $body = @{
   host_id = $UeHost.id
   specs   = $specs
 } | ConvertTo-Json -Depth 8
 
-Write-Host "Posting host specs for $($UeHost.id) to $VellumBase"
+Write-Host "Posting host specs for $($UeHost.id) to $VellumBase ($($contentFolders.Count) content folders)"
 $res = Invoke-RestMethod -Method Post -Uri "$VellumBase/api/ue/hosts/specs" `
   -ContentType "application/json" -Body $body
 Write-Host "Stored specs updated_at=$($res.updated_at)"
@@ -123,5 +215,8 @@ Write-Host ("RAM: {0} GB" -f $specs.ram_gb)
 Write-Host ("GPU: " + (($specs.gpus | ForEach-Object { $_.name }) -join "; "))
 if ($nvidia.Count -gt 0) {
   Write-Host ("NVIDIA: " + (($nvidia | ForEach-Object { "{0} ({1} GB)" -f $_.name, $_.vram_gb }) -join "; "))
+}
+foreach ($cf in $contentFolders) {
+  Write-Host ("Content: {0} -> {1}" -f $cf.name, $cf.path)
 }
 $specs | ConvertTo-Json -Depth 6

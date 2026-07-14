@@ -116,3 +116,51 @@ def test_job_progress_api(tmp_path: Path, monkeypatch) -> None:
     assert body["status"] == "running"
     assert "Phase A inventory" in body["log"]
     assert "LogPython: ok" in body["log"]
+
+
+def test_ue_capture_claim_is_single_flight(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("VELLUM_JOBS_DB_PATH", str(tmp_path / "jobs.sqlite3"))
+    from backend import jobs as jobs_mod
+
+    first = jobs_mod.enqueue_job(kind="ue_capture", asset_id="a", payload={})
+    second = jobs_mod.enqueue_job(kind="ue_capture", asset_id="b", payload={})
+    stage = jobs_mod.enqueue_job(kind="host_stage", asset_id="c", payload={})
+    claimed = jobs_mod.claim_next_job(kinds=frozenset({"ue_capture", "host_stage"}))
+    assert claimed["job_id"] == first["job_id"]
+    # While first capture runs, do not claim the second capture — stage is fine.
+    next_job = jobs_mod.claim_next_job(kinds=frozenset({"ue_capture", "host_stage"}))
+    assert next_job is not None
+    assert next_job["job_id"] == stage["job_id"]
+    assert next_job["kind"] == "host_stage"
+    blocked = jobs_mod.claim_next_job(kinds=frozenset({"ue_capture"}))
+    assert blocked is None
+    jobs_mod.complete_job(first["job_id"], result={"ok": True})
+    resumed = jobs_mod.claim_next_job(kinds=frozenset({"ue_capture"}))
+    assert resumed is not None
+    assert resumed["job_id"] == second["job_id"]
+
+
+def test_stale_running_ue_capture_is_failed(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("VELLUM_JOBS_DB_PATH", str(tmp_path / "jobs.sqlite3"))
+    monkeypatch.setenv("VELLUM_STALE_JOB_SEC", "30")
+    from backend import jobs as jobs_mod
+    from datetime import datetime, timedelta, timezone
+
+    job = jobs_mod.enqueue_job(kind="ue_capture", asset_id="stuck-pack", payload={})
+    claimed = jobs_mod.claim_next_job(kinds=frozenset({"ue_capture"}))
+    assert claimed and claimed["job_id"] == job["job_id"]
+    # Backdate updated_at/started_at to simulate abandoned agent.
+    old = (datetime.now(timezone.utc) - timedelta(seconds=120)).isoformat()
+    with jobs_mod._conn() as conn:
+        conn.execute(
+            "UPDATE jobs SET updated_at = ?, started_at = ? WHERE job_id = ?",
+            (old, old, job["job_id"]),
+        )
+    failed = jobs_mod.fail_stale_running_agent_jobs(max_silence_sec=30)
+    assert len(failed) == 1
+    assert failed[0]["status"] == "failed"
+    assert "stale_agent_silence" in (failed[0].get("error") or "")
+    # Queue can move again.
+    nxt = jobs_mod.enqueue_job(kind="ue_capture", asset_id="next-pack", payload={})
+    got = jobs_mod.claim_next_job(kinds=frozenset({"ue_capture"}))
+    assert got and got["job_id"] == nxt["job_id"]

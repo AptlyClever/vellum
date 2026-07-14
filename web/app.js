@@ -25,6 +25,25 @@ function makePill(window) {
   return span;
 }
 
+function makeAvailabilityCell(av) {
+  const cell = document.createElement("td");
+  cell.className = "availability";
+  const state = (av && av.state) || "need_download";
+  const label = (av && av.label) || "Need download";
+  const detail = (av && av.detail) || "";
+  const pill = document.createElement("span");
+  pill.className = `pill avail-${state}`;
+  pill.textContent = label;
+  cell.appendChild(pill);
+  if (detail) {
+    const sub = document.createElement("span");
+    sub.className = "deadline";
+    sub.textContent = detail;
+    cell.appendChild(sub);
+  }
+  return cell;
+}
+
 async function fetchJson(url) {
   const res = await fetch(url);
   if (!res.ok) throw new Error(`${res.status} ${url}`);
@@ -98,6 +117,54 @@ function renderLookdevGrid(lookdevHost, outputs, { emptyText, limit = 24 } = {})
       ? `${out.lane} · ${shortNote}`
       : `${out.lane} · ${out.kind}`;
     card.appendChild(cap);
+
+    const actions = document.createElement("div");
+    actions.className = "lookdev-attach-actions";
+    const targets = [
+      { id: "hail", label: "Use in Hail" },
+      { id: "lcard", label: "Use in LCARD" },
+      { id: "bandit", label: "Use in Bandit" },
+    ];
+    for (const t of targets) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "btn btn-secondary btn-tiny";
+      btn.textContent = t.label;
+      btn.onclick = async (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        btn.disabled = true;
+        const prev = btn.textContent;
+        btn.textContent = "Attaching…";
+        try {
+          const res = await fetch("/api/attach", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              derived_output_id: out.id,
+              target: t.id,
+              register_glyph: true,
+            }),
+          });
+          const body = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            throw new Error(body.detail || res.statusText || "attach_failed");
+          }
+          const att = body.attachment || body;
+          btn.textContent = "Attached";
+          if (att.deep_link) {
+            window.open(att.deep_link, "_blank", "noopener");
+          }
+        } catch (err) {
+          btn.disabled = false;
+          btn.textContent = prev;
+          alert(`Attach failed: ${err.message || err}`);
+          console.error(err);
+        }
+      };
+      actions.appendChild(btn);
+    }
+    card.appendChild(actions);
     lookdevHost.appendChild(card);
   }
 }
@@ -228,21 +295,224 @@ function startCaptureWatch({
   captureWatchTimer = setInterval(tick, 4000);
 }
 
+function formatSilence(sec) {
+  if (sec == null || Number.isNaN(sec)) return "";
+  const s = Math.max(0, Math.floor(sec));
+  if (s < 60) return `${s}s quiet`;
+  const m = Math.floor(s / 60);
+  const rem = s % 60;
+  return `${m}m ${rem}s quiet`;
+}
+
+function renderLiveOps(ops) {
+  const host = $("live-ops");
+  if (!host) return;
+  clear(host);
+  const finish = ops.finish || {};
+  const counts = ops.counts || {};
+  const running = (ops.capture && ops.capture.running) || [];
+  const queued = (ops.capture && ops.capture.queued) || [];
+  const run = running[0];
+  const stalled = !!(run && run.stalled);
+  const done = !!finish.done;
+  host.dataset.state = done ? "done" : stalled ? "stalled" : "active";
+
+  const top = document.createElement("div");
+  top.className = "live-ops-top";
+  const title = document.createElement("div");
+  title.className = "live-ops-title";
+  title.textContent = done
+    ? "Live ops · inventory complete"
+    : "Live ops · inventory progress";
+  const pct = document.createElement("div");
+  pct.className = "live-ops-pct";
+  pct.textContent = `${finish.percent_complete ?? 0}% Ready`;
+  top.append(title, pct);
+  host.appendChild(top);
+
+  const h = ops.host || {};
+  if (h.gpu_util_pct != null || h.worker_busy != null) {
+    const util = document.createElement("div");
+    util.className = "live-ops-line";
+    const gpu =
+      h.gpu_util_pct != null ? `GPU ${h.gpu_util_pct}%` : "GPU —";
+    const mem =
+      h.gpu_mem_used_mb != null && h.gpu_mem_total_mb != null
+        ? ` · VRAM ${h.gpu_mem_used_mb}/${h.gpu_mem_total_mb} MB`
+        : "";
+    const ed =
+      h.editor_rss_mb != null ? ` · Editor ${h.editor_rss_mb} MB` : "";
+    const busy =
+      h.worker_busy === true
+        ? " · worker busy"
+        : h.worker_busy === false
+          ? " · worker idle"
+          : "";
+    const tax = h.idle_tax ? " · IDLE TAX (warm editor, GPU ~0%)" : "";
+    util.textContent = `Aurora ${h.host_id || ""}: ${gpu}${mem}${ed}${busy}${tax}`;
+    host.appendChild(util);
+  }
+
+  const bar = document.createElement("div");
+  bar.className = "live-ops-bar";
+  bar.dataset.stalled = stalled ? "1" : "0";
+  const fill = document.createElement("span");
+  fill.style.width = `${Math.max(0, Math.min(100, finish.percent_complete ?? 0))}%`;
+  bar.appendChild(fill);
+  host.appendChild(bar);
+
+  const line = document.createElement("div");
+  line.className = "live-ops-line";
+  if (done) {
+    line.textContent = "All Unreal packs Ready. Nothing for you to babysit.";
+  } else if (run) {
+    const p =
+      run.percent != null ? `${run.percent}%` : "phase-known / % unknown";
+    const sys =
+      run.systems_total != null && run.systems_done != null
+        ? ` · systems ${run.systems_done}/${run.systems_total}`
+        : run.systems_total != null
+          ? ` · ${run.systems_total} systems`
+          : "";
+    const stall = stalled
+      ? ` · STALLED (${formatSilence(run.silence_sec)})`
+      : run.silence_sec != null
+        ? ` · ${formatSilence(run.silence_sec)}`
+        : "";
+    line.textContent = `MRQ ${run.status}: ${run.asset_id} — ${run.phase || "…"} (${p}${sys})${stall}`;
+  } else if (queued.length) {
+    line.textContent = `MRQ queued: ${queued.map((j) => j.asset_id).join(", ")}`;
+  } else if ((counts.on_disk || 0) > 0) {
+    line.textContent = `${counts.on_disk} on disk waiting for capture — agent should enqueue.`;
+  } else if ((counts.need_download || 0) > 0) {
+    line.textContent = `${counts.need_download} still need VaultCache fill (agent-owned; redeem closed).`;
+  } else {
+    line.textContent = "Idle — checking…";
+  }
+  host.appendChild(line);
+
+  const sub = document.createElement("div");
+  sub.className = "live-ops-sub";
+  const op = ops.operator || {};
+  sub.textContent = `Your job: ${op.responsibility || "none"} · Redeem: ${
+    op.redeem || "closed"
+  } · Ready ${finish.ready ?? 0} / ${finish.total ?? "?"} · remaining ${
+    finish.remaining ?? "?"
+  } · updated ${ops.generated_at || ""}`;
+  host.appendChild(sub);
+}
+
+let liveOpsTimer = null;
+let liveOpsInFlight = false;
+async function refreshLiveOps() {
+  if (liveOpsInFlight) return;
+  liveOpsInFlight = true;
+  try {
+    const ops = await fetchJson("/api/ops/pulse?engine=unreal");
+    renderLiveOps(ops);
+    const host = $("stats");
+    if (host && ops.counts) {
+      const keys = ["ready", "on_disk", "vault", "installable", "need_download"];
+      const kids = host.querySelectorAll(".stat");
+      keys.forEach((key, i) => {
+        if (!kids[i]) return;
+        const strong = kids[i].querySelector("strong");
+        if (strong) strong.textContent = String(ops.counts[key] ?? 0);
+      });
+    }
+  } catch (err) {
+    const host = $("live-ops");
+    if (host) {
+      clear(host);
+      host.dataset.state = "stalled";
+      const line = document.createElement("div");
+      line.className = "live-ops-line";
+      line.textContent = "Live ops unreachable — /api/ops/pulse failed.";
+      host.appendChild(line);
+    }
+    console.warn(err);
+  } finally {
+    liveOpsInFlight = false;
+  }
+}
+
+function startLiveOps() {
+  // loadStats already painted pulse once; poll without overlaps.
+  if (liveOpsTimer != null) clearInterval(liveOpsTimer);
+  liveOpsTimer = setInterval(() => {
+    refreshLiveOps().catch(console.error);
+  }, 5000);
+}
+
 async function loadStats() {
-  const s = await fetchJson("/api/register/summary");
   const host = $("stats");
   clear(host);
+  // One cheap pulse. Do not stack availability + coverage + queue on first paint.
+  let pulse = null;
+  try {
+    pulse = await fetchJson("/api/ops/pulse?engine=unreal");
+  } catch (err) {
+    console.warn(err);
+  }
+  const c = (pulse && pulse.counts) || {};
   for (const [n, label] of [
-    [s.count, "assets"],
-    [s.redeem_open, "redeem open"],
-    [s.redeem_expired, "redeem expired"],
+    [c.ready, "ready"],
+    [c.on_disk, "on disk"],
+    [c.vault, "vault only"],
+    [c.installable, "installable"],
+    [c.need_download, "need download"],
   ]) {
     const div = document.createElement("div");
     div.className = "stat";
     const strong = document.createElement("strong");
-    strong.textContent = String(n);
+    strong.textContent = String(n ?? 0);
     div.append(strong, document.createTextNode(` ${label}`));
     host.appendChild(div);
+  }
+  if (pulse) renderLiveOps(pulse);
+
+  let box = $("import-queue");
+  if (!box) {
+    box = document.createElement("div");
+    box.id = "import-queue";
+    box.className = "import-queue";
+    host.parentElement.appendChild(box);
+  }
+  clear(box);
+  const items = (pulse && pulse.on_disk_need_lookdev) || [];
+  const headRow = document.createElement("div");
+  headRow.className = "import-queue-head";
+  const h = document.createElement("h2");
+  h.textContent =
+    items.length > 0
+      ? `On disk — still need work (${items.length})`
+      : "On disk — lookdev caught up";
+  headRow.appendChild(h);
+  box.appendChild(headRow);
+  if (!items.length) {
+    const empty = document.createElement("p");
+    empty.className = "fit";
+    const need = c.need_download || 0;
+    empty.textContent =
+      need > 0
+        ? `No on-disk lookdev left. ${need} packs still need VaultCache fill (agent-owned).`
+        : "All Unreal packs past import + lookdev (or none pending).";
+    box.appendChild(empty);
+  } else {
+    const ul = document.createElement("ul");
+    for (const item of items) {
+      const li = document.createElement("li");
+      const name = document.createElement("span");
+      name.textContent = item.display_name || item.asset_id;
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "linkish";
+      btn.textContent = "open";
+      btn.addEventListener("click", () => openDetail(item.asset_id));
+      li.append(name, btn);
+      ul.appendChild(li);
+    }
+    box.appendChild(ul);
   }
 }
 
@@ -283,18 +553,13 @@ function renderRows(assets) {
     const tdType = document.createElement("td");
     tdType.textContent = a.package_type || "";
 
-    const tdRedeem = document.createElement("td");
-    tdRedeem.appendChild(makePill(a.redeem_window));
-    const deadline = document.createElement("span");
-    deadline.className = "deadline";
-    deadline.textContent = formatDeadline(a.redemption_deadline);
-    tdRedeem.appendChild(deadline);
+    const tdAvail = makeAvailabilityCell(a.availability);
 
     const tdFit = document.createElement("td");
     tdFit.className = "fit";
     tdFit.textContent = a.project_fit || "";
 
-    tr.append(tdIdx, tdName, tdEngine, tdType, tdRedeem, tdFit);
+    tr.append(tdIdx, tdName, tdEngine, tdType, tdAvail, tdFit);
     tr.addEventListener("click", () => openDetail(a.id));
     body.appendChild(tr);
   }
@@ -441,13 +706,6 @@ async function openDetail(id) {
   summary.textContent = `${a.engine || "?"} · ${a.package_type || "pack"} · ${a.store_label || a.store_lane || "store?"}`;
   host.appendChild(summary);
 
-  // ---- Capture (primary) ----
-  const captureSec = document.createElement("section");
-  captureSec.className = "detail-section";
-  const captureHead = document.createElement("h3");
-  captureHead.textContent = "Capture";
-  captureSec.appendChild(captureHead);
-
   let activeHost = null;
   try {
     const hostsPayload = await fetchJson("/api/ue/hosts");
@@ -455,6 +713,493 @@ async function openDetail(id) {
   } catch (err) {
     console.warn(err);
   }
+
+  // ---- Import pack (operator checklist) ----
+  let importStatus = null;
+  try {
+    importStatus = await fetchJson(
+      `/api/assets/${encodeURIComponent(a.id)}/import`
+    );
+  } catch (err) {
+    console.warn(err);
+  }
+
+  const importSec = document.createElement("section");
+  importSec.className = "detail-section import-section";
+  const importHead = document.createElement("h3");
+  importHead.textContent = "Import pack";
+  importSec.appendChild(importHead);
+  const fabBanner = document.createElement("p");
+  fabBanner.className = "fit fab-target-banner";
+  const fabLabel =
+    (activeHost &&
+      (activeHost.fab_target_label ||
+        (activeHost.host_specs && activeHost.host_specs.fab_target_label))) ||
+    "AuroraVellum (F:\\Games\\AuroraVellum)";
+  const fabProject =
+    (activeHost &&
+      (activeHost.fab_target_project ||
+        (activeHost.host_specs && activeHost.host_specs.fab_target_project) ||
+        activeHost.project)) ||
+    "F:\\Games\\AuroraVellum\\AuroraVellum.uproject";
+  fabBanner.textContent =
+    "STOP using Epic Launcher Fab Add-to-Project (project picker is broken). Open AuroraVellum in Unreal 5.8, then use the Fab plugin INSIDE the editor to Add to this project. Packs already on F: — pick below and Stage.";
+  importSec.appendChild(fabBanner);
+  const fabPathLine = document.createElement("p");
+  fabPathLine.className = "fit mono-path";
+  fabPathLine.textContent = fabProject;
+  importSec.appendChild(fabPathLine);
+
+  const openEditorBtn = document.createElement("button");
+  openEditorBtn.type = "button";
+  openEditorBtn.className = "btn";
+  openEditorBtn.textContent = "Open AuroraVellum in UE";
+  openEditorBtn.addEventListener("click", async () => {
+    openEditorBtn.disabled = true;
+    openEditorBtn.textContent = "Launching…";
+    try {
+      const hostId = (activeHost && activeHost.id) || "aurora";
+      const res = await fetch(
+        `/api/ue/hosts/open-editor?host_id=${encodeURIComponent(hostId)}`,
+        { method: "POST" }
+      );
+      if (!res.ok) throw new Error(`open-editor ${res.status}`);
+      openEditorBtn.textContent = "UE launch queued";
+    } catch (err) {
+      console.error(err);
+      openEditorBtn.textContent = "Launch failed";
+      openEditorBtn.disabled = false;
+    }
+  });
+  importSec.appendChild(openEditorBtn);
+
+  const checklist = document.createElement("ol");
+  checklist.className = "import-checklist";
+  const pathRow = document.createElement("div");
+  pathRow.className = "import-path-row";
+  const pickLabel = document.createElement("label");
+  pickLabel.textContent = "Content folder (from Aurora scan)";
+  const folderSelect = document.createElement("select");
+  folderSelect.className = "import-path import-folder-select";
+  const emptyOpt = document.createElement("option");
+  emptyOpt.value = "";
+  emptyOpt.textContent = "— pick Content/* —";
+  folderSelect.appendChild(emptyOpt);
+  pickLabel.appendChild(folderSelect);
+  pathRow.appendChild(pickLabel);
+
+  const refreshFoldersBtn = document.createElement("button");
+  refreshFoldersBtn.type = "button";
+  refreshFoldersBtn.className = "btn btn-secondary";
+  refreshFoldersBtn.textContent = "Refresh folders";
+  pathRow.appendChild(refreshFoldersBtn);
+
+  const pathLabel = document.createElement("label");
+  pathLabel.textContent = "Selected host path (from scan only)";
+  const pathInputImport = document.createElement("input");
+  pathInputImport.type = "text";
+  pathInputImport.className = "import-path";
+  pathInputImport.readOnly = true;
+  pathInputImport.placeholder = "Pick a scanned folder above";
+  pathInputImport.value =
+    (importStatus && importStatus.host_content_path) ||
+    (a.host_content_path || "");
+  pathLabel.appendChild(pathInputImport);
+  pathRow.appendChild(pathLabel);
+  importSec.appendChild(pathRow);
+
+  const scanWarn = document.createElement("p");
+  scanWarn.className = "fit scan-warn";
+  scanWarn.hidden = true;
+  importSec.appendChild(scanWarn);
+
+  const postStageHint = document.createElement("p");
+  postStageHint.className = "fit post-stage-hint";
+  postStageHint.hidden = true;
+  importSec.appendChild(postStageHint);
+
+  const importActions = document.createElement("div");
+  importActions.className = "capture-actions";
+  importSec.appendChild(importActions);
+
+  let deriveOfferBtn = null;
+
+  const fillFolderSelect = async () => {
+    try {
+      const hostId = (activeHost && activeHost.id) || "aurora";
+      const data = await fetchJson(
+        `/api/ue/hosts/content-folders?host_id=${encodeURIComponent(hostId)}`
+      );
+      const previous = folderSelect.value;
+      clear(folderSelect);
+      const opt0 = document.createElement("option");
+      opt0.value = "";
+      opt0.textContent =
+        data.count > 0
+          ? `— ${data.count} folders (updated ${data.updated_at || "?"}) —`
+          : "— no folders yet — Fab Add to Project, then Refresh —";
+      folderSelect.appendChild(opt0);
+      for (const f of data.folders || []) {
+        const opt = document.createElement("option");
+        opt.value = f.path || "";
+        opt.dataset.name = f.name || "";
+        opt.dataset.engine = f.engine || "unreal";
+        const eng = f.engine && f.engine !== "unreal" ? ` [${f.engine}]` : "";
+        opt.textContent = f.project_root
+          ? `${f.name}${eng}  ·  ${f.project_root}`
+          : `${f.name}${eng}`;
+        folderSelect.appendChild(opt);
+      }
+      if (data.fab_target_project) {
+        fabPathLine.textContent = data.fab_target_project;
+      }
+      const cur =
+        previous ||
+        (importStatus && importStatus.host_content_path) ||
+        pathInputImport.value;
+      if (cur) {
+        for (const opt of folderSelect.options) {
+          if (opt.value.toLowerCase() === String(cur).toLowerCase()) {
+            folderSelect.value = opt.value;
+            pathInputImport.value = opt.value;
+            break;
+          }
+        }
+      }
+      scanWarn.hidden = (data.folders || []).length > 0;
+      scanWarn.textContent = (data.folders || []).length
+        ? ""
+        : "No Content folders scanned yet. After Fab finishes, click Refresh folders.";
+    } catch (err) {
+      console.warn(err);
+    }
+  };
+
+  folderSelect.addEventListener("change", () => {
+    const opt = folderSelect.selectedOptions[0];
+    pathInputImport.value = opt && opt.value ? opt.value : "";
+  });
+
+  refreshFoldersBtn.addEventListener("click", async () => {
+    refreshFoldersBtn.disabled = true;
+    refreshFoldersBtn.textContent = "Scanning…";
+    try {
+      const hostId = (activeHost && activeHost.id) || "aurora";
+      await fetch(
+        `/api/ue/hosts/content-folders/refresh?host_id=${encodeURIComponent(hostId)}`,
+        { method: "POST" }
+      );
+      for (let i = 0; i < 20; i++) {
+        await new Promise((r) => setTimeout(r, 1500));
+        await fillFolderSelect();
+        if (folderSelect.options.length > 1) break;
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      refreshFoldersBtn.disabled = false;
+      refreshFoldersBtn.textContent = "Refresh folders";
+    }
+  });
+
+  const ensureDeriveOffer = (st) => {
+    const show = st && st.offer_derive;
+    postStageHint.hidden = !show;
+    postStageHint.textContent = show
+      ? st.post_stage_hint || "Pack staged — Derive texture stills, or Capture for Niagara."
+      : "";
+    if (!show) {
+      if (deriveOfferBtn) {
+        deriveOfferBtn.remove();
+        deriveOfferBtn = null;
+      }
+      return;
+    }
+    if (deriveOfferBtn) return;
+    deriveOfferBtn = document.createElement("button");
+    deriveOfferBtn.type = "button";
+    deriveOfferBtn.className = "btn";
+    deriveOfferBtn.textContent = "Derive texture stills";
+    deriveOfferBtn.addEventListener("click", async () => {
+      deriveOfferBtn.disabled = true;
+      try {
+        const res = await fetch("/api/lookdev/derive", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ asset_id: a.id }),
+        });
+        if (!res.ok) throw new Error(`derive ${res.status}`);
+        deriveOfferBtn.textContent = "Derive queued";
+      } catch (err) {
+        console.error(err);
+        deriveOfferBtn.textContent = "Derive failed";
+        deriveOfferBtn.disabled = false;
+      }
+    });
+    importActions.appendChild(deriveOfferBtn);
+  };
+
+  const refreshImportUi = (st) => {
+    importStatus = st;
+    clear(checklist);
+    for (const step of (st && st.steps) || []) {
+      const li = document.createElement("li");
+      li.className = step.done ? "done" : "todo";
+      li.textContent = `${step.done ? "✓" : "○"} ${step.label}`;
+      checklist.appendChild(li);
+    }
+    if (st && st.content_root) {
+      const cr = document.createElement("p");
+      cr.className = "fit";
+      cr.textContent = `content_root ${st.content_root}`;
+      checklist.appendChild(cr);
+    }
+    if (st && st.host_content_path && st.path_verified === false) {
+      const warn = document.createElement("p");
+      warn.className = "fit scan-warn";
+      warn.textContent =
+        "Saved path not in latest scan — Refresh folders, then pick again.";
+      checklist.appendChild(warn);
+    }
+    ensureDeriveOffer(st);
+  };
+  importSec.insertBefore(checklist, pathRow);
+  if (importStatus) refreshImportUi(importStatus);
+  fillFolderSelect();
+
+  const markRedeemed = document.createElement("button");
+  markRedeemed.type = "button";
+  markRedeemed.className = "btn";
+  markRedeemed.textContent = "Mark redeemed";
+  markRedeemed.addEventListener("click", async () => {
+    markRedeemed.disabled = true;
+    try {
+      const res = await fetch(
+        `/api/assets/${encodeURIComponent(a.id)}/import/mark`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ step: "redeemed" }),
+        }
+      );
+      if (!res.ok) throw new Error(`mark ${res.status}`);
+      const body = await res.json();
+      refreshImportUi(body.import);
+    } catch (err) {
+      console.error(err);
+      markRedeemed.textContent = "Mark failed";
+    } finally {
+      markRedeemed.disabled = false;
+      markRedeemed.textContent = "Mark redeemed";
+    }
+  });
+  importActions.appendChild(markRedeemed);
+
+  const fabInstallBtn = document.createElement("button");
+  fabInstallBtn.type = "button";
+  fabInstallBtn.className = "btn";
+  fabInstallBtn.textContent = "Install from VaultCache";
+  fabInstallBtn.title =
+    "Copy Epic VaultCache pack into F:\\Games\\AuroraVellum\\Content (no Fab UI)";
+  fabInstallBtn.addEventListener("click", async () => {
+    fabInstallBtn.disabled = true;
+    fabInstallBtn.textContent = "Queuing install…";
+    try {
+      const res = await fetch(
+        `/api/assets/${encodeURIComponent(a.id)}/import/fab-install`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            ue_host: (activeHost && activeHost.id) || "aurora",
+            auto_stage: true,
+          }),
+        }
+      );
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => ({}));
+        throw new Error(errBody.detail || `fab-install ${res.status}`);
+      }
+      const body = await res.json();
+      const jobId = body.job && body.job.job_id;
+      if (jobId) {
+        fabInstallBtn.textContent = "Installing…";
+        const poll = setInterval(async () => {
+          try {
+            const job = await fetchJson(`/api/jobs/${encodeURIComponent(jobId)}`);
+            const st = await fetchJson(
+              `/api/assets/${encodeURIComponent(a.id)}/import`
+            );
+            refreshImportUi(st);
+            await fillFolderSelect();
+            if (
+              job.status === "succeeded" ||
+              job.status === "failed" ||
+              job.status === "cancelled"
+            ) {
+              clearInterval(poll);
+              fabInstallBtn.disabled = false;
+              fabInstallBtn.textContent =
+                job.status === "succeeded"
+                  ? "Installed"
+                  : job.error || "Install failed";
+              setTimeout(() => {
+                fabInstallBtn.textContent = "Install from VaultCache";
+              }, 4000);
+            }
+          } catch (err) {
+            console.warn(err);
+          }
+        }, 2500);
+      } else {
+        fabInstallBtn.disabled = false;
+        fabInstallBtn.textContent = "Install from VaultCache";
+      }
+    } catch (err) {
+      console.error(err);
+      fabInstallBtn.disabled = false;
+      fabInstallBtn.textContent =
+        String(err.message || "").includes("no_fab_install_map")
+          ? "No VaultCache map"
+          : "Install failed";
+      setTimeout(() => {
+        fabInstallBtn.textContent = "Install from VaultCache";
+      }, 3000);
+    }
+  });
+  importActions.appendChild(fabInstallBtn);
+
+  const markInProject = document.createElement("button");
+  markInProject.type = "button";
+  markInProject.className = "btn";
+  markInProject.textContent = "Mark in project";
+  markInProject.addEventListener("click", async () => {
+    const path = folderSelect.value.trim() || pathInputImport.value.trim();
+    if (!path) {
+      folderSelect.focus();
+      markInProject.textContent = "Pick scanned folder";
+      setTimeout(() => {
+        markInProject.textContent = "Mark in project";
+      }, 2000);
+      return;
+    }
+    markInProject.disabled = true;
+    try {
+      const res = await fetch(
+        `/api/assets/${encodeURIComponent(a.id)}/import/mark`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            step: "in_project",
+            host_content_path: path,
+          }),
+        }
+      );
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => ({}));
+        throw new Error(errBody.detail || `mark ${res.status}`);
+      }
+      const body = await res.json();
+      refreshImportUi(body.import);
+    } catch (err) {
+      console.error(err);
+      markInProject.textContent =
+        String(err.message || "").includes("host_path_not_in_scan")
+          ? "Not in scan — Refresh"
+          : "Mark failed";
+    } finally {
+      markInProject.disabled = false;
+      setTimeout(() => {
+        markInProject.textContent = "Mark in project";
+      }, 2500);
+    }
+  });
+  importActions.appendChild(markInProject);
+
+  const stageBtn = document.createElement("button");
+  stageBtn.type = "button";
+  stageBtn.className = "btn";
+  stageBtn.textContent = "Stage to vault";
+  stageBtn.addEventListener("click", async () => {
+    const path = folderSelect.value.trim() || pathInputImport.value.trim();
+    if (!path) {
+      folderSelect.focus();
+      stageBtn.textContent = "Pick scanned folder";
+      setTimeout(() => {
+        stageBtn.textContent = "Stage to vault";
+      }, 2000);
+      return;
+    }
+    stageBtn.disabled = true;
+    stageBtn.textContent = "Queuing stage…";
+    try {
+      const opt = folderSelect.selectedOptions[0];
+      const folder =
+        (opt && opt.dataset.name) ||
+        path.replace(/[\\/]+$/, "").split(/[\\/]/).pop();
+      const res = await fetch(
+        `/api/assets/${encodeURIComponent(a.id)}/import/stage`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            host_content_path: path,
+            content_folder_name: folder,
+            ue_host: (activeHost && activeHost.id) || "aurora",
+          }),
+        }
+      );
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => ({}));
+        throw new Error(errBody.detail || `stage ${res.status}`);
+      }
+      const body = await res.json();
+      const jobId = body.job && body.job.job_id;
+      if (jobId) {
+        stageBtn.textContent = "Staging…";
+        const poll = setInterval(async () => {
+          try {
+            const job = await fetchJson(`/api/jobs/${encodeURIComponent(jobId)}`);
+            const st = await fetchJson(
+              `/api/assets/${encodeURIComponent(a.id)}/import`
+            );
+            refreshImportUi(st);
+            if (
+              job.status === "succeeded" ||
+              job.status === "failed" ||
+              job.status === "cancelled" ||
+              (st.steps && st.steps.find((s) => s.id === "staged" && s.done))
+            ) {
+              clearInterval(poll);
+              stageBtn.disabled = false;
+              stageBtn.textContent =
+                job.status === "succeeded" ||
+                (st.steps && st.steps.find((s) => s.id === "staged" && s.done))
+                  ? "Staged — derive or capture"
+                  : "Stage failed";
+              refreshImportUi(st);
+            }
+          } catch {
+            /* ignore */
+          }
+        }, 3000);
+      }
+    } catch (err) {
+      console.error(err);
+      stageBtn.textContent = "Stage failed";
+      stageBtn.disabled = false;
+    }
+  });
+  importActions.appendChild(stageBtn);
+  host.appendChild(importSec);
+
+  // ---- Capture (primary) ----
+  const captureSec = document.createElement("section");
+  captureSec.className = "detail-section";
+  const captureHead = document.createElement("h3");
+  captureHead.textContent = "Capture";
+  captureSec.appendChild(captureHead);
 
   const hostLine = document.createElement("p");
   hostLine.className = "fit";
@@ -586,7 +1331,10 @@ async function openDetail(id) {
           project_path: pathInput.value.trim(),
           engine_version: engInput.value.trim(),
           intake_run_id: intakeRunId,
-          content_root: "/Game/FireworksV1",
+          content_root:
+            (importStatus && importStatus.content_root) ||
+            a.content_root ||
+            undefined,
           force: !!forceInput.checked,
         }),
       });
@@ -784,13 +1532,28 @@ async function refresh() {
   const params = new URLSearchParams();
   const q = $("q").value.trim();
   const engine = $("engine").value;
-  const redeem = $("redeem").value;
+  const available = $("available").value;
   if (q) params.set("q", q);
   if (engine) params.set("engine", engine);
-  if (redeem) params.set("redeem", redeem);
+  if (available) params.set("available", available);
+  params.set("lite", "1");
   const qs = params.toString();
-  const data = await fetchJson(`/api/assets${qs ? `?${qs}` : ""}`);
-  renderRows(data.assets || []);
+  try {
+    const data = await fetchJson(`/api/assets${qs ? `?${qs}` : ""}`);
+    renderRows(data.assets || []);
+  } catch (err) {
+    console.error(err);
+    const body = $("rows");
+    clear(body);
+    const tr = document.createElement("tr");
+    const td = document.createElement("td");
+    td.colSpan = 6;
+    td.className = "empty";
+    td.textContent = "Failed to load assets — check /api/assets (timeout or server error).";
+    tr.appendChild(td);
+    body.appendChild(tr);
+    $("count").textContent = "load error";
+  }
 }
 
 function debounce(fn, ms) {
@@ -819,7 +1582,8 @@ $("detail-close").addEventListener("click", () => {
 
 $("q").addEventListener("input", debounce(refresh, 180));
 $("engine").addEventListener("change", refresh);
-$("redeem").addEventListener("change", refresh);
+$("available").addEventListener("change", refresh);
 
 loadStats().catch(console.error);
 refresh().catch(console.error);
+startLiveOps();

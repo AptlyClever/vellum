@@ -3,10 +3,12 @@
 **Status:** implemented (scripted batch) / Aurora clean Capture proof (Chrys + pack harden 2026-07-13)  
 **Pilot asset:** `fireworks-vol-1-niagara`  
 **Primary host:** Aurora (`config/ue-hosts.json` → `active: aurora`)  
-**Related:** host runbook `docs/scratch-inspect-niagara.md`, lookdev API `docs/api-lookdev.md`, **hosting SoT** [`docs/ue-lookdev-worker.md`](./ue-lookdev-worker.md)  
+**Related:** host runbook `docs/scratch-inspect-niagara.md`, lookdev API `docs/api-lookdev.md`  
+**Hosting (binding):** [`docs/capture-hosting-decision.md`](./capture-hosting-decision.md) — Epic batch Cmd. Lookdev Worker doc is frozen.  
 **Decisions:** §12 locked 2026-07-13 (B / C / C / C / B)  
-**Runner fingerprint:** legacy `mrq-artifact-gate` via interactive agent (`-LegacyCmdRunner`); Lookdev Worker opt-in only  
-**Pack harden:** Epic Queue asset via `-MoviePipelineConfig` (multi-job); empty-abort waits; ingest-only resume; `system_name` on renders; curl `-f` + timeouts; job `ok` = full target coverage (not 1/N). **Vault skip trusts only `via mrq-batch` rows after `2026-07-13T23:15:00Z`** (pre-harden / recover lookdev does not count as done). **Ingest:** store-zip + one `lanes=` sequence POST; shared on-disk sequence tree (hardlinked lookdev).
+**Runner fingerprint:** Epic batch Cmd `run_vellum_capture.ps1` (binding: `docs/capture-hosting-decision.md`)  
+**Warm Lookdev Worker:** frozen — opt-in `-UseLookdevWorker` only  
+**Pack harden:** Epic Queue asset via `-MoviePipelineConfig` (multi-job); empty-abort waits; ingest-only resume; `system_name` on renders; job `ok` = full target coverage (not 1/N). **Vault skip trusts only `via mrq-batch` rows after `2026-07-13T23:15:00Z`**. **Ingest:** host Python `ingest_mrq_system.py` (pick + store-zip + urllib multipart) — PowerShell only launches UE and that one Python process (no curl-from-PS).
 
 This is **new Vellum functionality**: turn a purchased Unreal Niagara pack into
 **full-fidelity lookdev renders** in the vault, driven from the Vellum UI, without

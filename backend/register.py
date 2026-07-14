@@ -156,6 +156,9 @@ def patch_asset(
     scratch_project_status: str | None = None,
     scratch_engine_version: str | None = None,
     scratch_notes: str | None = None,
+    content_root: str | None = None,
+    host_content_path: str | None = None,
+    ue_in_project: str | None = None,
 ) -> dict[str, Any]:
     """Update mutable register fields for an owned asset."""
     aid = asset_id.strip()
@@ -181,6 +184,12 @@ def patch_asset(
         target["scratch_engine_version"] = scratch_engine_version.strip() or None
     if scratch_notes is not None:
         target["scratch_notes"] = scratch_notes
+    if content_root is not None:
+        target["content_root"] = content_root.strip() or None
+    if host_content_path is not None:
+        target["host_content_path"] = host_content_path.strip() or None
+    if ue_in_project is not None:
+        target["ue_in_project"] = ue_in_project.strip() or None
     _persist_register(doc)
     updated = get_asset(aid)
     assert updated is not None
@@ -204,3 +213,65 @@ _SLUG_RE = re.compile(r"[^a-z0-9]+")
 
 def slugify(name: str) -> str:
     return _SLUG_RE.sub("-", name.lower()).strip("-")[:80]
+
+
+def create_asset(
+    *,
+    display_name: str,
+    engine: str = "unreal",
+    package_type: str = "Unreal Engine pack",
+    store_lane: str = "epic-games-store",
+    store_label: str = "Epic Games Store (free / extra)",
+    source_bundle: str = "epic-free-or-extra",
+    project_fit: str = "",
+    content_folder_name: str | None = None,
+    host_content_path: str | None = None,
+    asset_id: str | None = None,
+    tags: list[str] | None = None,
+) -> dict[str, Any]:
+    """Append a non-Humble pack (free Epic, extras) to the live register."""
+    name = (display_name or "").strip()
+    if not name:
+        raise ValueError("display_name_required")
+    aid = (asset_id or slugify(name)).strip()
+    if not aid:
+        raise ValueError("asset_id_invalid")
+    if get_asset(aid) is not None:
+        raise KeyError(f"asset_exists:{aid}")
+
+    doc = ensure_register()
+    assets = doc.setdefault("assets", [])
+    max_idx = 0
+    for row in assets:
+        if isinstance(row, dict):
+            try:
+                max_idx = max(max_idx, int(row.get("list_index") or 0))
+            except (TypeError, ValueError):
+                pass
+    folder = (content_folder_name or "").strip() or None
+    content_root = f"/Game/{folder}" if folder else None
+    row: dict[str, Any] = {
+        "id": aid,
+        "list_index": max_idx + 1,
+        "display_name": name,
+        "store_lane": store_lane,
+        "store_label": store_label,
+        "package_type": package_type,
+        "engine": engine.strip().lower() or "unreal",
+        "redemption_deadline": None,
+        "redemption_status": "owned",
+        "project_fit": project_fit or "Operator-added Epic free/extra pack.",
+        "source_bundle": source_bundle,
+        "raw_location": None,
+        "tags": list(tags or ["epic-free-or-extra"]),
+        "content_folder_name": folder,
+        "content_root": content_root,
+        "host_content_path": (host_content_path or "").strip() or None,
+        "ue_in_project": "in_project" if host_content_path else None,
+        "intake_notes": f"Registered via create_asset at {_now().isoformat()}",
+    }
+    assets.append(row)
+    _persist_register(doc)
+    updated = get_asset(aid)
+    assert updated is not None
+    return updated

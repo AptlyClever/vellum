@@ -29,8 +29,7 @@ Known project lanes: `slots`, `hail-overlay`, `field-command`, `threshold-affair
 
 Enqueues a `derive_lookdev` worker job. Copies png/jpg (not `.uasset`) from the asset’s `raw_location` into lane folders and writes `DerivedOutput` records (+ a short readout under `06-readouts/`).
 
-Also enqueued via `POST /api/intake/{run_id}/enqueue-automatable` when the `derive_lookdev` step is pending.
-If the pack has no preview stills, the job succeeds and marks the step `skipped`.
+If the staged pack is uasset-only, derive falls back to the Fab library catalog thumbnail (`data/fab-listings.db`) so environment packs still get a vault hero. When neither stills nor a catalog match exist, the job succeeds and marks the step `skipped` (`no_preview_stills`).
 
 ## Ingest Niagara viewport still
 

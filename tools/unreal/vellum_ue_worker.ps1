@@ -21,7 +21,9 @@ param(
   [switch]$Ensure,
   [switch]$Status,
   [switch]$StopHttp,
-  [switch]$ForceStudio
+  [switch]$ForceStudio,
+  # Set by Interactive scheduled task so Ensure launches UE even when UserInteractive/SESSIONNAME look wrong.
+  [switch]$LaunchGui
 )
 
 $ErrorActionPreference = "Stop"
@@ -33,6 +35,7 @@ if ($Port -le 0) {
 }
 $WorkerUrl = "http://127.0.0.1:$Port"
 $BootPySource = Join-Path $PSScriptRoot "vellum_ue_worker_boot.py"
+$InitPySource = Join-Path $PSScriptRoot "init_unreal.py"
 $StudioPySource = Join-Path $PSScriptRoot "vellum_lookdev_studio_author.py"
 $AuthorPySource = Join-Path $PSScriptRoot "vellum_capture_mrq_author.py"
 $InventoryPySource = Join-Path $PSScriptRoot "vellum_capture.py"
@@ -63,33 +66,49 @@ function Test-StudioBuildCurrent {
 function Request-StudioRebuild {
   Write-Host "Studio build stale/missing - requesting /v1/ensure_studio force..."
   $body = @{ force = $true } | ConvertTo-Json
-  return Invoke-RestMethod -Method Post -Uri "$WorkerUrl/v1/ensure_studio" `
-    -ContentType "application/json" -Body $body -TimeoutSec 300
+  $kick = Invoke-RestMethod -Method Post -Uri "$WorkerUrl/v1/ensure_studio" `
+    -ContentType "application/json" -Body $body -TimeoutSec 15
+  if (-not $kick.ok -and $kick.error -ne "worker_busy") {
+    throw "ensure_studio kick failed: $($kick | ConvertTo-Json -Compress)"
+  }
+  $deadline = (Get-Date).AddSeconds(180)
+  while ((Get-Date) -lt $deadline) {
+    Start-Sleep -Seconds 3
+    $health = Get-WorkerHealth
+    if (Test-StudioBuildCurrent -Health $health) { return $health }
+  }
+  throw "ensure_studio did not reach required studio_build in time"
 }
 
 function Get-ProjectPaths {
   $uproject = Resolve-UprojectFromHost -HostProfile $UeHost
   $projectDir = Split-Path $uproject -Parent
   $outDir = Join-Path $projectDir "Saved\VellumCapture"
+  $pythonDir = Join-Path $projectDir "Content\Python"
   New-Item -ItemType Directory -Force -Path $outDir | Out-Null
+  New-Item -ItemType Directory -Force -Path $pythonDir | Out-Null
   return @{
     Uproject   = $uproject
     ProjectDir = $projectDir
     OutDir     = $outDir
+    PythonDir  = $pythonDir
   }
 }
 
 function Stage-WorkerScripts {
-  param($OutDir)
+  param($OutDir, $PythonDir)
   foreach ($pair in @(
-      @{ Src = $BootPySource; Name = "vellum_ue_worker_boot.py" },
-      @{ Src = $StudioPySource; Name = "vellum_lookdev_studio_author.py" },
-      @{ Src = $AuthorPySource; Name = "vellum_capture_mrq_author.py" },
-      @{ Src = $InventoryPySource; Name = "vellum_capture.py" }
+      @{ Src = $BootPySource; Name = "vellum_ue_worker_boot.py"; DestDir = $OutDir },
+      @{ Src = $StudioPySource; Name = "vellum_lookdev_studio_author.py"; DestDir = $OutDir },
+      @{ Src = $AuthorPySource; Name = "vellum_capture_mrq_author.py"; DestDir = $OutDir },
+      @{ Src = $InventoryPySource; Name = "vellum_capture.py"; DestDir = $OutDir },
+      @{ Src = $InitPySource; Name = "init_unreal.py"; DestDir = $PythonDir }
     )) {
     if (-not (Test-Path $pair.Src)) { throw "Missing $($pair.Src)" }
-    Copy-Item -Force -Path $pair.Src -Destination (Join-Path $OutDir $pair.Name)
+    New-Item -ItemType Directory -Force -Path $pair.DestDir | Out-Null
+    Copy-Item -Force -Path $pair.Src -Destination (Join-Path $pair.DestDir $pair.Name)
   }
+  Write-Host "Staged Lookdev Worker boot + Content/Python/init_unreal.py"
 }
 
 function Find-UeEditorBinary {
@@ -112,50 +131,70 @@ function Test-UeEditorRunning {
   return ($procs.Count -gt 0)
 }
 
+function Test-WorkerPumpAlive {
+  param($Health)
+  if (-not $Health -or -not $Health.ok) { return $false }
+  # Sticky pump proof: slate ticks must advance after init_unreal owns the callback.
+  $ticks = 0
+  if ($null -ne $Health.tick_count) { $ticks = [int]$Health.tick_count }
+  return ($ticks -ge 5)
+}
+
 function Start-LookdevWorker {
   $paths = Get-ProjectPaths
-  Stage-WorkerScripts -OutDir $paths.OutDir
+  Stage-WorkerScripts -OutDir $paths.OutDir -PythonDir $paths.PythonDir
   $health = Get-WorkerHealth
-  if ($health -and $health.ok) {
+  if ($health -and $health.ok -and (Test-WorkerPumpAlive -Health $health)) {
     if (Test-StudioBuildCurrent -Health $health) {
-      Write-Host "Worker already healthy version=$($health.version) studio_build=$($health.studio_build) map=$($health.map)"
+      Write-Host "Worker already healthy version=$($health.version) studio_build=$($health.studio_build) ticks=$($health.tick_count) map=$($health.map)"
       return $health
     }
     try {
       $rebuild = Request-StudioRebuild
-      Write-Host "Studio rebuild ok=$($rebuild.ok) build=$($rebuild.studio_build)"
-      $health = Get-WorkerHealth
-      if (Test-StudioBuildCurrent -Health $health) { return $health }
+      Write-Host "Studio rebuild ok=$($rebuild.ok) build=$($rebuild.studio_build) ticks=$($rebuild.tick_count)"
+      if (Test-StudioBuildCurrent -Health $rebuild) { return $rebuild }
     } catch {
       Write-Host "Studio rebuild via HTTP failed: $($_.Exception.Message) - will restart editor"
     }
   }
 
-  # Session 0 / Windows Service must not launch UnrealEditor (GPU GUI).
-  # Logon task VellumLookdevWorkerEnsure owns warming the editor.
-  $inServiceSession = $false
+  # GPU editor needs an interactive desktop (jaked console/RDP).
+  # SSH Start-Process hits DXGI_ERROR_NOT_CURRENTLY_AVAILABLE.
+  # Interactive Ensure task passes -LaunchGui so it can Start-Process even when SESSIONNAME is blank.
+  $canLaunchGui = [bool]$LaunchGui
   try {
-    if ($env:SESSIONNAME -eq "Services") { $inServiceSession = $true }
-    if (-not [Environment]::UserInteractive) { $inServiceSession = $true }
+    if ($env:SESSIONNAME -match '^(Console|RDP-Tcp)') { $canLaunchGui = $true }
+    elseif ([Environment]::UserInteractive -and $env:SESSIONNAME -and $env:SESSIONNAME -ne 'Services') {
+      $canLaunchGui = $true
+    }
   } catch { }
 
-  if ($inServiceSession) {
-    Write-Host "Non-interactive session: waiting for Lookdev Worker health (logon task should start UE)..."
-    $deadline = (Get-Date).AddSeconds([Math]::Min($ReadyTimeoutSec, 120))
+  if (-not $canLaunchGui) {
+    Write-Host "No interactive desktop here (SESSIONNAME='$($env:SESSIONNAME)' UserInteractive=$([Environment]::UserInteractive)) - starting scheduled task VellumLookdevWorkerEnsure..."
+    try {
+      Start-ScheduledTask -TaskName "VellumLookdevWorkerEnsure" -ErrorAction Stop
+    } catch {
+      Write-Host "Start-ScheduledTask failed: $($_.Exception.Message)"
+    }
+    $deadline = (Get-Date).AddSeconds([Math]::Max($ReadyTimeoutSec, 180))
     while ((Get-Date) -lt $deadline) {
       Start-Sleep -Seconds 3
       $health = Get-WorkerHealth
-      if ($health -and $health.ok) {
-        Write-Host "Worker ready version=$($health.version) map=$($health.map)"
+      if ($health -and $health.ok -and (Test-WorkerPumpAlive -Health $health)) {
+        Write-Host "Worker ready version=$($health.version) ticks=$($health.tick_count) map=$($health.map)"
         return $health
       }
     }
-    throw "Lookdev Worker not healthy at $WorkerUrl/health. Log into Aurora (or run host-install logon task) so Unreal can warm - services cannot start the GPU editor."
+    throw "Lookdev Worker not healthy at $WorkerUrl/health after kicking VellumLookdevWorkerEnsure. Confirm jaked is logged into Aurora's console."
+  }
+
+  if (Test-UeEditorRunning -ProjectDir $paths.ProjectDir) {
+    Write-Host "Stopping existing UnrealEditor so init_unreal can load staged worker..."
+    Get-Process -Name "UnrealEditor" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+    Start-Sleep -Seconds 4
   }
 
   $editor = Find-UeEditorBinary
-  $bootPy = Join-Path $paths.OutDir "vellum_ue_worker_boot.py"
-  $bootUe = ConvertTo-UePath $bootPy
   $projUe = ConvertTo-UePath $paths.Uproject
   $mapSoft = $MapPath
   if ($mapSoft -notmatch '\.') {
@@ -167,20 +206,20 @@ function Start-LookdevWorker {
   $env:VELLUM_WORKER_PORT = "$Port"
   $env:VELLUM_STUDIO_MAP = $MapPath
 
-  Write-Host "Starting Lookdev Worker:"
+  Write-Host "Starting Lookdev Worker (Content/Python/init_unreal.py owns the pump):"
   Write-Host "  Editor: $editor"
   Write-Host "  Project: $projUe"
   Write-Host "  Map: $mapSoft"
-  Write-Host "  Boot: $bootUe"
+  Write-Host "  Init: $(Join-Path $paths.PythonDir 'init_unreal.py')"
   Write-Host "  Health: $WorkerUrl/health"
 
+  # Sticky hosting = project Python init. Do not rely on -ExecutePythonScript lifetime.
   $argList = @(
     $projUe,
     $mapSoft,
     "-nosplash",
     "-nop4",
-    "-log",
-    "-ExecutePythonScript=$bootUe"
+    "-log"
   )
   Start-Process -FilePath $editor -ArgumentList $argList -WorkingDirectory $paths.ProjectDir | Out-Null
 
@@ -188,13 +227,14 @@ function Start-LookdevWorker {
   while ((Get-Date) -lt $deadline) {
     Start-Sleep -Seconds 3
     $health = Get-WorkerHealth
-    if ($health -and $health.ok) {
-      Write-Host "Worker ready version=$($health.version) map=$($health.map)"
+    if ($health -and $health.ok -and (Test-WorkerPumpAlive -Health $health)) {
+      Write-Host "Worker ready version=$($health.version) ticks=$($health.tick_count) map=$($health.map)"
       return $health
     }
-    Write-Host "Waiting for worker health..."
+    $tickNote = if ($health) { "ticks=$($health.tick_count)" } else { "down" }
+    Write-Host "Waiting for worker pump ($tickNote)..."
   }
-  throw "Worker did not become healthy within ${ReadyTimeoutSec}s ($WorkerUrl/health)"
+  throw "Worker did not become healthy within ${ReadyTimeoutSec}s ($WorkerUrl/health) — tick pump never advanced"
 }
 
 Write-Host "Vellum UE Lookdev Worker supervisor"

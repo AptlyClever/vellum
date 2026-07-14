@@ -1,9 +1,8 @@
 # Development Tracker: Vellum
 
-> **Current Active Issue:** Fireworks pack — **full automated lookdev** (all effects), then next purchased packs
-> **Governing CFD:** `cfd-inspiration-20260713-015950-vellum-control-alt-games-asset-vault-register-in` (slices A–F met; this is the post-CFD track)
-> **Capability spec:** `docs/ue-mrq-capture.md` (SoT — full fidelity; SceneCapture/HighResShot retired)
-> **Next Immediate Step:** Hub drives Aurora over **LAN SSH** (`192.168.68.100`, `tools/unreal/ssh-aurora.sh`) — no second Cursor / no Tailscale. Capture agent = interactive Scheduled Task as `jaked`.
+> **Current Active Issue:** Finish the inventory — drain on-disk MRQ, then agent-close the 19 missing Fab downloads (no hand-click homework dump). See **`OPS_NOW.md`**.
+> **Governing CFD:** `cfd-inspiration-20260713-015950-vellum-control-alt-games-asset-vault-register-in` (slices A–F met; `completion_assessment.met`)
+> **Next Immediate Step:** Keep `ue_capture` healthy until On-disk lookdev = 0, then batch-fill VaultCache for the 19 `need_download` packs and `host_fab_install`. Unity parked.
 
 ---
 
@@ -14,7 +13,8 @@
 * **Axiom Read:** http://192.168.68.93:7895/#/axiom/vellum
 * **Scratch / hosts:** `docs/scratch-inspect-niagara.md`
 * **UE MRQ capture capability (SoT):** `docs/ue-mrq-capture.md`
-* **UE Lookdev Worker (hosting SoT):** `docs/ue-lookdev-worker.md`
+* **Capture hosting (binding):** `docs/capture-hosting-decision.md` — Epic batch Cmd  
+* **UE Lookdev Worker (FROZEN):** `docs/ue-lookdev-worker.md`
 * **Warm worker:** `pwsh -File tools/unreal/host-install/install.ps1 -StartWorkerNow` (service + logon task)
 * **Manual worker (debug):** `pwsh -File tools/unreal/vellum_ue_worker.ps1 -Ensure`
 * **Recover interrupted MRQ dirs:** `pwsh -File tools/unreal/vellum_ue_agent.ps1 -RecoverOnly`
@@ -30,15 +30,6 @@
 ## 2. The Active Issue (Do Not Add Steps Here!)
 
 * **What success looks like:** Operator clicks **Capture** in Vellum; Aurora finishes **the whole Fireworks pack** into lookdev (skipping anything already vaulted). No per-system operator work. After Fireworks: same path for remaining purchased packs.
-* **Stopped (do not resume without explicit operator decision):**
-  - `-game` + `HighResShot`
-  - Editor `SceneCapture2D` → `export_render_target` bake (`vellum_capture_bake_map.py` / `editor-scenecapture*`)
-  - Sample/`max_systems=3` proof caps as the default Capture path
-* **Keep (infrastructure still valid):**
-  - Vellum `ue_capture` job + claim/report
-  - `vellum_ue_agent.ps1` + host profiles (Aurora primary / Borealis secondary)
-  - Lookdev ingest API
-  - Vault skip + Force re-render
 * **Sub-Tasks:**
   - [x] Job/agent/host plumbing (Aurora preflight resolves UE + `F:\Games\AuroraVellum`)
   - [x] Stop improvising on SceneCapture / HighResShot (2026-07-13)
@@ -55,15 +46,23 @@
   - [x] Host specs report from UE agent → `GET /api/ue/hosts`
   - [x] Lookdev Studio map (permanent photo stage) + capture wiring (`mrq-lookdev-studio`)
   - [x] Aurora **Lookdev Worker** (Option 1): warm UE + loopback capture API (`docs/ue-lookdev-worker.md`)
-  - [ ] Fireworks pack lookdev complete in vault (all unique systems; skip already-done)
-  - [ ] Next purchased Unreal packs through the same Capture path (no operator digging)
+  - [x] Fireworks pack lookdev complete in vault (all unique systems; skip already-done)
+  - [x] Import pack UI + Aurora `host_stage` vault upload (folder picker, Start next, post-stage Derive)
+  - [x] Next purchased Unreal packs through Import → Derive/Capture (no operator digging)
+  - [x] Agent Fab install: VaultCache → F: Content (`host_fab_install`) + batch coverage UI
+  - [x] Fab-thumbnail derive fallback for uasset-only stages (`data/fab-listings.db`) — env packs get vault heroes without operator stills
+  - [x] Coverage inventory fast path (no per-asset lookdev scan)
+  - [ ] Niagara/VFX `ue_capture` drain for free orphans (Basic VFX / Free Niagara / Vefects) + any packs still without MRQ
+  - [ ] Metal Material 3 catalog thumb missing from Fab listings export (uasset-only; optional later)
+  - [ ] ~19 Humble Unreal packs still need Epic Fab download (hard wall) before install/stage
+  - [ ] Unity: unpark stage + texture derive per `docs/unity-intake-unpark.md` (VFX capture still later)
 
 ---
 
 ## 3. The Parking Lot
 *Ideas deferred until the active issue completes.*
 
-* Unity tier reconcile (explicitly deferred).
+* Unity tier: was parked for Fireworks MRQ focus — **rethink** in `docs/unity-intake-unpark.md` (stage + texture derive first; VFX capture still later).
 * Optional deeper AI fit-tagging.
 * ~~Deeper Movie Render Queue~~ → **promoted to active** (was parking-lot improvisation deferral; now the capture backend).
 
@@ -99,5 +98,9 @@
 * **2026-07-13** — `mrq-pack-resilient`: inventory cache (skip UE cold start), continue on black/ingest failure, host specs POST from agent.
 * **2026-07-13** — **Lookdev Studio** (`mrq-lookdev-studio`): permanent photo-studio map (`VellumLookdevStudio`) with center slot + lights + mid cam; capture defaults to 60 frames (~2s); Phase 0 builds studio once. Old void stills inconsistent — Force re-render for pack.
 * **2026-07-13** — Adaptive per-system frame estimate (`mrq-adaptive-frames`), max 4s / 120 frames.
-* **2026-07-13** — **Option 1 locked:** Aurora **Lookdev Worker** — warm UnrealEditor on studio map + loopback HTTP `127.0.0.1:8771`; agent primary path (legacy Cmd runner = `-LegacyCmdRunner` only). Docs: `docs/ue-lookdev-worker.md`.
+* **2026-07-14** — **Capture hosting rebound:** Epic batch Cmd (`run_vellum_capture.ps1`) is primary per Epic MRQ command-line tutorial. Warm Lookdev Worker **frozen** (`docs/capture-hosting-decision.md`). Not an operator pick.
+* **2026-07-13** — **Option 1 locked (later frozen):** Aurora Lookdev Worker warm path — superseded 2026-07-14 by capture-hosting-decision.
 * **2026-07-13** — Host wrappers: WinSW service `VellumUeAgent` + At-logon/watchdog tasks (`tools/unreal/host-install/`) so Capture is not console-babysat.
+* **2026-07-14** — Import polish: Content folder picker (`host_scan` + `GET …/content-folders`), `host_stage` (Unity-capable; `ue_stage` alias), home **Start next pack**, post-stage **Derive texture stills** CTA. Live: `FireworksV1` + `Vellum` on Aurora.
+* **2026-07-14** — Fab trust fix: packs were landing in retired `C:\dev\AuroraVellum`; consolidated → `F:\Games\AuroraVellum`, renamed typo uproject, deleted C:\dev dump. Mark/Stage require scanned folder paths.
+* **2026-07-14** — **Finish post-CFD Unreal on F:** agent Fab install + stage hang fix + orphan register. **Lookdev:** Fab catalog thumbnail derive for uasset-only packs (19/23 staged now have vault heroes). Coverage API fast path. Remaining: 3 free Niagara captures + Metal Material catalog gap + ~19 Humble packs still need Epic download. Unity parked.

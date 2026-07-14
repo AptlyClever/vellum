@@ -26,22 +26,88 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-function New-StoreZipFromDir {
-  param([string]$SourceDir, [string]$ZipPath)
-  if (Test-Path $ZipPath) { Remove-Item -Force $ZipPath }
-  Add-Type -AssemblyName System.IO.Compression
-  Add-Type -AssemblyName System.IO.Compression.FileSystem
-  $zip = [System.IO.Compression.ZipFile]::Open($ZipPath, [System.IO.Compression.ZipArchiveMode]::Create)
-  try {
-    $root = (Resolve-Path $SourceDir).Path.TrimEnd('\','/')
-    Get-ChildItem -Path $SourceDir -Recurse -File -ErrorAction SilentlyContinue | ForEach-Object {
-      $rel = $_.FullName.Substring($root.Length).TrimStart('\','/') -replace '\\','/'
-      [void][System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
-        $zip, $_.FullName, $rel, [System.IO.Compression.CompressionLevel]::NoCompression)
+function Invoke-ExeQuiet {
+  # Temp .bat + EnableDelayedExpansion — never `echo %ERRORLEVEL%` in cmd /c one-liner.
+  param(
+    [Parameter(Mandatory = $true)][string]$FilePath,
+    [Parameter(Mandatory = $true)][string[]]$ArgumentList,
+    [int]$TimeoutSec = 180,
+    [switch]$CaptureStdoutToTemp
+  )
+  $stamp = [guid]::NewGuid().ToString("n")
+  $ecFile = Join-Path $env:TEMP "vellum-exe-$stamp-ec.txt"
+  $outFile = Join-Path $env:TEMP "vellum-exe-$stamp-out.txt"
+  $errFile = Join-Path $env:TEMP "vellum-exe-$stamp-err.txt"
+  $batFile = Join-Path $env:TEMP "vellum-exe-$stamp.bat"
+  $exe = [string]$FilePath
+  $argLine = @(
+    foreach ($a in $ArgumentList) {
+      $s = [string]$a
+      if ($s -match '[\s"^&|<>%]') { '"' + ($s -replace '"', '""') + '"' } else { $s }
     }
-  } finally { $zip.Dispose() }
+  ) -join ' '
+  if ($exe -match '[\s"]') { $exe = '"' + ($exe -replace '"', '""') + '"' }
+  $lines = New-Object System.Collections.Generic.List[string]
+  [void]$lines.Add("@echo off")
+  [void]$lines.Add("setlocal EnableDelayedExpansion")
+  if ($CaptureStdoutToTemp -and $argLine -notmatch '(^|\s)(-o|--output)(\s|$)') {
+    [void]$lines.Add("$exe -o `"$outFile`" $argLine 2>`"$errFile`"")
+  } else {
+    [void]$lines.Add("$exe $argLine >`"$outFile`" 2>`"$errFile`"")
+  }
+  [void]$lines.Add("echo !ERRORLEVEL!>`"$ecFile`"")
+  [void]$lines.Add("endlocal")
+  Set-Content -LiteralPath $batFile -Value $lines -Encoding Ascii
+  $psi = New-Object System.Diagnostics.ProcessStartInfo
+  $psi.FileName = "cmd.exe"
+  $psi.Arguments = "/c `"$batFile`""
+  $psi.UseShellExecute = $false
+  $psi.CreateNoWindow = $true
+  $psi.RedirectStandardInput = $false
+  $psi.RedirectStandardOutput = $false
+  $psi.RedirectStandardError = $false
+  $p = New-Object System.Diagnostics.Process
+  $p.StartInfo = $psi
+  try {
+    [void]$p.Start()
+    $waitMs = [Math]::Max(5000, $TimeoutSec * 1000)
+    if (-not $p.WaitForExit($waitMs)) {
+      try { $p.Kill($true) } catch { try { $p.Kill() } catch {} }
+      return 124
+    }
+  } finally {
+    try { $p.Close() } catch {}
+  }
+  $exitCode = 1
+  if (Test-Path $ecFile) {
+    $raw = (Get-Content -LiteralPath $ecFile -Raw -ErrorAction SilentlyContinue | ForEach-Object { $_.Trim() })
+    if ($raw -match '^-?\d+$') { $exitCode = [int]$raw }
+  }
+  Remove-Item -Force $ecFile, $outFile, $errFile, $batFile -ErrorAction SilentlyContinue
+  return $exitCode
 }
 
+function Find-VellumPython {
+  $candidates = @()
+  if ($env:VELLUM_PYTHON) { $candidates += $env:VELLUM_PYTHON }
+  $candidates += @(
+    "C:\Python312\python.exe",
+    "C:\Python311\python.exe",
+    "C:\Program Files\Python312\python.exe"
+  )
+  foreach ($cmdName in @("python", "py")) {
+    $cmd = Get-Command $cmdName -ErrorAction SilentlyContinue
+    if ($cmd -and $cmd.Source) { $candidates += $cmd.Source }
+  }
+  foreach ($c in $candidates) {
+    if (-not $c) { continue }
+    if ($c -like "*\WindowsApps\*") { continue }
+    if (-not (Test-Path -LiteralPath $c)) { continue }
+    if ((Get-Item -LiteralPath $c).Length -lt 1024) { continue }
+    return $c
+  }
+  throw "No real Python found. Install with: choco install python312 -y"
+}
 
 . (Join-Path $PSScriptRoot "ue-hosts.ps1")
 $RepoRoot = Resolve-Path (Join-Path $PSScriptRoot "..\..")
@@ -104,9 +170,8 @@ if (-not $Force) {
   Write-Host "Recover skip check: vault outputs=$(@($vaultOutputs).Count) force=$Force"
 }
 
-$py = Get-Command python -ErrorAction SilentlyContinue
-if (-not $py) { $py = Get-Command py -ErrorAction SilentlyContinue }
-if (-not $py) { throw "python/py not found on PATH" }
+$pyExe = Find-VellumPython
+Write-Host "Using Python: $pyExe"
 
 if (-not (Test-Path $MrqRoot)) {
   throw "No MRQ output root at $MrqRoot - nothing to recover"
@@ -186,87 +251,58 @@ foreach ($dir in $dirs) {
   }
 
   $HeroJson = Join-Path $OutDir "heroes-recover-$systemName.json"
-  if (Test-Path $HeroJson) { Remove-Item -Force $HeroJson -ErrorAction SilentlyContinue }
-  # Never *>$null on native python - hangs after exit (runner lesson).
-  $pickArgs = @($PickHeroesPy, $dir.FullName, "--min-rgb", "$MinRgb", "--json-out", $HeroJson)
-  $pickProc = Start-Process -FilePath $py.Source -ArgumentList $pickArgs -PassThru -WindowStyle Hidden
-  $pickPid = [int]$pickProc.Id
-  $pickProc = $null
-  $deadline = (Get-Date).AddMinutes(5)
-  while ($null -ne (Get-Process -Id $pickPid -ErrorAction SilentlyContinue)) {
-    if ((Get-Date) -gt $deadline) {
-      try { Stop-Process -Id $pickPid -Force -ErrorAction SilentlyContinue } catch { }
-      break
-    }
-    Start-Sleep -Seconds 2
-  }
-  if (-not (Test-Path $HeroJson)) {
-    $entry.skip = "hero_pick_failed"
+  $resultJson = Join-Path $OutDir "ingest-result-recover-$systemName.json"
+  if (Test-Path $resultJson) { Remove-Item -Force $resultJson -ErrorAction SilentlyContinue }
+  $IngestPy = Join-Path $PSScriptRoot "ingest_mrq_system.py"
+  if (-not (Test-Path $IngestPy)) { throw "ingest_mrq_system.py missing" }
+  $ingestArgs = @(
+    $IngestPy,
+    "--vellum-base", $VellumBase,
+    "--asset-id", $AssetId,
+    "--system-name", $systemName,
+    "--seq-dir", $dir.FullName,
+    "--out-dir", $OutDir,
+    "--stills-dir", $StillsDir,
+    "--lanes", "slots,hail-overlay",
+    "--heroes-json", $HeroJson,
+    "--result-json", $resultJson,
+    "--note-prefix", "recover MRQ",
+    "--min-rgb", "$MinRgb",
+    "--score-budget", "8"
+  )
+  Write-Host "Python ingest $systemName"
+  $ec = Invoke-ExeQuiet -FilePath $pyExe -ArgumentList $ingestArgs -TimeoutSec 960
+  if (-not (Test-Path $resultJson)) {
+    $entry.skip = "ingest_no_result"
     [void]$report.skipped.Add($entry)
-    Write-Host "SKIP $systemName hero_pick_failed"
+    Write-Host "SKIP $systemName ingest_no_result exit=$ec"
     continue
   }
-  $heroDoc = Get-Content $HeroJson -Raw | ConvertFrom-Json
-  $entry.peak_rgb = [int]$heroDoc.peak_rgb
-  $entry.hero_ok = [bool]$heroDoc.ok
-  if (-not [bool]$heroDoc.ok) {
-    $entry.skip = [string]$heroDoc.error
-    [void]$report.skipped.Add($entry)
-    # Black / rejected sequences are expected for pre-fix MRQ folders - not a hard error.
-    Write-Host "SKIP $systemName $($heroDoc.error) (not an ingest error)"
+  $doc = Get-Content $resultJson -Raw | ConvertFrom-Json
+  $entry.peak_rgb = 0
+  $entry.hero_ok = [bool]$doc.ok -or ([int]$doc.uploaded -gt 0)
+  $entry.uploaded = [int]$doc.uploaded
+  if (-not $entry.hero_ok) {
+    $errJoin = (@($doc.errors) -join ";")
+    if ($errJoin -match "still_pure_black|no_frames") {
+      $entry.skip = $errJoin
+      [void]$report.skipped.Add($entry)
+      Write-Host "SKIP $systemName $errJoin"
+      continue
+    }
+    [void]$report.errors.Add("ingest_failed:$systemName`:$errJoin")
+    Write-Host "FAIL $systemName $errJoin"
     continue
   }
-  $safeHint = Safe-Name $systemName
-  $heroPaths = @()
-  foreach ($h in @($heroDoc.heroes)) {
-    $src = [string]$h.path
-    if (-not (Test-Path $src)) { continue }
-    $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
-    $dest = Join-Path $StillsDir "$AssetId-$safeHint-$($h.role)-recover-$stamp.png"
-    Copy-Item -Force -Path $src -Destination $dest
-    $heroPaths += @{
-      role     = [string]$h.role
-      path     = $dest
-      max_rgb  = [int]$h.max_rgb
-    }
-    Write-Host "Hero $($h.role) -> $dest (max_rgb=$($h.max_rgb))"
-  }
-  $entry.heroes = $heroPaths
+  $entry.heroes = @($doc.heroes)
   [void]$report.systems.Add($entry)
-
-  foreach ($hp in $heroPaths) {
-    foreach ($laneName in @("slots", "hail-overlay")) {
-      $out = & curl.exe -sfS --connect-timeout 20 --max-time 180 -X POST "$VellumBase/api/lookdev/ingest-render" `
-        -F "asset_id=$AssetId" `
-        -F "lane=$laneName" `
-        -F "system_name=$systemName" `
-        -F "note=recover MRQ $($hp.role) $systemName via mrq-sequencer" `
-        -F "file=@$($hp.path)"
-      if ($LASTEXITCODE -ne 0) {
-        [void]$report.errors.Add("ingest_render_failed:$systemName`:$laneName")
-        Write-Host "WARNING ingest-render failed system=$systemName lane=$laneName"
-        continue
-      }
-      [void]$report.ingested.Add(@{ kind = "render"; system = $systemName; lane = $laneName; role = $hp.role; response = $out })
-      Write-Host "Ingested hero $($hp.role) -> $laneName"
-    }
-  }
-
-  $zipPath = Join-Path $OutDir ("seq-recover-" + $safeHint + ".zip")
-  New-StoreZipFromDir -SourceDir $dir.FullName -ZipPath $zipPath
-  $out = & curl.exe -sfS --connect-timeout 20 --max-time 900 -X POST "$VellumBase/api/lookdev/ingest-sequence" `
-    -F "asset_id=$AssetId" `
-    -F "lanes=slots,hail-overlay" `
-    -F "system_name=$systemName" `
-    -F "note=recover MRQ sequence $systemName via mrq-sequencer" `
-    -F "archive=@$zipPath"
-  if ($LASTEXITCODE -ne 0) {
-    [void]$report.errors.Add("ingest_sequence_failed:$systemName")
-    Write-Host "WARNING ingest-sequence failed system=$systemName"
-  } else {
-    [void]$report.ingested.Add(@{ kind = "sequence"; system = $systemName; lanes = @("slots","hail-overlay"); response = $out })
-    Write-Host "Ingested sequence $systemName -> slots,hail-overlay"
-  }
+  [void]$report.ingested.Add(@{
+      kind = "python_ingest"
+      system = $systemName
+      uploaded = [int]$doc.uploaded
+      lanes = @("slots", "hail-overlay")
+    })
+  Write-Host "Ingested $systemName uploaded=$($doc.uploaded)"
 }
 
 $okSystems = @($report.systems).Count
