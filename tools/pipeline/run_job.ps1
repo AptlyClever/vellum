@@ -73,6 +73,7 @@ Write-Host "UE: $UeCmd"
 Write-Host "ContentRoot: $ContentRoot"
 Write-Host "Out: $VaultGameReady"
 
+$startedAt = Get-Date
 $p = Start-Process -FilePath $UeCmd -ArgumentList $args -PassThru -WindowStyle Hidden
 $ok = $p.WaitForExit($TimeoutSec * 1000)
 if (-not $ok) {
@@ -81,7 +82,19 @@ if (-not $ok) {
 }
 Write-Host "UE exit=$($p.ExitCode) log=$log"
 if ($p.ExitCode -ne 0) {
-  throw "ue_failed exit=$($p.ExitCode) job=$Job pack=$Pack log=$log"
+  # UE sometimes access-violates during process teardown after the job already
+  # finished. Trust a manifest written during this run over the exit code.
+  $jobManifest = Join-Path $work "$Pack\$Job.manifest.json"
+  $fresh = (Test-Path $jobManifest) -and ((Get-Item $jobManifest).LastWriteTime -ge $startedAt)
+  $manifestOk = $false
+  if ($fresh) {
+    try { $manifestOk = [bool](Get-Content $jobManifest -Raw | ConvertFrom-Json).ok } catch { }
+  }
+  if ($manifestOk) {
+    Write-Warning "UE exited $($p.ExitCode) (shutdown crash) but manifest is fresh and ok; treating job as succeeded."
+  } else {
+    throw "ue_failed exit=$($p.ExitCode) job=$Job pack=$Pack log=$log"
+  }
 }
 
 if ($Job -eq "bake-vfx") {

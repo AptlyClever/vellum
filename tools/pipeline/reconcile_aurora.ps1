@@ -82,6 +82,15 @@ function Test-AcceptedQuarantine([string]$Path) {
   }
   return $false
 }
+# Load errors that can never be fixed: legacy UE4 'Rig' retarget assets in
+# Paragon demo content — the Rig class was removed from UE 5.8 entirely.
+$acceptedLoadErrors = @(
+  "load_failed:/Game/SlashTrail_SoftTofu/Demo/ParagonKwang/Characters/Heroes/Kwang/Meshes/Paragon_Proto_Retarget.Paragon_Proto_Retarget",
+  "load_failed:/Game/SlashTrail_SoftTofu/Demo/ParagonSunWukong/Characters/Heroes/Wukong/Meshes/Orion_Proto_Retarget.Orion_Proto_Retarget"
+)
+function Get-ActionableLoadErrors($LoadErrors) {
+  return @(@($LoadErrors) | Where-Object { $_ -notin $acceptedLoadErrors })
+}
 function Invoke-Api([string]$Method, [string]$Path, $Body = $null) {
   $uri = "$VellumBase$Path"
   if ($null -ne $Body) {
@@ -219,8 +228,12 @@ try {
           Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1)
         if (-not $newest -or $newest.LastWriteTimeUtc -le $mTime) {
           $prev = Get-Content $manifest -Raw | ConvertFrom-Json
-          if (@($prev.load_errors).Count -gt 0) {
-            Add-Exception "load" $pack.Name "$(@($prev.load_errors).Count) assets failed to load (manifest $($prev.generated_at_utc))" (@($prev.load_errors) -join "; ")
+          $actionable = Get-ActionableLoadErrors $prev.load_errors
+          if (@($prev.load_errors).Count -gt $actionable.Count) {
+            $actions.Add("accepted_load_errors:$($pack.Name):$(@($prev.load_errors).Count - $actionable.Count)")
+          }
+          if ($actionable.Count -gt 0) {
+            Add-Exception "load" $pack.Name "$($actionable.Count) assets failed to load (manifest $($prev.generated_at_utc))" ($actionable -join "; ")
           }
           continue
         }
@@ -234,8 +247,12 @@ try {
         continue
       }
       $m = Get-Content $manifest -Raw | ConvertFrom-Json
-      if ($m.load_errors.Count -gt 0) {
-        Add-Exception "load" $pack.Name "$($m.load_errors.Count) assets failed to load" ($m.load_errors -join "; ")
+      $actionable = Get-ActionableLoadErrors $m.load_errors
+      if (@($m.load_errors).Count -gt $actionable.Count) {
+        $actions.Add("accepted_load_errors:$($pack.Name):$(@($m.load_errors).Count - $actionable.Count)")
+      }
+      if ($actionable.Count -gt 0) {
+        Add-Exception "load" $pack.Name "$($actionable.Count) assets failed to load" ($actionable -join "; ")
       } else {
         $actions.Add("validated:$($pack.Name):$($m.asset_count)_assets")
       }

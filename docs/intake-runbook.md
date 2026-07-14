@@ -84,7 +84,9 @@ Add to Project with "show all projects" if the UE 5.8 AuroraVellum is hidden.
 
 Dungeon Ruins ships with three permanently corrupt assets
 (`decor_07`, `Pillar_Base_02`, `Pillar_Base_03`); these are accepted debt —
-reconcile logs them as `accepted_quarantine` actions, not exceptions.
+reconcile logs them as `accepted_quarantine` actions, not exceptions. Same
+for SlashTrail_SoftTofu's two Paragon demo `*_Proto_Retarget` assets, whose
+UE4 `Rig` class no longer exists in UE 5.8 (`accepted_load_errors`).
 
 ## Recovery
 
