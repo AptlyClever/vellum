@@ -349,35 +349,29 @@ function Ingest-CapturedSystem {
         })
     }
   }
-  if ($heroTasks.Count -gt 0) {
-    Send-VellumProgress -Message "Ingest $($heroTasks.Count) hero uploads $SystemName (parallel)"
-    $heroTasks | ForEach-Object -ThrottleLimit 4 -Parallel {
-      $path = $_.path
-      $laneName = $_.lane
-      $role = $_.role
-      $AssetId = $using:AssetId
-      $SystemName = $using:SystemName
-      $VellumBase = $using:VellumBase
-      $code = 0
-      & curl.exe -sfS --connect-timeout 20 --max-time 180 -X POST "$VellumBase/api/lookdev/ingest-render" `
-        -F "asset_id=$AssetId" `
-        -F "lane=$laneName" `
-        -F "system_name=$SystemName" `
-        -F "note=auto Niagara MRQ $role $SystemName via mrq-batch" `
-        -F "file=@$path" | Out-Null
-      $code = $LASTEXITCODE
-      [pscustomobject]@{ ok = ($code -eq 0); path = $path; lane = $laneName; code = $code }
-    } | ForEach-Object {
-      if ($_.ok) {
-        $uploaded++
-        Write-Host "Ingested hero $($_.path) -> $($_.lane)"
-      } else {
-        if ($Errors) {
-          [void]$Errors.Add("ingest_render_failed:$SystemName`:$($_.lane)")
-        }
-        Write-Host "WARNING ingest-render failed for $($_.path) lane=$($_.lane) code=$($_.code)"
+  # Sequential hero curls - ForEach-Object -Parallel deadlocked the pack ingest
+  # mid-flight after the first system (pwsh 7 runspace pool). Store-zip + single
+  # sequence POST already dominates the win; 4 sequential curls are ~1s.
+  foreach ($task in $heroTasks) {
+    $path = [string]$task.path
+    $laneName = [string]$task.lane
+    $role = [string]$task.role
+    Send-VellumProgress -Message "Ingest render $SystemName $role -> $laneName"
+    $null = & curl.exe -sfS --connect-timeout 20 --max-time 180 -X POST "$VellumBase/api/lookdev/ingest-render" `
+      -F "asset_id=$AssetId" `
+      -F "lane=$laneName" `
+      -F "system_name=$SystemName" `
+      -F "note=auto Niagara MRQ $role $SystemName via mrq-batch" `
+      -F "file=@$path"
+    if ($LASTEXITCODE -ne 0) {
+      if ($Errors) {
+        [void]$Errors.Add("ingest_render_failed:$SystemName`:$laneName")
       }
+      Write-Host "WARNING ingest-render failed for $path lane=$laneName"
+      continue
     }
+    $uploaded++
+    Write-Host "Ingested hero $path -> $laneName"
   }
   if ((Test-Path $SeqDir)) {
     $zipPath = Join-Path $OutDir ("seq-" + (Safe-Name $SystemName) + ".zip")
@@ -988,17 +982,23 @@ if ($batchSystems.Count -gt 0) {
         Send-VellumProgress -Message "Phase C[$slotIndex] pick heroes $systemName"
         # Do not redirect native stdout with *>$null - PowerShell can hang after
         # python exits (observed after heroes-0.json was already written).
-        $pickArgs = @($StagedPickHeroesPy, $seqOutDir, "--json-out", $HeroJson)
+        $pickArgs = @($StagedPickHeroesPy, $seqOutDir, "--json-out", $HeroJson, "--score-budget", "8")
         if (Test-Path $HeroJson) { Remove-Item -Force $HeroJson -ErrorAction SilentlyContinue }
         $pickProc = Start-Process -FilePath $py.Source -ArgumentList $pickArgs `
           -PassThru -WindowStyle Hidden
         $pickPid = [int]$pickProc.Id
         $pickProc = $null
-        $pickDeadline = (Get-Date).AddMinutes(10)
+        $pickDeadline = (Get-Date).AddMinutes(5)
+        $pickLastBeat = Get-Date
         while ($null -ne (Get-Process -Id $pickPid -ErrorAction SilentlyContinue)) {
           if ((Get-Date) -gt $pickDeadline) {
             try { Stop-Process -Id $pickPid -Force -ErrorAction SilentlyContinue } catch { }
+            Send-VellumProgress -Message "FAIL hero pick timeout $systemName"
             break
+          }
+          if (((Get-Date) - $pickLastBeat).TotalSeconds -ge 10) {
+            Send-VellumProgress -Message "Phase C[$slotIndex] pick still running $systemName"
+            $pickLastBeat = Get-Date
           }
           Start-Sleep -Seconds 2
         }
@@ -1079,15 +1079,21 @@ if ($toIngestOnly.Count -gt 0) {
     }
     $HeroJson = Join-Path $OutDir "heroes-ingest-$safeHint.json"
     if (Test-Path $HeroJson) { Remove-Item -Force $HeroJson -ErrorAction SilentlyContinue }
-    $pickArgs = @($StagedPickHeroesPy, $seqOutDir, "--json-out", $HeroJson)
+    $pickArgs = @($StagedPickHeroesPy, $seqOutDir, "--json-out", $HeroJson, "--score-budget", "8")
     $pickProc = Start-Process -FilePath $py.Source -ArgumentList $pickArgs -PassThru -WindowStyle Hidden
     $pickPid = [int]$pickProc.Id
     $pickProc = $null
     $pickDeadline = (Get-Date).AddMinutes(5)
+    $pickLastBeat = Get-Date
     while ($null -ne (Get-Process -Id $pickPid -ErrorAction SilentlyContinue)) {
       if ((Get-Date) -gt $pickDeadline) {
         try { Stop-Process -Id $pickPid -Force -ErrorAction SilentlyContinue } catch { }
+        Send-VellumProgress -Message "FAIL ingest-only pick timeout $systemName"
         break
+      }
+      if (((Get-Date) - $pickLastBeat).TotalSeconds -ge 10) {
+        Send-VellumProgress -Message "Ingest-only pick still running $systemName"
+        $pickLastBeat = Get-Date
       }
       Start-Sleep -Seconds 2
     }

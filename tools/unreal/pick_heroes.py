@@ -102,7 +102,7 @@ def main() -> None:
     ap.add_argument(
         "--score-budget",
         type=int,
-        default=16,
+        default=8,
         help="Max frames to fully score for peak luma (mid always included).",
     )
     args = ap.parse_args()
