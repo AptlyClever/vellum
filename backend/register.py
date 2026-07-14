@@ -158,6 +158,7 @@ def patch_asset(
     scratch_notes: str | None = None,
     content_root: str | None = None,
     host_content_path: str | None = None,
+    content_folder_name: str | None = None,
     ue_in_project: str | None = None,
 ) -> dict[str, Any]:
     """Update mutable register fields for an owned asset."""
@@ -188,6 +189,8 @@ def patch_asset(
         target["content_root"] = content_root.strip() or None
     if host_content_path is not None:
         target["host_content_path"] = host_content_path.strip() or None
+    if content_folder_name is not None:
+        target["content_folder_name"] = content_folder_name.strip() or None
     if ue_in_project is not None:
         target["ue_in_project"] = ue_in_project.strip() or None
     _persist_register(doc)

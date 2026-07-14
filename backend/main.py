@@ -70,6 +70,7 @@ class AssetPatchRequest(BaseModel):
     scratch_notes: str | None = Field(default=None, max_length=4000)
     content_root: str | None = Field(default=None, max_length=200)
     host_content_path: str | None = Field(default=None, max_length=1000)
+    content_folder_name: str | None = Field(default=None, max_length=200)
     ue_in_project: str | None = Field(default=None, max_length=64)
 
 
@@ -376,6 +377,7 @@ def api_patch_asset(asset_id: str, body: AssetPatchRequest) -> dict[str, Any]:
         "scratch_notes",
         "content_root",
         "host_content_path",
+        "content_folder_name",
         "ue_in_project",
     )
     if all(getattr(body, field) is None for field in fields):
@@ -392,6 +394,7 @@ def api_patch_asset(asset_id: str, body: AssetPatchRequest) -> dict[str, Any]:
             scratch_notes=body.scratch_notes,
             content_root=body.content_root,
             host_content_path=body.host_content_path,
+            content_folder_name=body.content_folder_name,
             ue_in_project=body.ue_in_project,
         )
     except KeyError:

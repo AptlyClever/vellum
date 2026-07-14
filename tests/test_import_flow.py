@@ -308,6 +308,27 @@ def test_register_orphans(tmp_path: Path, monkeypatch) -> None:
 
 
 
+def test_resolve_folder_fuzzy_maps_marble(tmp_path: Path, monkeypatch) -> None:
+    from backend import import_flow as import_flow_mod
+    from backend import register as register_mod
+
+    reg = tmp_path / "reg.yaml"
+    monkeypatch.setenv("VELLUM_REGISTER_PATH", str(reg))
+    monkeypatch.setenv(
+        "VELLUM_SEED_PATH",
+        str(Path(__file__).resolve().parents[1] / "config" / "humble-seed.yaml"),
+    )
+    monkeypatch.setenv("VELLUM_VAULT_ROOT", str(tmp_path / "vault"))
+    register_mod.ensure_register(force_reseed=True)
+
+    assert (
+        import_flow_mod.resolve_folder_to_asset_id("MegaMarbleMaterial")
+        == "mega-marble-material-4k"
+    )
+    # Exact map still wins for known folders
+    assert import_flow_mod.resolve_folder_to_asset_id("FireworksV1") == "fireworks-vol-1-niagara"
+
+
 def test_availability_row_priority() -> None:
     assert import_flow_mod.availability_row(
         on_disk=True, staged=True, lookdev=True, installable=False

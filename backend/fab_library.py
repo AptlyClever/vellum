@@ -172,8 +172,8 @@ def acquisition_for_asset(
     elif listing is not None:
         method = METHOD_FAB_ADD_TO_PROJECT
         hint = (
-            "Epic Launcher → Fab Library → "
-            f"\"{listing['title']}\" → Add to Project → AuroraVellum. "
+            "Epic Launcher -> Fab Library -> "
+            f"\"{listing['title']}\" -> Add to Project -> AuroraVellum. "
         )
         if ue_only:
             hint += "UE-only listing: no standalone file download exists."
@@ -181,8 +181,8 @@ def acquisition_for_asset(
         method = METHOD_FAB_ADD_UNSEEN
         hint = (
             "Launcher on Aurora has never seen this pack (not in the Fab "
-            f"library cache). Epic Launcher → Fab Library → search \"{display}\" "
-            "→ Add to Project → AuroraVellum. UE-only: it cannot be downloaded "
+            f"library cache). Epic Launcher -> Fab Library -> search \"{display}\" "
+            "-> Add to Project -> AuroraVellum. UE-only: it cannot be downloaded "
             "as files; it only materializes inside an Unreal project."
         )
     else:

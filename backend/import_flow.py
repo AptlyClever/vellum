@@ -1140,6 +1140,7 @@ KNOWN_FOLDER_MAP: dict[str, str] = {
     "Cyperpunk_Clinic": "cyberpunk-hospital-cyberpunk-clinic-modular-cyberpunk-environment",
     "Cyberpunk_Clinic": "cyberpunk-hospital-cyberpunk-clinic-modular-cyberpunk-environment",
     "CyberpunkHospital": "cyberpunk-hospital-cyberpunk-clinic-modular-cyberpunk-environment",
+    "MegaMarbleMaterial": "mega-marble-material-4k",
 }
 
 # Tooling / engine noise under Content — not purchasable packs to Register & Stage.
@@ -1206,6 +1207,67 @@ def folder_to_asset_id_map() -> dict[str, str]:
     return mapping
 
 
+def _alnum(s: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "", (s or "").lower())
+
+
+def resolve_folder_to_asset_id(
+    folder: str, *, folder_map: dict[str, str] | None = None
+) -> str | None:
+    """Map a Content folder name to a register id, with fuzzy fallback.
+
+    Exact map first. If missing, match against register ids / display names by
+    stripping non-alphanumerics so ``MegaMarbleMaterial`` lands on
+    ``mega-marble-material-4k`` instead of inventing a duplicate orphan row.
+    Prefer the longest / most specific register match so short false positives
+    (e.g. ``Mega``) do not win.
+    """
+    name = (folder or "").strip()
+    if not name:
+        return None
+    fmap = folder_map if folder_map is not None else folder_to_asset_id_map()
+    if name in fmap and register_mod.get_asset(fmap[name]):
+        return fmap[name]
+
+    needle = _alnum(name)
+    if len(needle) < 6:
+        return None
+    best: tuple[int, str] | None = None
+    for a in register_mod.list_assets():
+        if not isinstance(a, dict):
+            continue
+        if str(a.get("engine") or "").lower() not in {"", "unreal"}:
+            continue
+        aid = str(a.get("id") or "").strip()
+        if not aid:
+            continue
+        candidates = [
+            _alnum(aid),
+            _alnum(str(a.get("display_name") or "")),
+            _alnum(str(a.get("content_folder_name") or "")),
+        ]
+        for cand in candidates:
+            if not cand:
+                continue
+            score = 0
+            if cand == needle:
+                score = 1000 + len(cand)
+            elif needle.startswith(cand) or cand.startswith(needle):
+                # Require shared prefix of meaningful length.
+                shared = min(len(needle), len(cand))
+                if shared < 8:
+                    continue
+                score = 700 + shared
+            elif needle in cand or cand in needle:
+                shared = min(len(needle), len(cand))
+                if shared < 10:
+                    continue
+                score = 500 + shared
+            if score > 0 and (best is None or score > best[0]):
+                best = (score, aid)
+    return best[1] if best else None
+
+
 def pretty_folder_name(folder: str) -> str:
     """Hangar-X / MagicCastVFX → readable display name."""
     raw = (folder or "").strip()
@@ -1246,7 +1308,7 @@ def coverage(*, engine: str = "unreal", host_id: str | None = None) -> dict[str,
     for name, f in sorted(folder_by_name.items()):
         if name in SKIP_FOLDERS:
             continue
-        aid = folder_map.get(name)
+        aid = resolve_folder_to_asset_id(name, folder_map=folder_map)
         if aid and register_mod.get_asset(aid):
             on_disk.append(
                 {
@@ -1379,13 +1441,14 @@ def register_orphan(
         raise ValueError("host_path_not_in_scan")
 
     existing_map = folder_to_asset_id_map()
-    if name in existing_map and register_mod.get_asset(existing_map[name]):
-        aid = existing_map[name]
+    aid = resolve_folder_to_asset_id(name, folder_map=existing_map)
+    if aid and register_mod.get_asset(aid):
         asset = register_mod.patch_asset(
             aid,
             host_content_path=host_path,
             ue_in_project="in_project",
             content_root=content_root_from_folder_name(name),
+            content_folder_name=name,
             redemption_status="owned",
         )
     else:
