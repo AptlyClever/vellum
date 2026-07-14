@@ -1,0 +1,42 @@
+name: vellum-pipeline
+
+on:
+  workflow_dispatch:
+    inputs:
+      job:
+        description: "Factory job"
+        required: true
+        type: choice
+        options:
+          - export-models
+          - bake-vfx
+          - export-media
+      pack:
+        description: "Pack folder under Content/"
+        required: true
+        default: FireworksV1
+
+jobs:
+  convert:
+    runs-on: [self-hosted, Windows, aurora-vellum]
+    timeout-minutes: 180
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run factory job
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File tools/pipeline/run_job.ps1 `
+            -Job "${{ inputs.job }}" `
+            -Pack "${{ inputs.pack }}"
+
+      - name: Upload manifests
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pipeline-${{ inputs.job }}-${{ inputs.pack }}
+          path: |
+            F:/Games/AuroraVellum/Saved/VellumPipeline/**/*.manifest.json
+            F:/Games/AuroraVellum/Saved/VellumPipeline/**/pack-manifest.json
+          if-no-files-found: warn

@@ -634,6 +634,29 @@ table.assets tbody tr:last-child td {
   color: var(--muted);
 }
 
+.game-ready-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.game-ready-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--border, #2a3140);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.btn.tiny {
+  font-size: 0.75rem;
+  padding: 0.25rem 0.55rem;
+}
+
 @media (max-width: 720px) {
   table.assets th:nth-child(4),
   table.assets td:nth-child(4),

@@ -13,23 +13,25 @@ Vellum is the Control Alt Games asset vault and intake/prototyping project.
 
 1. `README.md` — project identity, paths, first slice.
 2. `DEV_TRACKER.md` — Active Issue + **Governing CFD**.
-3. Live CFD: `GET /api/cfd/inspirations/cfd-inspiration-20260713-015950-vellum-control-alt-games-asset-vault-register-in` (Axiom) or mirror `docs/cfd/governing-inspiration.json`.
-4. `docs/cfd/architecture-research.md` — locked architecture lessons.
-5. `docs/humble-asset-vault-inventory.md` — 37-item inventory (no keys).
-6. `docs/api-intake.md` — IntakeRun + jobs + asset patch API for agents.
-7. `docs/api-lookdev.md` — DerivedOutput / project-lane derive API.
-8. `docs/ue-mrq-capture.md` — **Unreal MRQ + Sequencer lookdev capture** (new capability SoT).
-9. `docs/scratch-inspect-niagara.md` — UE host profiles + retired HighResShot/SceneCapture backends.
-10. `docs/slice-e-epic-staging.md` — Epic/Fab Add-to-Project → vault copy runbook.
-11. `docs/asset-import-engine.md` — intake runner / vault layout plan.
+3. **`docs/asset-pipeline-product.md`** — **product SoT** (Library + Conversion Factory + delivery catalog).
+4. Live CFD: `GET /api/cfd/inspirations/cfd-inspiration-20260713-015950-vellum-control-alt-games-asset-vault-register-in` (Axiom) or mirror `docs/cfd/governing-inspiration.json`.
+5. `docs/cfd/architecture-research.md` — locked architecture lessons.
+6. `docs/humble-asset-vault-inventory.md` — 37-item inventory (no keys).
+7. `docs/intake-runbook.md` — redeem → Fab → P4 → register.
+8. `docs/library-project.md` — curated Unreal Library layout.
+9. `docs/api-intake.md` — IntakeRun + jobs + asset patch API for agents.
+10. `docs/api-lookdev.md` / `docs/api-game-ready.md` — derived + game-ready catalog APIs.
+11. `docs/slice-e-epic-staging.md` — Epic/Fab Add-to-Project notes.
 12. `docs/brand-canon.md` — core vs Games classification rules.
+13. Frozen archaeology: `docs/ue-lookdev-worker.md`, `docs/ue-mrq-capture.md`, `archive/prototype-v0/`.
 
 ## Working rules
 
 - Prefer vault register + filesystem staging over dumping packs into app repos.
 - Never store Humble/Epic/Unity keys in git or in Axiom registry files.
-- Keep derived lookdev outputs project-lane-scoped under the vault; leave raw packs in `01-source-bundles/`.
-- Do not treat this as an Unreal/Unity engine-migration project.
+- Keep derived / game-ready outputs project-lane-scoped under the vault; leave raw packs in `01-source-bundles/`.
+- Factory jobs live under `tools/pipeline/`; do not revive the Capture agent polling loop without operator unpark.
+- A native Unreal title may consume the Library project — that is allowed under the product SoT; do not dump packs into product git repos.
 - Registry identity for fleet discovery lives in Axiom `config/apps.registry.yaml` (`id: vellum`).
 - Do not mutate Axiom/Praxis/Eidolon/LCARD runtime infra unless the operator explicitly asks.
 

@@ -11,6 +11,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from . import game_ready as game_ready_mod
 from . import intake as intake_mod
 from . import jobs as jobs_mod
 from . import lookdev as lookdev_mod
@@ -69,6 +70,16 @@ class LookdevDeriveRequest(BaseModel):
     asset_id: str = Field(min_length=1, max_length=200)
     lanes: list[str] | None = None
     intake_run_id: str | None = Field(default=None, max_length=200)
+
+
+class GameReadyIngestManifestRequest(BaseModel):
+    asset_id: str = Field(min_length=1, max_length=200)
+    pack: str | None = Field(default=None, max_length=200)
+    manifest_path: str = Field(min_length=1, max_length=2000)
+
+
+class GameReadyPublishRequest(BaseModel):
+    lane: str = Field(min_length=1, max_length=64)
 
 
 class UeCaptureRequest(BaseModel):
@@ -584,6 +595,77 @@ async def api_lookdev_ingest_sequence(
         "path": result["path"],
         "frame_count": result["frame_count"],
     }
+
+
+@app.get("/api/game-ready/elements")
+def api_game_ready_list(
+    asset_id: str | None = Query(default=None),
+    kind: str | None = Query(default=None),
+    lane: str | None = Query(default=None),
+    limit: int = Query(default=100, ge=1, le=1000),
+) -> dict[str, Any]:
+    rows = game_ready_mod.list_elements(
+        asset_id=asset_id, kind=kind, lane=lane, limit=limit
+    )
+    return {
+        "schema_version": 1,
+        "count": len(rows),
+        "kinds": list(game_ready_mod.ELEMENT_KINDS),
+        "elements": rows,
+    }
+
+
+@app.get("/api/game-ready/elements/{element_id}")
+def api_game_ready_get(element_id: str) -> dict[str, Any]:
+    row = game_ready_mod.get_element(element_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="game_ready_not_found")
+    return row
+
+
+@app.get("/api/game-ready/elements/{element_id}/file")
+def api_game_ready_file(element_id: str) -> FileResponse:
+    row = game_ready_mod.get_element(element_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="game_ready_not_found")
+    try:
+        path = game_ready_mod.resolve_safe_file(row)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="file_missing") from None
+    except PermissionError:
+        raise HTTPException(status_code=403, detail="path_outside_vault") from None
+    return FileResponse(path)
+
+
+@app.post("/api/game-ready/ingest-manifest")
+def api_game_ready_ingest_manifest(body: GameReadyIngestManifestRequest) -> dict[str, Any]:
+    if register_mod.get_asset(body.asset_id) is None:
+        raise HTTPException(status_code=404, detail="asset_not_found")
+    path = Path(body.manifest_path)
+    if not path.is_file():
+        raise HTTPException(status_code=400, detail="manifest_missing")
+    try:
+        result = game_ready_mod.ingest_manifest(
+            path, asset_id=body.asset_id, pack=body.pack
+        )
+    except KeyError:
+        raise HTTPException(status_code=404, detail="asset_not_found") from None
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return result
+
+
+@app.post("/api/game-ready/elements/{element_id}/publish")
+def api_game_ready_publish(element_id: str, body: GameReadyPublishRequest) -> dict[str, Any]:
+    try:
+        row = game_ready_mod.publish_to_lane(element_id, body.lane)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="game_ready_not_found") from None
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except (FileNotFoundError, PermissionError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"schema_version": 1, "element": row}
 
 
 @app.post("/api/scratch/record")

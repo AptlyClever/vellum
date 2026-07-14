@@ -24,6 +24,14 @@ data/intake-runs.yaml
 data/jobs.sqlite3
 data/derived-outputs.yaml
 data/*.sqlite3
+data/game-ready.yaml
+
+# Local dev vault artifacts (real vault lives on the hub)
+02-index/
+05-derived-renders/
+
+# Scratch
+tmp/
 
 # Never track vault raw assets (vault lives outside this repo)
 

@@ -538,11 +538,27 @@ async function openDetail(id) {
   captureSec.appendChild(liveRoot);
   host.appendChild(captureSec);
 
+  // ---- Game-ready (product catalog) ----
+  const grSec = document.createElement("section");
+  grSec.className = "detail-section";
+  const grHead = document.createElement("h3");
+  grHead.textContent = "Game-ready";
+  grSec.appendChild(grHead);
+  const grNote = document.createElement("p");
+  grNote.className = "muted";
+  grNote.textContent =
+    "Portable Conversion Factory outputs (models / VFX clips / textures / audio). Not lookdev photos.";
+  grSec.appendChild(grNote);
+  const grHost = document.createElement("div");
+  grHost.className = "game-ready-list";
+  grSec.appendChild(grHost);
+  host.appendChild(grSec);
+
   // ---- Lookdev ----
   const lookdevSec = document.createElement("section");
   lookdevSec.className = "detail-section";
   const lookdevHead = document.createElement("h3");
-  lookdevHead.textContent = "Lookdev";
+  lookdevHead.textContent = "Lookdev (legacy stills)";
   lookdevSec.appendChild(lookdevHead);
   const lookdevHost = document.createElement("div");
   lookdevHost.className = "lookdev-grid";
@@ -586,7 +602,8 @@ async function openDetail(id) {
           project_path: pathInput.value.trim(),
           engine_version: engInput.value.trim(),
           intake_run_id: intakeRunId,
-          content_root: "/Game/FireworksV1",
+          content_root:
+            (a.content_root && String(a.content_root)) || "/Game/FireworksV1",
           force: !!forceInput.checked,
         }),
       });
@@ -601,6 +618,59 @@ async function openDetail(id) {
       console.error(err);
     }
   });
+
+  try {
+    const gr = await fetchJson(
+      `/api/game-ready/elements?asset_id=${encodeURIComponent(a.id)}&limit=48`
+    );
+    clear(grHost);
+    const elements = gr.elements || [];
+    if (!elements.length) {
+      const empty = document.createElement("p");
+      empty.className = "muted";
+      empty.textContent =
+        "No game-ready elements yet. Run Conversion Factory jobs (tools/pipeline/).";
+      grHost.appendChild(empty);
+    } else {
+      elements.forEach((el) => {
+        const row = document.createElement("div");
+        row.className = "game-ready-row";
+        const title = document.createElement("strong");
+        title.textContent = `${el.kind} · ${el.pack || el.asset_id}`;
+        row.appendChild(title);
+        const meta = document.createElement("span");
+        meta.className = "muted";
+        const lanes = (el.lanes || []).join(", ") || "unpublished";
+        meta.textContent = ` lanes: ${lanes}`;
+        row.appendChild(meta);
+        const pub = document.createElement("button");
+        pub.type = "button";
+        pub.className = "btn tiny";
+        pub.textContent = "Publish → slots";
+        pub.addEventListener("click", async () => {
+          pub.disabled = true;
+          try {
+            await fetch(
+              `/api/game-ready/elements/${encodeURIComponent(el.id)}/publish`,
+              {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ lane: "slots" }),
+              }
+            );
+            pub.textContent = "Published";
+          } catch (e) {
+            pub.textContent = "Failed";
+            pub.disabled = false;
+          }
+        });
+        row.appendChild(pub);
+        grHost.appendChild(row);
+      });
+    }
+  } catch (err) {
+    console.error(err);
+  }
 
   try {
     const derived = await fetchJson(

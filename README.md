@@ -1,8 +1,9 @@
 # Vellum
 
-**Vellum** is the Control Alt Games asset vault and visual prototyping accelerator.
-
-It owns ingest, catalog, and reuse of purchased Unreal/Unity game-dev assets (starting with the Humble All-in-One Unreal & Unity GameDev bundle) for Threshold Affairs, Field Command, Hail, LCARD, Slots/Bandit, and Dobsonian work — without dumping raw marketplace packs into product repos or migrating engines.
+**Vellum** is the Control Alt Games asset vault and **asset pipeline product**:
+catalog, intake, Library project, Conversion Factory, and game-ready delivery
+for purchased Unreal/Unity packs — without dumping raw marketplace packs into
+product git repos.
 
 | Fact | Value |
 | --- | --- |
@@ -28,11 +29,11 @@ pytest -q
 | Doc | What it is |
 | --- | --- |
 | **[DEV_TRACKER.md](./DEV_TRACKER.md)** | Active issue + Governing CFD |
-| **[docs/ue-mrq-capture.md](./docs/ue-mrq-capture.md)** | **New:** Unreal MRQ + Sequencer lookdev capture capability |
+| **[docs/asset-pipeline-product.md](./docs/asset-pipeline-product.md)** | **Product SoT** — Library + Factory + catalog |
+| **[docs/intake-runbook.md](./docs/intake-runbook.md)** | Redeem → Fab → P4 → register |
 | **[docs/cfd/](./docs/cfd/)** | CFD mirrors + architecture research |
 | **[docs/humble-asset-vault-inventory.md](./docs/humble-asset-vault-inventory.md)** | Authoritative **37-item** inventory (keys excluded) |
 | **[config/humble-seed.yaml](./config/humble-seed.yaml)** | Seed register (no keys) |
-| **[docs/asset-import-engine.md](./docs/asset-import-engine.md)** | Intake plan (slices B+) |
 | **[docs/brand-canon.md](./docs/brand-canon.md)** | Control Alt vs Control Alt Games |
 
 ## Slice status
@@ -43,7 +44,7 @@ pytest -q
 - **D (shipped):** Axiom Read `#/axiom/vellum` + `?embed=axiom`
 - **E (shipped):** Epic Add-to-Project → vault stage (Fireworks pilot); `PATCH /api/assets`; `docs/slice-e-epic-staging.md`
 - **F (shipped):** lookdev derive into project lanes (`docs/api-lookdev.md`); Fireworks stills → slots + hail-overlay
-- **Now:** Unreal **MRQ + Sequencer** lookdev capture for Fireworks (`docs/ue-mrq-capture.md`); SceneCapture/HighResShot retired; Unity reconcile parked — host runbook `docs/scratch-inspect-niagara.md`
+- **Now:** **Asset Pipeline Product** (`docs/asset-pipeline-product.md`) — curated Library + P4, Conversion Factory (`tools/pipeline/`), game-ready catalog. Capture science-project frozen as `prototype-v0`. Unity reconcile parked.
 
 
 ## Boundaries

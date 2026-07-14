@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "active": "aurora",
+  "notes": "UE capture host profiles. Only one agent should poll at a time. Flip active (or pass -Host / VELLUM_UE_HOST) when moving between machines. Aurora is primary; Borealis is secondary. Fab Add-to-Project MUST target fab_target_project (canonical F:). content_scan_roots also watches C:\\dev dumps until consolidate completes.",
+  "hosts": {
+    "aurora": {
+      "label": "Aurora",
+      "role": "primary",
+      "repo": "E:\\Dev\\vellum",
+      "ssh_user": "jaked",
+      "ssh_host": "192.168.68.100",
+      "ue_editor": "F:\\Games\\UE_5.8\\Engine\\Binaries\\Win64\\UnrealEditor.exe",
+      "ue_cmd": "F:\\Games\\UE_5.8\\Engine\\Binaries\\Win64\\UnrealEditor-Cmd.exe",
+      "project": "F:\\Games\\AuroraVellum\\AuroraVellum.uproject",
+      "project_dir": "F:\\Games\\AuroraVellum",
+      "fab_target_project": "F:\\Games\\AuroraVellum\\AuroraVellum.uproject",
+      "fab_target_label": "AuroraVellum (F:\\Games\\AuroraVellum)",
+      "content_root": "/Game/FireworksV1",
+      "engine_version": "5.8",
+      "worker_port": 8771,
+      "content_scan_roots": [
+        "F:\\Games\\AuroraVellum\\Content"
+      ]
+    },
+    "borealis": {
+      "label": "Borealis",
+      "role": "secondary",
+      "repo": "C:\\dev\\vellum",
+      "ue_editor": "C:\\Program Files\\Epic Games\\UE_5.8\\Engine\\Binaries\\Win64\\UnrealEditor.exe",
+      "ue_cmd": "C:\\Program Files\\Epic Games\\UE_5.8\\Engine\\Binaries\\Win64\\UnrealEditor-Cmd.exe",
+      "project": "C:\\epic\\VellumImport\\VellumImport.uproject",
+      "project_dir": "C:\\epic\\VellumImport",
+      "fab_target_project": "C:\\epic\\VellumImport\\VellumImport.uproject",
+      "fab_target_label": "VellumImport (Borealis)",
+      "content_root": "/Game/FireworksV1",
+      "engine_version": "5.8",
+      "worker_port": 8771,
+      "content_scan_roots": [
+        "C:\\epic\\VellumImport\\Content"
+      ]
+    }
+  }
+}

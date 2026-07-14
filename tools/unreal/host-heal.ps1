@@ -17,10 +17,12 @@ param(
   [string]$RepoRoot = "",
   [switch]$RestartAgentService,
   [switch]$SkipGitPull,
-  # Default Capture is legacy Cmd - do not kill the interactive editor for worker boot.
-  [switch]$EnsureLookdevWorker,
+  # Primary path (docs/ue-lookdev-worker.md): keep warm worker healthy.
+  [switch]$SkipLookdevWorker,
   [switch]$HardRestartWorker
 )
+
+$EnsureLookdevWorker = -not $SkipLookdevWorker
 
 $ErrorActionPreference = "Stop"
 $Here = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -62,27 +64,28 @@ $health = $null
 if ($EnsureLookdevWorker) {
   if (-not (Test-Path $WorkerPs1)) { throw "Missing $WorkerPs1" }
   Write-Host "Ensure Lookdev Worker (auto rebuilds stale studio)..."
-  & $WorkerPs1 -Ensure -HostName $UeHost.id -Port $Port
+  & $WorkerPs1 -Ensure -LaunchGui -HostName $UeHost.id -Port $Port
   $ensureCode = $LASTEXITCODE
   try {
     $health = Invoke-RestMethod -Method Get -Uri "http://127.0.0.1:$Port/health" -TimeoutSec 5
-    Write-Host ("Worker health ok={0} version={1} studio_build={2}/{3}" -f `
-      $health.ok, $health.version, $health.studio_build, $health.studio_build_required)
+    Write-Host ("Worker health ok={0} version={1} studio_build={2}/{3} ticks={4}" -f `
+      $health.ok, $health.version, $health.studio_build, $health.studio_build_required, $health.tick_count)
   } catch {
     Write-Host "WARNING: worker health not reachable yet: $($_.Exception.Message)"
   }
-  # Only hard-kill the editor when explicitly requested (legacy Capture must not do this).
+  # Only hard-kill the editor when explicitly requested.
   if ($HardRestartWorker) {
     $needWorkerRestart = $false
     if (-not $health -or -not $health.ok) { $needWorkerRestart = $true }
-    elseif ("$($health.version)" -notmatch "lookdev-worker-2") { $needWorkerRestart = $true }
+    elseif ("$($health.version)" -notmatch "lookdev-worker-") { $needWorkerRestart = $true }
+    elseif (-not $health.tick_count -or [int]$health.tick_count -lt 5) { $needWorkerRestart = $true }
     if ($needWorkerRestart) {
-      Write-Host "Restarting UnrealEditor to load lookdev-worker-2..."
+      Write-Host "Restarting UnrealEditor to load Lookdev Worker..."
       Get-Process -Name "UnrealEditor","UnrealEditor-Cmd" -ErrorAction SilentlyContinue | ForEach-Object {
         try { Stop-Process -Id $_.Id -Force -ErrorAction Stop } catch { }
       }
       Start-Sleep -Seconds 3
-      & $WorkerPs1 -Ensure -HostName $UeHost.id -Port $Port
+      & $WorkerPs1 -Ensure -LaunchGui -HostName $UeHost.id -Port $Port
       $ensureCode = $LASTEXITCODE
       try {
         $health = Invoke-RestMethod -Method Get -Uri "http://127.0.0.1:$Port/health" -TimeoutSec 5
@@ -90,7 +93,7 @@ if ($EnsureLookdevWorker) {
     }
   }
 } else {
-  Write-Host "Skip Lookdev Worker Ensure (Capture uses legacy UnrealEditor-Cmd)."
+  Write-Host "Skip Lookdev Worker Ensure (-SkipLookdevWorker)."
   try {
     $health = Invoke-RestMethod -Method Get -Uri "http://127.0.0.1:$Port/health" -TimeoutSec 2
   } catch { $health = $null }

@@ -205,7 +205,7 @@ function Invoke-UeLogged {
     [string[]]$ArgumentList,
     [string]$LogPath,
     [string]$Phase,
-    [int]$HeartbeatSeconds = 15,
+    [int]$HeartbeatSeconds = 5,
     [int]$TimeoutSec = 0,
     [switch]$NoRedirect  # retained for callers; always no-redirect now
   )
@@ -223,9 +223,16 @@ function Invoke-UeLogged {
   $proc = $null
   Send-VellumProgress -Message "$Phase pid=$uePid"
   $started = Get-Date
-  while ($null -ne (Get-Process -Id $uePid -ErrorAction SilentlyContinue)) {
+  $missingHits = 0
+  while ($true) {
     Start-Sleep -Seconds $HeartbeatSeconds
-    if ($null -eq (Get-Process -Id $uePid -ErrorAction SilentlyContinue)) { break }
+    $alive = $null -ne (Get-Process -Id $uePid -ErrorAction SilentlyContinue)
+    if (-not $alive) {
+      # One retry — brief spawn races / process table lag on Aurora.
+      Start-Sleep -Milliseconds 400
+      $alive = $null -ne (Get-Process -Id $uePid -ErrorAction SilentlyContinue)
+    }
+    if (-not $alive) { break }
     $elapsed = [int]((Get-Date) - $started).TotalSeconds
     if ($TimeoutSec -gt 0 -and $elapsed -ge $TimeoutSec) {
       Send-VellumProgress -Message "$Phase TIMEOUT ${elapsed}s - killing pid=$uePid"
@@ -300,102 +307,175 @@ function Safe-Name([string]$Name) {
   return -join ($Name.ToCharArray() | ForEach-Object { if ($_ -match "[A-Za-z0-9_-]") { $_ } else { "_" } })
 }
 
-function New-StoreZipFromDir {
-  # PNGs are already compressed - store-only zip is much faster than Compress-Archive.
-  param([string]$SourceDir, [string]$ZipPath)
-  if (Test-Path $ZipPath) { Remove-Item -Force $ZipPath }
-  Add-Type -AssemblyName System.IO.Compression
-  Add-Type -AssemblyName System.IO.Compression.FileSystem
-  $zip = [System.IO.Compression.ZipFile]::Open($ZipPath, [System.IO.Compression.ZipArchiveMode]::Create)
+# Store-zip / curl helpers removed — host ingest is tools/unreal/ingest_mrq_system.py
+
+function Invoke-ExeQuiet {
+  # Generic launcher via a temp .bat with EnableDelayedExpansion.
+  # NEVER use `cmd /c "... & echo %ERRORLEVEL%"` — %ERRORLEVEL% expands at parse
+  # time (wrong). NEVER `$null = & exe` / PS Process.ExitCode (Aurora hangs).
+  param(
+    [Parameter(Mandatory = $true)][string]$FilePath,
+    [Parameter(Mandatory = $true)][string[]]$ArgumentList,
+    [int]$TimeoutSec = 180,
+    [switch]$CaptureStdoutToTemp
+  )
+  $stamp = [guid]::NewGuid().ToString("n")
+  $ecFile = Join-Path $env:TEMP "vellum-exe-$stamp-ec.txt"
+  $outFile = Join-Path $env:TEMP "vellum-exe-$stamp-out.txt"
+  $errFile = Join-Path $env:TEMP "vellum-exe-$stamp-err.txt"
+  $batFile = Join-Path $env:TEMP "vellum-exe-$stamp.bat"
+  $exe = [string]$FilePath
+  $argLine = @(
+    foreach ($a in $ArgumentList) {
+      $s = [string]$a
+      if ($s -match '[\s"^&|<>%]') { '"' + ($s -replace '"', '""') + '"' } else { $s }
+    }
+  ) -join ' '
+  if ($exe -match '[\s"]') { $exe = '"' + ($exe -replace '"', '""') + '"' }
+  $lines = New-Object System.Collections.Generic.List[string]
+  [void]$lines.Add("@echo off")
+  [void]$lines.Add("setlocal EnableDelayedExpansion")
+  if ($CaptureStdoutToTemp -and $argLine -notmatch '(^|\s)(-o|--output)(\s|$)') {
+    [void]$lines.Add("$exe -o `"$outFile`" $argLine 2>`"$errFile`"")
+  } else {
+    [void]$lines.Add("$exe $argLine >`"$outFile`" 2>`"$errFile`"")
+  }
+  [void]$lines.Add("echo !ERRORLEVEL!>`"$ecFile`"")
+  [void]$lines.Add("endlocal")
+  Set-Content -LiteralPath $batFile -Value $lines -Encoding Ascii
+  $psi = New-Object System.Diagnostics.ProcessStartInfo
+  $psi.FileName = "cmd.exe"
+  $psi.Arguments = "/c `"$batFile`""
+  $psi.UseShellExecute = $false
+  $psi.CreateNoWindow = $true
+  $psi.RedirectStandardInput = $false
+  $psi.RedirectStandardOutput = $false
+  $psi.RedirectStandardError = $false
+  $p = New-Object System.Diagnostics.Process
+  $p.StartInfo = $psi
   try {
-    $root = (Resolve-Path $SourceDir).Path.TrimEnd('\','/')
-    Get-ChildItem -Path $SourceDir -Recurse -File -ErrorAction SilentlyContinue | ForEach-Object {
-      $rel = $_.FullName.Substring($root.Length).TrimStart('\','/') -replace '\\','/'
-      [void][System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
-        $zip,
-        $_.FullName,
-        $rel,
-        [System.IO.Compression.CompressionLevel]::NoCompression
-      )
+    [void]$p.Start()
+    $waitMs = [Math]::Max(5000, $TimeoutSec * 1000)
+    if (-not $p.WaitForExit($waitMs)) {
+      try { $p.Kill($true) } catch { try { $p.Kill() } catch {} }
+      return 124
     }
   } finally {
-    $zip.Dispose()
+    try { $p.Close() } catch {}
   }
+  $exitCode = 1
+  if (Test-Path $ecFile) {
+    $raw = (Get-Content -LiteralPath $ecFile -Raw -ErrorAction SilentlyContinue | ForEach-Object { $_.Trim() })
+    if ($raw -match '^-?\d+$') { $exitCode = [int]$raw }
+  }
+  Remove-Item -Force $ecFile, $outFile, $errFile, $batFile -ErrorAction SilentlyContinue
+  return $exitCode
 }
 
-function Ingest-CapturedSystem {
-  # Upload heroes + sequence immediately so an interrupt mid-batch still lands vault outputs.
-  # Soft-fail: one bad upload must not abort the rest of the pack.
+function Find-VellumPython {
+  # Prefer a real CPython install. Reject WindowsApps store stubs (zero-byte / alias).
+  $candidates = @()
+  if ($env:VELLUM_PYTHON) { $candidates += $env:VELLUM_PYTHON }
+  $candidates += @(
+    "C:\Python312\python.exe",
+    "C:\Python311\python.exe",
+    "C:\Program Files\Python312\python.exe",
+    "C:\Program Files\Python311\python.exe"
+  )
+  foreach ($cmdName in @("python", "py")) {
+    $cmd = Get-Command $cmdName -ErrorAction SilentlyContinue
+    if ($cmd -and $cmd.Source) { $candidates += $cmd.Source }
+  }
+  foreach ($c in $candidates) {
+    if (-not $c) { continue }
+    if ($c -like "*\WindowsApps\*") { continue }
+    if (-not (Test-Path -LiteralPath $c)) { continue }
+    $len = (Get-Item -LiteralPath $c).Length
+    if ($len -lt 1024) { continue }
+    return $c
+  }
+  throw "No real Python found. Install with: choco install python312 -y"
+}
+
+function Invoke-MrqPythonIngest {
+  # One Python process owns pick + zip + HTTP ingest. Never curl from PowerShell.
   param(
+    [string]$PythonExe,
+    [string]$IngestPy,
     [string]$AssetId,
     [string]$SystemName,
-    [object[]]$HeroStills,
+    [string]$SafeHint,
     [string]$SeqDir,
     [string]$OutDir,
+    [string]$StillsDir,
     [string]$VellumBase,
+    [string]$JobId,
     [string[]]$Lanes,
+    [string]$HeroesJson,
+    [switch]$ReuseHeroes,
+    [string]$Method = "mrq-batch",
+    [string]$ObjectPath = "",
+    [System.Collections.IList]$Stills,
+    [System.Collections.IList]$Sequences,
     [System.Collections.IList]$Errors
   )
-  $uploaded = 0
-  $heroTasks = New-Object System.Collections.ArrayList
-  foreach ($still in $HeroStills) {
-    $path = [string]$still.path
-    if (-not (Test-Path $path)) { continue }
-    foreach ($laneName in $Lanes) {
-      [void]$heroTasks.Add(@{
-          path = $path
-          lane = $laneName
-          role = [string]$still.role
+  $resultJson = Join-Path $OutDir ("ingest-result-" + $SafeHint + ".json")
+  if (Test-Path $resultJson) { Remove-Item -Force $resultJson -ErrorAction SilentlyContinue }
+  $laneCsv = ($Lanes -join ",")
+  $ingestArgs = @(
+    $IngestPy,
+    "--vellum-base", $VellumBase,
+    "--job-id", $JobId,
+    "--asset-id", $AssetId,
+    "--system-name", $SystemName,
+    "--seq-dir", $SeqDir,
+    "--out-dir", $OutDir,
+    "--stills-dir", $StillsDir,
+    "--lanes", $laneCsv,
+    "--heroes-json", $HeroesJson,
+    "--result-json", $resultJson,
+    "--note-prefix", "auto Niagara MRQ",
+    "--score-budget", "8"
+  )
+  if ($ReuseHeroes) { $ingestArgs += "--reuse-heroes" }
+  Send-VellumProgress -Message "Python ingest $SystemName"
+  $ec = Invoke-ExeQuiet -FilePath $PythonExe -ArgumentList $ingestArgs -TimeoutSec 960
+  if (-not (Test-Path $resultJson)) {
+    if ($Errors) { [void]$Errors.Add("ingest_no_result:$SystemName`:exit=$ec") }
+    Send-VellumProgress -Message "FAIL ingest no result $SystemName exit=$ec"
+    return 0
+  }
+  $doc = Get-Content $resultJson -Raw | ConvertFrom-Json
+  foreach ($h in @($doc.heroes)) {
+    if ($Stills) {
+      [void]$Stills.Add(@{
+          path        = [string]$h.path
+          kind        = "niagara-render"
+          system      = $SystemName
+          object_path = $ObjectPath
+          method      = $Method
+          role        = [string]$h.role
+          max_rgb     = [int]$h.max_rgb
+          bytes       = [int]$h.bytes
         })
     }
   }
-  # Sequential hero curls - ForEach-Object -Parallel deadlocked the pack ingest
-  # mid-flight after the first system (pwsh 7 runspace pool). Store-zip + single
-  # sequence POST already dominates the win; 4 sequential curls are ~1s.
-  foreach ($task in $heroTasks) {
-    $path = [string]$task.path
-    $laneName = [string]$task.lane
-    $role = [string]$task.role
-    Send-VellumProgress -Message "Ingest render $SystemName $role -> $laneName"
-    $null = & curl.exe -sfS --connect-timeout 20 --max-time 180 -X POST "$VellumBase/api/lookdev/ingest-render" `
-      -F "asset_id=$AssetId" `
-      -F "lane=$laneName" `
-      -F "system_name=$SystemName" `
-      -F "note=auto Niagara MRQ $role $SystemName via mrq-batch" `
-      -F "file=@$path"
-    if ($LASTEXITCODE -ne 0) {
-      if ($Errors) {
-        [void]$Errors.Add("ingest_render_failed:$SystemName`:$laneName")
-      }
-      Write-Host "WARNING ingest-render failed for $path lane=$laneName"
-      continue
-    }
-    $uploaded++
-    Write-Host "Ingested hero $path -> $laneName"
+  if ($Sequences) {
+    [void]$Sequences.Add(@{
+        system = $SystemName
+        path   = $SeqDir
+        frames = [int]$doc.frame_count
+      })
   }
-  if ((Test-Path $SeqDir)) {
-    $zipPath = Join-Path $OutDir ("seq-" + (Safe-Name $SystemName) + ".zip")
-    Send-VellumProgress -Message "Zip sequence $SystemName (store)"
-    New-StoreZipFromDir -SourceDir $SeqDir -ZipPath $zipPath
-    $laneCsv = ($Lanes -join ",")
-    Send-VellumProgress -Message "Ingest sequence $SystemName -> $laneCsv"
-    $null = & curl.exe -sfS --connect-timeout 20 --max-time 900 -X POST "$VellumBase/api/lookdev/ingest-sequence" `
-      -F "asset_id=$AssetId" `
-      -F "lanes=$laneCsv" `
-      -F "system_name=$SystemName" `
-      -F "note=auto Niagara MRQ sequence $SystemName via mrq-batch" `
-      -F "archive=@$zipPath"
-    if ($LASTEXITCODE -ne 0) {
-      if ($Errors) {
-        [void]$Errors.Add("ingest_sequence_failed:$SystemName")
-      }
-      Write-Host "WARNING ingest-sequence failed for $SystemName lanes=$laneCsv"
-    } else {
-      $uploaded += @($Lanes).Count
-      Write-Host "Ingested sequence $SystemName -> $laneCsv"
-    }
+  foreach ($e in @($doc.errors)) {
+    if ($Errors -and $e) { [void]$Errors.Add("$e`:$SystemName") }
   }
-  return $uploaded
+  $nUp = [int]$doc.uploaded
+  if (-not [bool]$doc.ok -and $nUp -lt 1) {
+    if ($Errors) { [void]$Errors.Add("ingest_zero:$SystemName") }
+    Send-VellumProgress -Message "FAIL ingest produced 0 uploads for $SystemName"
+  }
+  return $nUp
 }
 
 function Get-LookdevOutputs {
@@ -480,10 +560,12 @@ $InventoryPySource = Join-Path $PSScriptRoot "vellum_capture.py"
 $AuthorPySource = Join-Path $PSScriptRoot "vellum_capture_mrq_author.py"
 $StudioPySource = Join-Path $PSScriptRoot "vellum_lookdev_studio_author.py"
 $PickHeroesPy = Join-Path $PSScriptRoot "pick_heroes.py"
+$IngestMrqPy = Join-Path $PSScriptRoot "ingest_mrq_system.py"
 if (-not (Test-Path $InventoryPySource)) { throw "vellum_capture.py not found next to runner" }
 if (-not (Test-Path $AuthorPySource)) { throw "vellum_capture_mrq_author.py not found next to runner" }
 if (-not (Test-Path $StudioPySource)) { throw "vellum_lookdev_studio_author.py not found next to runner" }
 if (-not (Test-Path $PickHeroesPy)) { throw "pick_heroes.py not found next to runner" }
+if (-not (Test-Path $IngestMrqPy)) { throw "ingest_mrq_system.py not found next to runner" }
 if (-not $Project) {
   $Project = Resolve-UprojectFromHost -HostProfile $UeHost
 }
@@ -501,10 +583,12 @@ $StagedInventoryPy = Join-Path $OutDir "vellum_capture.py"
 $StagedAuthorPy = Join-Path $OutDir "vellum_capture_mrq_author.py"
 $StagedStudioPy = Join-Path $OutDir "vellum_lookdev_studio_author.py"
 $StagedPickHeroesPy = Join-Path $OutDir "pick_heroes.py"
+$StagedIngestMrqPy = Join-Path $OutDir "ingest_mrq_system.py"
 Copy-Item -Force -Path $InventoryPySource -Destination $StagedInventoryPy
 Copy-Item -Force -Path $AuthorPySource -Destination $StagedAuthorPy
 Copy-Item -Force -Path $StudioPySource -Destination $StagedStudioPy
 Copy-Item -Force -Path $PickHeroesPy -Destination $StagedPickHeroesPy
+Copy-Item -Force -Path $IngestMrqPy -Destination $StagedIngestMrqPy
 
 $ProjectUe = ConvertTo-UePath $Project
 $OutDirUe = ConvertTo-UePath $OutDir
@@ -530,7 +614,7 @@ function Ensure-UeCmd {
 
 Write-Host "Project: $ProjectUe"
 Write-Host "MaxSystems=$MaxSystems (0=entire pack) Width=$Width Height=$Height MapPath=$MapPath"
-Write-Host "Runner version: mrq-pack-harden (2026-07-13)"
+Write-Host "Runner version: mrq-python-ingest (2026-07-14)"
 Write-Host "UE host: $($UeHost.id) ($($UeHost.label))"
 Write-Host "Ingest lanes: $($IngestLanes -join ', ')"
 Write-Host "ForceCapture=$ForceCapture ForceStudio=$ForceStudio MaxFrameCount=$FrameCount (per-system estimate may be shorter)"
@@ -668,7 +752,7 @@ if (-not $inv) {
   try {
     $ueExit = Invoke-UeLogged -Exe $Ue -ArgumentList @(
         $ProjectUe, "-stdout", "-FullStdOutLogOutput", "-unattended", "-nop4", $InventoryExecFlag
-      ) -LogPath $InventoryLog -Phase "Phase A inventory"
+      ) -LogPath $InventoryLog -Phase "Phase A inventory" -TimeoutSec 1200
   } catch {
     $ueExit = 1
     $_ | Out-File -FilePath $InventoryLog -Append
@@ -976,63 +1060,16 @@ if ($batchSystems.Count -gt 0) {
         }
 
         $HeroJson = Join-Path $OutDir "heroes-$slotIndex.json"
-        $py = Get-Command python -ErrorAction SilentlyContinue
-        if (-not $py) { $py = Get-Command py -ErrorAction SilentlyContinue }
-        if (-not $py) { throw "python/py not found on PATH for pick_heroes.py" }
-        Send-VellumProgress -Message "Phase C[$slotIndex] pick heroes $systemName"
-        # Sync call: --json-out is quiet (no stdout). Start-Process+PID wait hung
-        # after heroes JSON was already on disk (ingest-only pack freeze).
-        $pickArgs = @($StagedPickHeroesPy, $seqOutDir, "--json-out", $HeroJson, "--score-budget", "8")
-        if (Test-Path $HeroJson) { Remove-Item -Force $HeroJson -ErrorAction SilentlyContinue }
-        & $py.Source @pickArgs
-        if ($LASTEXITCODE -ne 0 -or -not (Test-Path $HeroJson)) {
-          [void]$allErrors.Add("hero_pick_failed:$systemName")
-          Send-VellumProgress -Message "FAIL hero pick $systemName code=$LASTEXITCODE"
-          $slotIndex++
-          continue
-        }
-        Send-VellumProgress -Message "Phase C[$slotIndex] heroes ready $systemName"
-        $heroDoc = Get-Content $HeroJson -Raw | ConvertFrom-Json
-        if (-not [bool]$heroDoc.ok) {
-          [void]$allErrors.Add("hero_rejected:$systemName`:$($heroDoc.error)")
-          Send-VellumProgress -Message "FAIL heroes $systemName $($heroDoc.error)"
-          $slotIndex++
-          continue
-        }
-
-        foreach ($h in @($heroDoc.heroes)) {
-          $src = [string]$h.path
-          if (-not (Test-Path $src)) { continue }
-          $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
-          $dest = Join-Path $StillsDir "$AssetId-$safeHint-$($h.role)-$stamp.png"
-          Copy-Item -Force -Path $src -Destination $dest
-          [void]$stills.Add(@{
-              path        = $dest
-              kind        = "niagara-render"
-              system      = $systemName
-              object_path = $objectPath
-              method      = "mrq-batch"
-              role        = [string]$h.role
-              max_rgb     = [int]$h.max_rgb
-              bytes       = (Get-Item $dest).Length
-            })
-          Write-Host "Hero $($h.role) -> $dest (max_rgb=$($h.max_rgb))"
-        }
-        [void]$sequences.Add(@{
-            system = $systemName
-            path   = $seqOutDir
-            frames = [int]$heroDoc.frame_count
-          })
-        $sysHeroes = @($stills | Where-Object { $_.system -eq $systemName })
+        $pyExe = Find-VellumPython
         Send-VellumProgress -Message "Phase C[$slotIndex] ingest $systemName"
-        $nUp = Ingest-CapturedSystem -AssetId $AssetId -SystemName $systemName `
-          -HeroStills $sysHeroes -SeqDir $seqOutDir -OutDir $OutDir `
-          -VellumBase $VellumBase -Lanes $IngestLanes -Errors $allErrors
-        if ($nUp -lt 1) {
-          [void]$allErrors.Add("ingest_zero:$systemName")
-          Send-VellumProgress -Message "FAIL ingest produced 0 uploads for $systemName"
-        } else {
-          Send-VellumProgress -Message "Captured $systemName heroes=$($heroDoc.heroes.Count) frames=$($heroDoc.frame_count) ingested=$nUp"
+        $nUp = Invoke-MrqPythonIngest -PythonExe $pyExe -IngestPy $StagedIngestMrqPy `
+          -AssetId $AssetId -SystemName $systemName -SafeHint $safeHint `
+          -SeqDir $seqOutDir -OutDir $OutDir -StillsDir $StillsDir `
+          -VellumBase $VellumBase -JobId $JobId -Lanes $IngestLanes `
+          -HeroesJson $HeroJson -Method "mrq-batch" -ObjectPath $objectPath `
+          -Stills $stills -Sequences $sequences -Errors $allErrors
+        if ($nUp -gt 0) {
+          Send-VellumProgress -Message "Captured $systemName ingested=$nUp"
         }
         $slotIndex++
       }
@@ -1044,9 +1081,8 @@ if ($batchSystems.Count -gt 0) {
 # Ingest-only: local MRQ already on disk (interrupted pack resume). No wipe.
 # ---------------------------------------------------------------------------
 if ($toIngestOnly.Count -gt 0) {
-  $py = Get-Command python -ErrorAction SilentlyContinue
-  if (-not $py) { $py = Get-Command py -ErrorAction SilentlyContinue }
-  if (-not $py) { throw "python/py not found on PATH for pick_heroes.py" }
+  $pyExe = Find-VellumPython
+  Write-Host "Using Python: $pyExe"
   $slotIndex = 1000
   foreach ($io in $toIngestOnly) {
     $systemName = [string]$io.asset_name
@@ -1061,54 +1097,15 @@ if ($toIngestOnly.Count -gt 0) {
       continue
     }
     $HeroJson = Join-Path $OutDir "heroes-ingest-$safeHint.json"
-    if (Test-Path $HeroJson) { Remove-Item -Force $HeroJson -ErrorAction SilentlyContinue }
-    Send-VellumProgress -Message "Ingest-only[$slotIndex] pick heroes $systemName"
-    $pickArgs = @($StagedPickHeroesPy, $seqOutDir, "--json-out", $HeroJson, "--score-budget", "8")
-    & $py.Source @pickArgs
-    if ($LASTEXITCODE -ne 0 -or -not (Test-Path $HeroJson)) {
-      [void]$allErrors.Add("ingest_only_hero_pick_failed:$systemName")
-      Send-VellumProgress -Message "FAIL ingest-only pick $systemName code=$LASTEXITCODE"
-      $slotIndex++
-      continue
-    }
-    Send-VellumProgress -Message "Ingest-only[$slotIndex] heroes ready $systemName"
-    $heroDoc = Get-Content $HeroJson -Raw | ConvertFrom-Json
-    if (-not [bool]$heroDoc.ok) {
-      [void]$allErrors.Add("ingest_only_hero_rejected:$systemName`:$($heroDoc.error)")
-      $slotIndex++
-      continue
-    }
-    foreach ($h in @($heroDoc.heroes)) {
-      $src = [string]$h.path
-      if (-not (Test-Path $src)) { continue }
-      $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
-      $dest = Join-Path $StillsDir "$AssetId-$safeHint-$($h.role)-$stamp.png"
-      Copy-Item -Force -Path $src -Destination $dest
-      [void]$stills.Add(@{
-          path        = $dest
-          kind        = "niagara-render"
-          system      = $systemName
-          object_path = $objectPath
-          method      = "ingest-only"
-          role        = [string]$h.role
-          max_rgb     = [int]$h.max_rgb
-          bytes       = (Get-Item $dest).Length
-        })
-    }
-    [void]$sequences.Add(@{
-        system = $systemName
-        path   = $seqOutDir
-        frames = [int]$heroDoc.frame_count
-      })
-    $sysHeroes = @($stills | Where-Object { $_.system -eq $systemName })
-    Send-VellumProgress -Message "Ingest-only[$slotIndex] ingest $systemName"
-    $nUp = Ingest-CapturedSystem -AssetId $AssetId -SystemName $systemName `
-      -HeroStills $sysHeroes -SeqDir $seqOutDir -OutDir $OutDir `
-      -VellumBase $VellumBase -Lanes $IngestLanes -Errors $allErrors
-    if ($nUp -lt 1) {
-      [void]$allErrors.Add("ingest_only_zero:$systemName")
-    } else {
-      Send-VellumProgress -Message "Ingest-only captured $systemName heroes=$($heroDoc.heroes.Count) ingested=$nUp"
+    $reuse = Test-Path $HeroJson
+    $nUp = Invoke-MrqPythonIngest -PythonExe $pyExe -IngestPy $StagedIngestMrqPy `
+      -AssetId $AssetId -SystemName $systemName -SafeHint $safeHint `
+      -SeqDir $seqOutDir -OutDir $OutDir -StillsDir $StillsDir `
+      -VellumBase $VellumBase -JobId $JobId -Lanes $IngestLanes `
+      -HeroesJson $HeroJson -ReuseHeroes:$reuse -Method "ingest-only" `
+      -ObjectPath $objectPath -Stills $stills -Sequences $sequences -Errors $allErrors
+    if ($nUp -gt 0) {
+      Send-VellumProgress -Message "Ingest-only captured $systemName ingested=$nUp"
     }
     $slotIndex++
   }

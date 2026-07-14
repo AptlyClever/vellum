@@ -1272,7 +1272,13 @@ def main() -> None:
     out["errors"] = errors
     if not result_path:
         result_path = Path(os.environ.get("VELLUM_OUT_DIR") or ".") / "author-result.json"
-    _write_json(Path(result_path), out)
+    result_path = Path(result_path)
+    _write_json(result_path, out)
+    # Worker historically looked for author-ready.json — keep a twin so in-UE
+    # Lookdev Worker never treats a successful author as author_empty.
+    ready_twin = result_path.with_name("author-ready.json")
+    if ready_twin.resolve() != result_path.resolve():
+        _write_json(ready_twin, out)
 
 
 if __name__ == "__main__":

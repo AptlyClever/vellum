@@ -1,0 +1,1 @@
+Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match 'vellum_ue_agent\.ps1' } | ForEach-Object { $r = if ($_.CommandLine -match 'SidecarOnly') {'SIDECAR'} else {'PRIMARY'}; Write-Host "$r $($_.ProcessId)" }; (Invoke-RestMethod http://127.0.0.1:8771/health).version

@@ -2,8 +2,10 @@
 
 You stay in **Vellum**. Unreal runs on the Windows host agent.
 
-**Capability SoT (what we’re building):** [`docs/ue-mrq-capture.md`](./ue-mrq-capture.md) —
-Movie Render Queue + Sequencer lookdev capture (full fidelity).
+**Product SoT:** [`docs/asset-pipeline-product.md`](./asset-pipeline-product.md) —
+Library + Conversion Factory + game-ready delivery.
+
+**Historical Capture notes:** [`docs/ue-mrq-capture.md`](./ue-mrq-capture.md) (MRQ tech retained inside `bake-vfx` only).
 
 ## STOP — retired capture backends
 
@@ -43,9 +45,9 @@ $env:VELLUM_MAX_SYSTEMS = "1"
 pwsh -ExecutionPolicy Bypass -File .\tools\unreal\vellum_ue_agent.ps1
 ```
 
-Expect fingerprint **`lookdev-worker`**. Warm once: `pwsh -File tools/unreal/vellum_ue_worker.ps1 -Ensure`. Then Vellum → Fireworks → **Force** + Capture (agent talks to warm UE on `:8771`).
+Expect fingerprint **`epic-batch-mrq-cmd`**. Then Vellum → asset detail → **Capture**; the agent launches `run_vellum_capture.ps1` / `UnrealEditor-Cmd` for MRQ.
 
-Until that fingerprint shows, you’re on an old pull.
+If the agent says `lookdev-worker`, the scheduled task was installed with the frozen opt-in flag and must be reinstalled.
 
 ## What stays human
 

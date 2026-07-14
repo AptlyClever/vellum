@@ -1,0 +1,73 @@
+{
+  "schema_version": 1,
+  "notes": "Relative paths under Epic VaultCache/*/data/Content. Copy into AuroraVellum Content/<Pack> (Fab default layout; never move installed packs on disk). No Launcher Fab UI required for vault-cache installs.",
+  "vault_cache_roots": [
+    "C:\\ProgramData\\Epic\\EpicGamesLauncher\\VaultCache"
+  ],
+  "assets": {
+    "hangar-x": {
+      "content_rel_paths": ["Hangar-X", "HangarX", "HANGAR-X"]
+    },
+    "japanese-old-shopping-mall-interior-environment": {
+      "content_rel_paths": [
+        "BefourStudios\\JapaneseOldShoppingMall",
+        "JapaneseOldShoppingMall"
+      ]
+    },
+    "motel-room-interior-environment": {
+      "content_rel_paths": [
+        "BefourStudios\\MotelRoomInterior",
+        "MotelRoomInterior",
+        "MotelRoom"
+      ]
+    },
+    "magic-cast-vfx": {
+      "content_rel_paths": ["MagicCastVFX", "MagicCast"]
+    },
+    "portal-vfx-enhanced": {
+      "content_rel_paths": ["PortalVFXEnhanced", "PortalVFX"]
+    },
+    "match-3-rpg-template": {
+      "content_rel_paths": ["Match3RPGTemplate", "Match3RPG"]
+    },
+    "container-city": {
+      "content_rel_paths": ["ContainerCity"]
+    },
+    "dark-village": {
+      "content_rel_paths": ["Dark_Village"]
+    },
+    "fabric-bundle-material": {
+      "content_rel_paths": ["FabricBundle"]
+    },
+    "fireworks-vol-1-niagara": {
+      "content_rel_paths": ["FireworksV1"]
+    },
+    "industrial-warehouse-night-environment-garage": {
+      "content_rel_paths": ["Garage"]
+    },
+    "gas-explosion-vfx": {
+      "content_rel_paths": ["GasExplosionVFX"]
+    },
+    "ground-explosion-vfx": {
+      "content_rel_paths": ["GroundExplosionVFX"]
+    },
+    "explosion-vfx-2": {
+      "content_rel_paths": ["ExplosionVFX-2"]
+    },
+    "science-fiction-desert-city-kit": {
+      "content_rel_paths": ["Scifi_desert_city"]
+    },
+    "slash-trail-fx-elemental": {
+      "content_rel_paths": ["SlashTrail_SoftTofu"]
+    },
+    "steampunk-zeppelin-station-victorian-airship-terminal-modular-environment": {
+      "content_rel_paths": ["Steampunk_Zepline_Station"]
+    },
+    "toon-abilities-vol-1-niagara": {
+      "content_rel_paths": ["ToonAbilitiesVol1"]
+    },
+    "metal-material-3": {
+      "content_rel_paths": ["MetalMaterial3"]
+    }
+  }
+}

@@ -1,0 +1,64 @@
+Vellum UE agent polling http://192.168.68.93:8770 every 5s
+UI trigger: asset detail  Capture from Unreal
+Host profile: aurora (Aurora, primary) - config active=aurora
+Agent scripts: E:\Dev\vellum\tools\unreal\run_vellum_capture.ps1
+Repo root: E:\Dev\vellum
+Agent fingerprint: epic-batch-mrq-cmd (2026-07-14)
+Capture mode: Epic batch Cmd - run_vellum_capture.ps1
+Epic batch runner fingerprint: Write-Host "Runner version: mrq-python-ingest (2026-07-14)"
+Resolved UE Cmd (preflight): F:\Games\UE_5.8\Engine\Binaries\Win64\UnrealEditor-Cmd.exe
+Resolved project (preflight): F:\Games\AuroraVellum\AuroraVellum.uproject
+Reporting host specs for aurora...
+Posting host specs for aurora to http://192.168.68.93:8770 (27 content folders)
+Stored specs updated_at=07/14/2026 02:41:55
+CPU: Intel(R) Core(TM) i7-10700 CPU @ 2.90GHz
+RAM: 64 GB
+GPU: Microsoft Remote Display Adapter; NVIDIA GeForce RTX 4070
+NVIDIA: NVIDIA GeForce RTX 4070 (12 GB)
+Content: Basic_VFX -> F:\Games\AuroraVellum\Content\Basic_VFX
+Content: BefourStudios -> F:\Games\AuroraVellum\Content\BefourStudios
+Content: JapaneseOldShoppingMall -> F:\Games\AuroraVellum\Content\BefourStudios\JapaneseOldShoppingMall
+Content: MotelRoomInterior -> F:\Games\AuroraVellum\Content\BefourStudios\MotelRoomInterior
+Content: ContainerCity -> F:\Games\AuroraVellum\Content\ContainerCity
+Content: Cyperpunk_Clinic -> F:\Games\AuroraVellum\Content\Cyperpunk_Clinic
+Content: Dark_Village -> F:\Games\AuroraVellum\Content\Dark_Village
+Content: Dungeon_Ruins -> F:\Games\AuroraVellum\Content\Dungeon_Ruins
+Content: ExplosionVFX-2 -> F:\Games\AuroraVellum\Content\ExplosionVFX-2
+Content: Fab -> F:\Games\AuroraVellum\Content\Fab
+Content: FabricBundle -> F:\Games\AuroraVellum\Content\FabricBundle
+Content: FireworksV1 -> F:\Games\AuroraVellum\Content\FireworksV1
+Content: FreeNiagaraPack -> F:\Games\AuroraVellum\Content\FreeNiagaraPack
+Content: Garage -> F:\Games\AuroraVellum\Content\Garage
+Content: GasExplosionVFX -> F:\Games\AuroraVellum\Content\GasExplosionVFX
+Content: GroundExplosionVFX -> F:\Games\AuroraVellum\Content\GroundExplosionVFX
+Content: Hangar-X -> F:\Games\AuroraVellum\Content\Hangar-X
+Content: MagicCastVFX -> F:\Games\AuroraVellum\Content\MagicCastVFX
+Content: MetalMaterial3 -> F:\Games\AuroraVellum\Content\MetalMaterial3
+Content: PortalVFXEnhanced -> F:\Games\AuroraVellum\Content\PortalVFXEnhanced
+Content: Python -> F:\Games\AuroraVellum\Content\Python
+Content: Scifi_desert_city -> F:\Games\AuroraVellum\Content\Scifi_desert_city
+Content: SlashTrail_SoftTofu -> F:\Games\AuroraVellum\Content\SlashTrail_SoftTofu
+Content: Steampunk_Zepline_Station -> F:\Games\AuroraVellum\Content\Steampunk_Zepline_Station
+Content: ToonAbilitiesVol1 -> F:\Games\AuroraVellum\Content\ToonAbilitiesVol1
+Content: Vefects -> F:\Games\AuroraVellum\Content\Vefects
+Content: Vellum -> F:\Games\AuroraVellum\Content\Vellum
+Started sidecar agent (host_fab_install / scan / stage)
+Sweeping stale UE-agent jobs...
+Auto-drain enqueued 1: slash-trail-fx-elemental
+Using project: F:\Games\AuroraVellum\AuroraVellum.uproject
+Using UnrealEditor-Cmd (Epic batch MRQ): F:\Games\UE_5.8\Engine\Binaries\Win64\UnrealEditor-Cmd.exe
+Running Epic batch capture for slash-trail-fx-elemental (job-20260714-064156-a50518) force=False
+TrustedCaptureAfterUtc=07/13/2026 23:15:00 (skip ignores recover/pre-harden vault)
+Project: F:/Games/AuroraVellum/AuroraVellum.uproject
+MaxSystems=0 (0=entire pack) Width=1920 Height=1080 MapPath=/Game/Vellum/Maps/VellumLookdevStudio
+Runner version: mrq-python-ingest (2026-07-14)
+UE host: aurora (Aurora)
+Ingest lanes: slots, hail-overlay
+ForceCapture=False ForceStudio=False MaxFrameCount=120 (per-system estimate may be shorter)
+JobId=job-20260714-064156-a50518 (progress -> http://192.168.68.93:8770/api/jobs/job-20260714-064156-a50518/progress)
+Phase 0 skipped: studio-ready.json present
+Lookdev Studio already built
+UE (Cmd): F:\Games\UE_5.8\Engine\Binaries\Win64\UnrealEditor-Cmd.exe
+Phase A (inventory): -ExecutePythonScript=F:/Games/AuroraVellum/Saved/VellumCapture/vellum_capture.py
+Phase A inventory starting exe=F:\Games\UE_5.8\Engine\Binaries\Win64\UnrealEditor-Cmd.exe
+Phase A inventory pid=8664

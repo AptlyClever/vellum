@@ -64,7 +64,7 @@ Get-CimInstance Win32_Process -Filter "Name='pwsh.exe' OR Name='powershell.exe'"
   }
 
 $taskName = "VellumUeAgent"
-$args = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$AgentPs1`" -VellumBase $VellumBase -HostName $HostName -LegacyCmdRunner"
+$args = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$AgentPs1`" -VellumBase $VellumBase -HostName $HostName"
 $action = New-ScheduledTaskAction -Execute $Pwsh -Argument $args -WorkingDirectory $RepoRoot
 $trigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
 $settings = New-ScheduledTaskSettingsSet `

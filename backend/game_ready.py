@@ -1,0 +1,261 @@
+"""Game-ready catalog — portable Conversion Factory outputs (not lookdev photos).
+
+Manifest-driven index under vault 05-derived-renders/game-ready/ plus a YAML catalog.
+Kinds: vfx-clip | sprite-sheet | model-gltf | texture | audio
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import secrets
+import shutil
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+import yaml
+
+from . import lookdev as lookdev_mod
+from . import register as register_mod
+
+ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_CATALOG = ROOT / "data" / "game-ready.yaml"
+
+ELEMENT_KINDS = (
+    "vfx-clip",
+    "sprite-sheet",
+    "model-gltf",
+    "texture",
+    "audio",
+    "bake-plan",
+    "manifest",
+)
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def catalog_path() -> Path:
+    configured = os.environ.get("VELLUM_GAME_READY_PATH", "").strip()
+    return Path(configured) if configured else DEFAULT_CATALOG
+
+
+def vault_game_ready_root() -> Path:
+    return lookdev_mod.vault_root() / "05-derived-renders" / "game-ready"
+
+
+def _vault_catalog_path() -> Path:
+    return lookdev_mod.vault_root() / "02-index" / "game-ready.yaml"
+
+
+def _empty() -> dict[str, Any]:
+    return {"schema_version": 1, "elements": []}
+
+
+def load_catalog() -> dict[str, Any]:
+    path = catalog_path()
+    if not path.is_file():
+        return _empty()
+    raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+    if not isinstance(raw, dict):
+        return _empty()
+    if not isinstance(raw.get("elements"), list):
+        raw["elements"] = []
+    raw.setdefault("schema_version", 1)
+    return raw
+
+
+def save_catalog(doc: dict[str, Any]) -> None:
+    path = catalog_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    text = yaml.dump(doc, sort_keys=False, allow_unicode=True)
+    path.write_text(text, encoding="utf-8")
+    mirror = _vault_catalog_path()
+    mirror.parent.mkdir(parents=True, exist_ok=True)
+    mirror.write_text(text, encoding="utf-8")
+
+
+def list_elements(
+    *,
+    asset_id: str | None = None,
+    kind: str | None = None,
+    lane: str | None = None,
+    limit: int = 100,
+) -> list[dict[str, Any]]:
+    rows = list(load_catalog().get("elements") or [])
+    if asset_id:
+        rows = [r for r in rows if r.get("asset_id") == asset_id]
+    if kind:
+        rows = [r for r in rows if r.get("kind") == kind]
+    if lane:
+        rows = [r for r in rows if lane in (r.get("lanes") or [])]
+    rows.sort(key=lambda r: str(r.get("created_at") or ""), reverse=True)
+    return rows[:limit]
+
+
+def get_element(element_id: str) -> dict[str, Any] | None:
+    for row in load_catalog().get("elements") or []:
+        if row.get("id") == element_id:
+            return row
+    return None
+
+
+def resolve_safe_file(row: dict[str, Any]) -> Path:
+    root = lookdev_mod.vault_root().resolve()
+    path = Path(str(row.get("path") or "")).expanduser()
+    if not path.is_absolute():
+        path = (root / path).resolve()
+    else:
+        path = path.resolve()
+    if root not in path.parents and path != root:
+        # also allow under vault game-ready even if symlink
+        gr = vault_game_ready_root().resolve()
+        if gr not in path.parents and path != gr:
+            raise PermissionError("path_outside_vault")
+    if not path.is_file():
+        raise FileNotFoundError(str(path))
+    return path
+
+
+def register_element(
+    *,
+    asset_id: str,
+    kind: str,
+    path: Path,
+    pack: str | None = None,
+    lanes: list[str] | None = None,
+    meta: dict[str, Any] | None = None,
+    note: str | None = None,
+) -> dict[str, Any]:
+    if kind not in ELEMENT_KINDS:
+        raise ValueError(f"unsupported_kind:{kind}")
+    if register_mod.get_asset(asset_id) is None:
+        raise KeyError(asset_id)
+    dest_root = vault_game_ready_root() / (pack or asset_id) / kind
+    dest_root.mkdir(parents=True, exist_ok=True)
+    dest = (dest_root / path.name).resolve()
+    src = Path(path).resolve()
+    if src != dest:
+        shutil.copy2(src, dest)
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    row = {
+        "id": f"gr-{stamp}-{secrets.token_hex(3)}",
+        "asset_id": asset_id,
+        "pack": pack or asset_id,
+        "kind": kind,
+        "path": str(dest),
+        "lanes": lanes or [],
+        "meta": meta or {},
+        "note": note,
+        "created_at": _now(),
+    }
+    doc = load_catalog()
+    doc["elements"].append(row)
+    save_catalog(doc)
+    return row
+
+
+def ingest_manifest(manifest_path: Path, *, asset_id: str, pack: str | None = None) -> dict[str, Any]:
+    """Ingest a Conversion Factory manifest.json into the catalog."""
+    data = json.loads(manifest_path.read_text(encoding="utf-8"))
+    pack = pack or str(data.get("pack") or asset_id)
+    registered: list[dict[str, Any]] = []
+    job = str(data.get("job") or "manifest")
+
+    if job == "export-models":
+        for item in data.get("exported") or []:
+            p = Path(str(item.get("path") or ""))
+            if p.is_file():
+                registered.append(
+                    register_element(
+                        asset_id=asset_id,
+                        kind="model-gltf",
+                        path=p,
+                        pack=pack,
+                        meta={"class": item.get("class"), "asset": item.get("asset")},
+                    )
+                )
+    elif job == "export-media":
+        for item in data.get("exported") or []:
+            p = Path(str(item.get("path") or ""))
+            if not p.is_file():
+                continue
+            kind = "texture" if item.get("kind") == "texture" else "audio"
+            registered.append(
+                register_element(
+                    asset_id=asset_id,
+                    kind=kind,
+                    path=p,
+                    pack=pack,
+                    meta={"asset": item.get("asset")},
+                )
+            )
+    elif job == "bake-vfx":
+        registered.append(
+            register_element(
+                asset_id=asset_id,
+                kind="bake-plan",
+                path=manifest_path,
+                pack=pack,
+                meta={"systems_found": data.get("systems_found")},
+                note="bake plan — render + pack_vfx_media produces clips",
+            )
+        )
+    else:
+        registered.append(
+            register_element(
+                asset_id=asset_id,
+                kind="manifest",
+                path=manifest_path,
+                pack=pack,
+                meta={"job": job},
+            )
+        )
+
+    return {
+        "schema_version": 1,
+        "ok": True,
+        "asset_id": asset_id,
+        "pack": pack,
+        "registered": len(registered),
+        "elements": registered,
+    }
+
+
+def publish_to_lane(element_id: str, lane: str) -> dict[str, Any]:
+    if lane not in lookdev_mod.KNOWN_LANES:
+        raise ValueError(f"unknown_lane:{lane}")
+    doc = load_catalog()
+    row = None
+    for r in doc.get("elements") or []:
+        if r.get("id") == element_id:
+            row = r
+            break
+    if row is None:
+        raise KeyError(element_id)
+    lanes = list(row.get("lanes") or [])
+    if lane not in lanes:
+        lanes.append(lane)
+        row["lanes"] = lanes
+        row["updated_at"] = _now()
+        save_catalog(doc)
+    # Copy into lane-scoped game-ready bundle folder
+    src = resolve_safe_file(row)
+    dest_dir = (
+        lookdev_mod.vault_root()
+        / "05-derived-renders"
+        / lane
+        / str(row.get("asset_id"))
+        / "game-ready"
+        / str(row.get("kind"))
+    )
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    dest = dest_dir / src.name
+    if src.resolve() != dest.resolve():
+        shutil.copy2(src, dest)
+    row["lane_paths"] = dict(row.get("lane_paths") or {})
+    row["lane_paths"][lane] = str(dest)
+    save_catalog(doc)
+    return row

@@ -1,0 +1,19 @@
+# Perforce ignore for AuroraVellum Library workspace
+Intermediate/
+Saved/
+DerivedDataCache/
+.vs/
+*.sln
+*.suo
+*.opensdf
+*.sdf
+Binaries/
+Build/
+FileOpenOrder/
+*.VC.db
+*.opendb
+Content/Developers/
+Quarantine/
+*.log
+*.tmp
+.vsconfig

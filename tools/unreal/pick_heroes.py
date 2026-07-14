@@ -94,27 +94,30 @@ def _sample_indices(n: int, budget: int) -> list[int]:
     return [i for i in idxs if 0 <= i < n]
 
 
-def main() -> None:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("sequence_dir")
-    ap.add_argument("--min-rgb", type=int, default=8)
-    ap.add_argument("--json-out", default="")
-    ap.add_argument(
-        "--score-budget",
-        type=int,
-        default=8,
-        help="Max frames to fully score for peak luma (mid always included).",
-    )
-    args = ap.parse_args()
-    root = Path(args.sequence_dir)
+def build_heroes_payload(
+    sequence_dir: Path,
+    *,
+    min_rgb: int = 8,
+    score_budget: int = 8,
+) -> dict:
+    """Pick mid + max-luma heroes from an MRQ sequence directory."""
+    root = Path(sequence_dir)
     frames = sorted(root.rglob("*.png"))
     if not frames:
         frames = sorted(root.rglob("*.jpg"))
     if not frames:
-        raise SystemExit(f"no_frames:{root}")
+        return {
+            "sequence_dir": str(root),
+            "frame_count": 0,
+            "scored_frames": 0,
+            "peak_rgb": -1,
+            "heroes": [],
+            "ok": False,
+            "error": f"no_frames:{root}",
+        }
 
     mid_i = len(frames) // 2
-    sample_is = _sample_indices(len(frames), max(3, int(args.score_budget)))
+    sample_is = _sample_indices(len(frames), max(3, int(score_budget)))
 
     scored: list[tuple[int, Path]] = []
     for i in sample_is:
@@ -133,14 +136,14 @@ def main() -> None:
         scored.append((mid_rgb, mid))
     peak = max(scored, key=lambda t: t[0])
     heroes = []
-    if mid_rgb >= args.min_rgb:
+    if mid_rgb >= min_rgb:
         heroes.append({"role": "mid", "path": str(mid), "max_rgb": mid_rgb})
-    if peak[0] >= args.min_rgb and peak[1] != mid:
+    if peak[0] >= min_rgb and peak[1] != mid:
         heroes.append({"role": "max_luma", "path": str(peak[1]), "max_rgb": peak[0]})
-    elif peak[0] >= args.min_rgb and not heroes:
+    elif peak[0] >= min_rgb and not heroes:
         heroes.append({"role": "max_luma", "path": str(peak[1]), "max_rgb": peak[0]})
 
-    payload = {
+    return {
         "sequence_dir": str(root),
         "frame_count": len(frames),
         "scored_frames": len(sample_is),
@@ -149,6 +152,27 @@ def main() -> None:
         "ok": bool(heroes),
         "error": None if heroes else f"still_pure_black:peak_rgb={peak[0]}",
     }
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("sequence_dir")
+    ap.add_argument("--min-rgb", type=int, default=8)
+    ap.add_argument("--json-out", default="")
+    ap.add_argument(
+        "--score-budget",
+        type=int,
+        default=8,
+        help="Max frames to fully score for peak luma (mid always included).",
+    )
+    args = ap.parse_args()
+    payload = build_heroes_payload(
+        Path(args.sequence_dir),
+        min_rgb=args.min_rgb,
+        score_budget=args.score_budget,
+    )
+    if str(payload.get("error") or "").startswith("no_frames:"):
+        raise SystemExit(payload["error"])
     text = json.dumps(payload, indent=2) + "\n"
     if args.json_out:
         Path(args.json_out).write_text(text, encoding="utf-8")

@@ -1,6 +1,8 @@
-# Vellum UE Lookdev Worker — boots inside UnrealEditor (long-lived).
-# Started once via -ExecutePythonScript. Spawns loopback HTTP on 127.0.0.1:8771.
-# Capture work runs on the editor/game thread via a slate post-tick callback.
+# Vellum UE Lookdev Worker — long-lived UnrealEditor process.
+#
+# Hosting authority: Content/Python/init_unreal.py calls start_worker() and keeps
+# a strong _WorkerRuntime (slate tick + HTTP). Capture runs on the editor thread.
+# HTTP threads enqueue only — never call unreal.* from them.
 #
 # Do not run via UnrealEditor-Cmd as a one-shot: the editor must stay warm.
 
@@ -18,11 +20,15 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
-WORKER_VERSION = "lookdev-worker-2"
+WORKER_VERSION = "lookdev-worker-6"
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8771
 STUDIO_MAP = "/Game/Vellum/Maps/VellumLookdevStudio"
 STUDIO_BUILD_REQUIRED = 3  # match vellum_lookdev_studio_author.STUDIO_BUILD
+
+# Strong refs — ExecutePythonScript returning MUST NOT drop the tick pump.
+# Persistence authority is Content/Python/init_unreal.py calling start_worker().
+_RUNTIME: "_WorkerRuntime | None" = None
 
 
 def _editor_world(unreal_mod):
@@ -30,10 +36,15 @@ def _editor_world(unreal_mod):
     try:
         sub = unreal_mod.get_editor_subsystem(unreal_mod.UnrealEditorSubsystem)
         if sub is not None:
-            return sub.get_editor_world()
+            world = sub.get_editor_world()
+            if world is not None:
+                return world
     except Exception:  # noqa: BLE001
         pass
-    return _editor_world(unreal_mod)
+    try:
+        return unreal_mod.EditorLevelLibrary.get_editor_world()
+    except Exception:  # noqa: BLE001
+        return None
 
 
 _state_lock = threading.Lock()
@@ -43,6 +54,7 @@ _state: dict[str, Any] = {
     "map": "",
     "last_error": "",
     "started_at": time.time(),
+    "tick_count": 0,
 }
 _pending_job: dict[str, Any] | None = None
 _pending_result: dict[str, Any] | None = None
@@ -66,6 +78,13 @@ def _out_dir() -> Path:
 
 
 def _log(msg: str) -> None:
+    # Safe print always. unreal.log only on the game/editor thread — calling it from
+    # the HTTP worker thread deadlocks Slate (health polls froze ticks at frame 4).
+    print(f"[VellumWorker] {msg}", flush=True)
+
+
+def _log_editor(msg: str) -> None:
+    """Game-thread only."""
     try:
         import unreal  # type: ignore
 
@@ -271,43 +290,98 @@ def _render_queue_in_process(
         notes.append("mrq_in_process_unavailable")
         return False
 
-    queue = None
+    # Always rebuild the active executor queue from authored jobs.
+    # Loading the saved VellumBatchQueue asset never flipped is_rendering.
     if queue_path:
-        soft = _soft(queue_path)
-        try:
-            queue = unreal_mod.EditorAssetLibrary.load_asset(soft.split(".")[0])
-            notes.append(f"mrq_queue_loaded:{soft}")
-        except Exception as exc:  # noqa: BLE001
-            notes.append(f"mrq_queue_load_failed:{exc}")
-
-    if queue is None:
-        try:
-            queue = subsystem.get_queue()
-            queue.delete_all_jobs()
-            for item in authored:
+        notes.append(f"mrq_queue_asset_hint:{_soft(queue_path)}")
+    editor_lib = getattr(unreal_mod, "MoviePipelineEditorLibrary", None)
+    try:
+        queue = subsystem.get_queue()
+        queue.delete_all_jobs()
+        built = 0
+        for item in authored:
+            seq = str(item.get("sequence_path") or item.get("sequence_asset") or "")
+            cfg = str(item.get("config_asset") or item.get("config_path") or "")
+            name = str(item.get("system_name") or item.get("asset_name") or "system")
+            if not seq:
+                notes.append(f"mrq_skip_no_sequence:{name}")
+                continue
+            seq_pkg = seq.split(".")[0]
+            seq_asset = unreal_mod.EditorAssetLibrary.load_asset(seq_pkg)
+            if seq_asset is None:
+                notes.append(f"mrq_sequence_missing:{seq}")
+                continue
+            qjob = None
+            if editor_lib is not None and hasattr(editor_lib, "create_job_from_sequence"):
+                try:
+                    qjob = editor_lib.create_job_from_sequence(queue, seq_asset)
+                    notes.append(f"mrq_job_from_sequence:{name}")
+                except Exception as exc:  # noqa: BLE001
+                    notes.append(f"mrq_create_job_from_sequence_failed:{exc}")
+                    qjob = None
+            if qjob is None:
                 qjob = queue.allocate_new_job()
-                qjob.job_name = str(item.get("system_name") or "system")
-                qjob.map = unreal_mod.SoftObjectPath(_soft(str(item.get("map_path") or STUDIO_MAP)))
-                seq = str(item.get("sequence_path") or item.get("sequence_asset") or "")
-                cfg = str(item.get("config_asset") or item.get("config_path") or "")
-                if seq:
-                    qjob.sequence = unreal_mod.SoftObjectPath(_soft(seq))
-                if cfg:
-                    asset = unreal_mod.EditorAssetLibrary.load_asset(cfg.split(".")[0])
-                    if asset is not None:
-                        qjob.set_configuration(asset)
-            notes.append(f"mrq_queue_built_jobs:{len(authored)}")
-        except Exception as exc:  # noqa: BLE001
-            errors.append(f"mrq_queue_build_failed:{exc}")
-            return False
-    else:
+                qjob.job_name = name
+                qjob.map = unreal_mod.SoftObjectPath(
+                    _soft(str(item.get("map_path") or STUDIO_MAP))
+                )
+                qjob.sequence = unreal_mod.SoftObjectPath(_soft(seq))
+            else:
+                try:
+                    qjob.job_name = name
+                except Exception:  # noqa: BLE001
+                    pass
+                try:
+                    qjob.map = unreal_mod.SoftObjectPath(
+                        _soft(str(item.get("map_path") or STUDIO_MAP))
+                    )
+                except Exception:  # noqa: BLE001
+                    pass
+            if cfg:
+                cfg_asset = unreal_mod.EditorAssetLibrary.load_asset(cfg.split(".")[0])
+                if cfg_asset is not None:
+                    qjob.set_configuration(cfg_asset)
+                else:
+                    notes.append(f"mrq_config_missing:{cfg}")
+            built += 1
+        notes.append(f"mrq_queue_built_jobs:{built}")
         try:
-            if hasattr(subsystem, "load_queue"):
-                subsystem.load_queue(queue)
+            n_jobs = len(list(queue.get_jobs())) if hasattr(queue, "get_jobs") else built
+            notes.append(f"mrq_queue_job_count:{n_jobs}")
         except Exception as exc:  # noqa: BLE001
-            notes.append(f"mrq_queue_install:{exc}")
+            notes.append(f"mrq_queue_job_count_failed:{exc}")
+        if built == 0:
+            errors.append("mrq_queue_empty")
+            return False
+    except Exception as exc:  # noqa: BLE001
+        errors.append(f"mrq_queue_build_failed:{exc}")
+        return False
 
-    done = {"v": False, "ok": False}
+    # Defer executor kick to the next slate tick (same-tick start never rendered).
+    global _mrq_session
+    _mrq_session = {
+        "done": {"v": False, "ok": False},
+        "subsystem": subsystem,
+        "executor_cls": executor_cls,
+        "pending_start": True,
+        "started_at": time.time(),
+        "timeout_sec": float(os.environ.get("VELLUM_WORKER_MRQ_TIMEOUT_SEC") or 60 * 60),
+        "notes": notes,
+        "errors": errors,
+        "saw_rendering": False,
+    }
+    notes.append("mrq_deferred_start_next_tick")
+    return True  # session armed; await start+finish via tick
+
+
+def _start_deferred_mrq(session: dict[str, Any]) -> None:
+    """Kick MRQ on a later slate tick than sequence authoring."""
+    unreal_mod = __import__("unreal")
+    subsystem = session.get("subsystem")
+    executor_cls = session.get("executor_cls")
+    notes = session.setdefault("notes", [])
+    errors = session.setdefault("errors", [])
+    done = session.setdefault("done", {"v": False, "ok": False})
 
     def _on_finished(executor_instance=None, success=True):  # noqa: ANN001
         done["v"] = True
@@ -317,7 +391,10 @@ def _render_queue_in_process(
         executor = executor_cls()
     except Exception as exc:  # noqa: BLE001
         errors.append(f"mrq_executor_create:{exc}")
-        return False
+        done["v"] = True
+        done["ok"] = False
+        session["pending_start"] = False
+        return
 
     try:
         if hasattr(executor, "on_executor_finished_delegate"):
@@ -332,32 +409,43 @@ def _render_queue_in_process(
         notes.append(f"mrq_finished_delegate:{exc}")
 
     try:
-        if hasattr(subsystem, "render_queue_with_executor_instance"):
+        if hasattr(subsystem, "render_queue_with_executor"):
+            active = subsystem.render_queue_with_executor(executor_cls)
+            notes.append("mrq_render_queue_with_executor")
+            if active is not None and hasattr(active, "on_executor_finished_delegate"):
+                try:
+                    active.on_executor_finished_delegate.add_callable(_on_finished)
+                except Exception:  # noqa: BLE001
+                    pass
+        elif hasattr(subsystem, "render_queue_with_executor_instance"):
             subsystem.render_queue_with_executor_instance(executor)
             notes.append("mrq_render_queue_with_executor_instance")
-        elif hasattr(subsystem, "render_queue_with_executor"):
-            subsystem.render_queue_with_executor(executor_cls)
-            notes.append("mrq_render_queue_with_executor")
         else:
             errors.append("mrq_render_api_missing")
-            return False
+            done["v"] = True
+            done["ok"] = False
+            session["pending_start"] = False
+            return
     except Exception as exc:  # noqa: BLE001
         errors.append(f"mrq_render_start_failed:{exc}")
-        return False
+        done["v"] = True
+        done["ok"] = False
+        session["pending_start"] = False
+        return
 
-    # Do not sleep on the game thread (would deadlock MRQ ticks).
-    # Hand the live session to the slate tick so later frames can finish the job.
-    global _mrq_session
-    _mrq_session = {
-        "done": done,
-        "subsystem": subsystem,
-        "started_at": time.time(),
-        "timeout_sec": float(os.environ.get("VELLUM_WORKER_MRQ_TIMEOUT_SEC") or 60 * 60),
-        "notes": notes,
-        "errors": errors,
-    }
+    session["pending_start"] = False
+    session["started_at"] = time.time()
     notes.append("mrq_async_started")
-    return True  # started; await via tick
+    try:
+        if hasattr(subsystem, "is_rendering"):
+            notes.append(f"mrq_is_rendering_after_start:{bool(subsystem.is_rendering())}")
+        if hasattr(subsystem, "get_active_executor"):
+            ae = subsystem.get_active_executor()
+            notes.append(f"mrq_active_executor:{ae is not None}")
+    except Exception as exc:  # noqa: BLE001
+        notes.append(f"mrq_start_probe_failed:{exc}")
+
+
 
 
 def _run_capture_job(job: dict[str, Any]) -> dict[str, Any]:
@@ -510,17 +598,23 @@ def _run_capture_job(job: dict[str, Any]) -> dict[str, Any]:
         }
 
     author_ready = out / "author-ready.json"
+    author_result = out / "author-result.json"
+    # Author tool writes author-result.json; older worker code looked for author-ready.json only.
+    ready_path = author_result if author_result.is_file() else author_ready
     authored: list[dict[str, Any]] = []
     queue_path = ""
-    if author_ready.is_file():
+    if ready_path.is_file():
         try:
-            doc = json.loads(author_ready.read_text(encoding="utf-8"))
+            doc = json.loads(ready_path.read_text(encoding="utf-8"))
             authored = list(doc.get("jobs") or [])
             queue_path = str(doc.get("queue_path") or "")
+            notes.append(f"author_ready_source:{ready_path.name}")
             if not doc.get("ok"):
                 errors.extend(list(doc.get("errors") or [])[:8])
         except Exception as exc:  # noqa: BLE001
             errors.append(f"author_ready_parse:{exc}")
+    else:
+        notes.append("author_ready_missing:author-result.json|author-ready.json")
 
     if not authored:
         return {
@@ -590,9 +684,16 @@ def _finalize_capture_manifest(mrq_ok: bool) -> dict[str, Any]:
         od = Path(str(item.get("output_dir") or ""))
         if od.is_dir():
             frame_total += len(list(od.glob("*.png")) + list(od.glob("*.jpg")))
-    ok = bool(frame_total > 0) or (mrq_ok and not errors)
+    # Frames are the only honest success signal. Executor callbacks + is_rendering
+    # can flip "done" before the first PNG lands (or when the queue never starts).
+    ok = frame_total > 0
+    if not ok and mrq_ok and not errors:
+        errors.append("mrq_zero_frames")
+        notes.append("mrq_zero_frames_despite_executor_ok")
     if errors and frame_total == 0:
         ok = False
+    elif not ok and not errors:
+        errors.append("mrq_zero_frames")
     manifest = {
         "ok": ok,
         "mode": "lookdev-worker",
@@ -605,7 +706,7 @@ def _finalize_capture_manifest(mrq_ok: bool) -> dict[str, Any]:
         "stills": [],
         "errors": errors,
         "notes": notes,
-        "mrq_ok": mrq_ok,
+        "mrq_ok": bool(mrq_ok and ok),
         "error": (errors[0] if (errors and not ok) else ""),
     }
     out.mkdir(parents=True, exist_ok=True)
@@ -620,42 +721,61 @@ def _poll_mrq_session() -> dict[str, Any] | None:
     global _mrq_session
     if not _mrq_session:
         return None
+    if _mrq_session.get("pending_start"):
+        _start_deferred_mrq(_mrq_session)
+        return None
     done = _mrq_session.get("done") or {}
     subsystem = _mrq_session.get("subsystem")
     notes = _mrq_session.setdefault("notes", [])
     errors = _mrq_session.setdefault("errors", [])
+    started_at = float(_mrq_session.get("started_at") or time.time())
+    grace_sec = float(os.environ.get("VELLUM_WORKER_MRQ_START_GRACE_SEC") or 60)
+    elapsed = time.time() - started_at
+    rendering = None
     try:
-        if hasattr(subsystem, "is_rendering") and not bool(subsystem.is_rendering()):
-            if not done.get("v"):
-                done["v"] = True
-                done["ok"] = True
-                notes.append("mrq_is_rendering_false")
+        if hasattr(subsystem, "is_rendering"):
+            rendering = bool(subsystem.is_rendering())
+            if rendering:
+                _mrq_session["saw_rendering"] = True
+            elif elapsed >= grace_sec and _mrq_session.get("saw_rendering"):
+                if not done.get("v"):
+                    done["v"] = True
+                    done["ok"] = True
+                    notes.append("mrq_is_rendering_false_after_start")
+            elif elapsed >= grace_sec and not _mrq_session.get("saw_rendering"):
+                if not done.get("v"):
+                    done["v"] = True
+                    done["ok"] = False
+                    errors.append("mrq_never_started_rendering")
+                    notes.append("mrq_is_rendering_false_never_started")
     except Exception:  # noqa: BLE001
         pass
     if not done.get("v"):
-        if time.time() - float(_mrq_session.get("started_at") or time.time()) > float(
-            _mrq_session.get("timeout_sec") or 3600
-        ):
+        if elapsed > float(_mrq_session.get("timeout_sec") or 3600):
             errors.append("mrq_timeout")
             notes.append("mrq_timeout")
             return _finalize_capture_manifest(False)
         return None
-    notes.append(f"mrq_finished_ok:{done.get('ok')}")
+    notes.append(f"mrq_finished_ok:{done.get('ok')} rendering={rendering}")
     return _finalize_capture_manifest(bool(done.get("ok")))
 
 
+
 def _health_payload() -> dict[str, Any]:
+    # Never touch unreal from the HTTP thread (deadlock with Slate ticks).
     with _state_lock:
         return {
             "ok": True,
             "version": WORKER_VERSION,
-            "map": _state.get("map") or _current_map_path(),
+            "map": str(_state.get("map") or ""),
             "busy": bool(_state.get("busy")),
             "studio_ready": bool(_state.get("studio_ready")),
             "studio_build": int(_state.get("studio_build") or _studio_build_on_disk()),
             "studio_build_required": int(STUDIO_BUILD_REQUIRED),
             "last_error": _state.get("last_error") or "",
             "uptime_sec": int(time.time() - float(_state.get("started_at") or time.time())),
+            "tick_alive": bool(_tick_handle is not None),
+            "tick_count": int(_state.get("tick_count") or 0),
         }
 
 
@@ -683,6 +803,10 @@ def _enqueue_and_wait(job: dict[str, Any], *, timeout_sec: float) -> dict[str, A
 def _on_editor_tick_dispatch(_delta: float) -> bool:
     global _pending_job, _pending_result, _capture_session
 
+    with _state_lock:
+        _state["tick_count"] = int(_state.get("tick_count") or 0) + 1
+        ticks = int(_state["tick_count"])
+
     # File inbox — agent can drop a job without depending on a blocking HTTP reply.
     try:
         inbox = _out_dir() / "worker-inbox" / "job.json"
@@ -701,7 +825,7 @@ def _on_editor_tick_dispatch(_delta: float) -> bool:
                 _pending_result = None
                 _result_event.clear()
                 _pending_job = dict(job)
-            _log(f"inbox_accepted job_id={job.get('job_id')}")
+            _log_editor(f"inbox_accepted job_id={job.get('job_id')} tick={ticks}")
     except Exception as exc:  # noqa: BLE001
         _log(f"inbox_failed:{exc}")
 
@@ -767,8 +891,11 @@ def _on_editor_tick_dispatch(_delta: float) -> bool:
     _result_event.set()
     return True
 
+
+class _Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt: str, *args: Any) -> None:  # noqa: A003
-        _log("http " + (fmt % args))
+        # print only — never unreal.log from HTTP threads
+        print("[VellumWorker] http " + (fmt % args), flush=True)
 
     def _send(self, code: int, payload: dict[str, Any]) -> None:
         body = json.dumps(payload).encode("utf-8")
@@ -795,21 +922,17 @@ def _on_editor_tick_dispatch(_delta: float) -> bool:
             body = {}
 
         if path == "/v1/ensure_studio":
-            result = _enqueue_and_wait(
-                {"_op": "ensure_studio", "force_studio": bool(body.get("force"))},
-                timeout_sec=120,
+            # Async enqueue — never block HTTP waiting for game-thread work.
+            result = _enqueue_async(
+                {"_op": "ensure_studio", "force_studio": bool(body.get("force"))}
             )
-            self._send(200 if result.get("ok") else 500, result)
+            self._send(200 if result.get("ok") else 409, result)
             return
 
-        if path == "/v1/capture":
-            timeout = float(
-                body.get("timeout_sec")
-                or os.environ.get("VELLUM_WORKER_JOB_TIMEOUT_SEC")
-                or 6 * 60 * 60
-            )
-            result = _enqueue_and_wait(body, timeout_sec=timeout)
-            self._send(200 if result.get("ok") else 500, result)
+        if path in ("/v1/capture", "/v1/capture_async"):
+            # Always async. Agent polls outbox / health.busy. Blocking HTTP was a deadlock trap.
+            result = _enqueue_async(body)
+            self._send(200 if result.get("ok") else 409, result)
             return
 
         if path == "/v1/shutdown":
@@ -825,28 +948,74 @@ def _on_editor_tick_dispatch(_delta: float) -> bool:
         self._send(404, {"ok": False, "error": "not_found"})
 
 
-def main() -> None:
-    global _http_server, _tick_handle
-    import unreal  # type: ignore
+def _enqueue_async(job: dict[str, Any]) -> dict[str, Any]:
+    """Queue work for the slate tick. Never call unreal here."""
+    global _pending_job, _pending_result
+    with _state_lock:
+        if _state.get("busy") or _pending_job is not None:
+            return {"ok": False, "error": "worker_busy", "queued": False}
+        _pending_result = None
+        _result_event.clear()
+        _pending_job = dict(job)
+    return {"ok": True, "queued": True, "job_id": job.get("job_id")}
+
+
+class _WorkerRuntime:
+    """Owns slate tick registration for the editor process lifetime."""
+
+    def __init__(self) -> None:
+        import unreal  # type: ignore
+
+        self.tick_handle = unreal.register_slate_post_tick_callback(self._on_tick)
+        _log_editor(f"tick_registered handle={self.tick_handle}")
+
+    def _on_tick(self, delta: float) -> bool:
+        return _on_editor_tick_dispatch(delta)
+
+
+def start_worker() -> dict[str, Any]:
+    """Idempotent entry used by Content/Python/init_unreal.py (sticky host)."""
+    global _RUNTIME, _http_server, _tick_handle
+
+    if _RUNTIME is not None and _http_server is not None:
+        with _state_lock:
+            return {
+                "ok": True,
+                "already_running": True,
+                "version": WORKER_VERSION,
+                "tick_count": int(_state.get("tick_count") or 0),
+            }
 
     host = os.environ.get("VELLUM_WORKER_HOST") or DEFAULT_HOST
     port = int(os.environ.get("VELLUM_WORKER_PORT") or DEFAULT_PORT)
     _out_dir().mkdir(parents=True, exist_ok=True)
 
-    try:
-        _tick_handle = unreal.register_slate_post_tick_callback(_on_editor_tick_dispatch)
-        _log(f"tick_registered handle={_tick_handle}")
-    except Exception as exc:  # noqa: BLE001
-        _log(f"tick_register_failed:{exc}")
+    # Register tick BEFORE studio work so the pump is owned by a long-lived object.
+    _RUNTIME = _WorkerRuntime()
+    _tick_handle = _RUNTIME.tick_handle
 
     try:
         boot = _ensure_studio(force=False)
-        _log(f"boot_studio ok={boot.get('ok')} notes={boot.get('notes')}")
+        with _state_lock:
+            _state["studio_ready"] = bool(boot.get("ok"))
+            _state["studio_build"] = int(boot.get("studio_build") or _studio_build_on_disk())
+            _state["map"] = _current_map_path() or STUDIO_MAP
+        _log_editor(f"boot_studio ok={boot.get('ok')} notes={boot.get('notes')}")
     except Exception as exc:  # noqa: BLE001
-        _log(f"boot_studio_failed:{exc}")
+        _log_editor(f"boot_studio_failed:{exc}")
 
-    server = ThreadingHTTPServer((host, port), _Handler)
-    _http_server = server
+    if _http_server is None:
+        server = ThreadingHTTPServer((host, port), _Handler)
+        _http_server = server
+        thread = threading.Thread(
+            target=server.serve_forever,
+            kwargs={"poll_interval": 0.5},
+            name="VellumWorkerHTTP",
+            daemon=True,
+        )
+        thread.start()
+        _log_editor(f"listening http://{host}:{port} version={WORKER_VERSION}")
+
     ready_path = _out_dir() / "worker-ready.json"
     ready_path.write_text(
         json.dumps(
@@ -857,26 +1026,19 @@ def main() -> None:
                 "port": port,
                 "map": STUDIO_MAP,
                 "pid": os.getpid(),
+                "hosting": "init_unreal",
             },
             indent=2,
         )
         + "\n",
         encoding="utf-8",
     )
-    _log(f"listening http://{host}:{port} version={WORKER_VERSION}")
+    return {"ok": True, "version": WORKER_VERSION, "hosting": "init_unreal"}
 
-    # CRITICAL: never serve_forever on the ExecutePythonScript thread.
-    # That froze the editor after loading the map — Capture waited forever because
-    # slate ticks (which run /v1/capture work) never got the GIL/editor time.
-    thread = threading.Thread(
-        target=server.serve_forever,
-        kwargs={"poll_interval": 0.5},
-        name="VellumWorkerHTTP",
-        daemon=False,
-    )
-    thread.start()
-    _log("http_background_thread_started — editor stays ticking for Capture")
-    # Return: UnrealEditor remains open; tick callback drives Capture jobs.
+
+def main() -> None:
+    # One-shot -ExecutePythonScript still works for debug, but persistence is init_unreal.
+    start_worker()
 
 
 if __name__ == "__main__":
