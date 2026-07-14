@@ -528,17 +528,26 @@ async def api_lookdev_ingest_render(
 @app.post("/api/lookdev/ingest-sequence")
 async def api_lookdev_ingest_sequence(
     asset_id: str = Form(...),
-    lane: str = Form(...),
     system_name: str = Form(...),
+    lane: str | None = Form(default=None),
+    lanes: str | None = Form(default=None),
     note: str | None = Form(default=None),
     archive: UploadFile = File(...),
 ) -> dict[str, Any]:
-    """Upload a zip of MRQ PNG frames; retained under niagara/sequences/."""
+    """Upload a zip of MRQ PNG frames once; fan-out catalog rows per lane.
+
+    Prefer `lanes=slots,hail-overlay` (comma-separated). Legacy `lane=` still works.
+    """
     if register_mod.get_asset(asset_id) is None:
         raise HTTPException(status_code=404, detail="asset_not_found")
     name = archive.filename or "sequence.zip"
     if not name.lower().endswith(".zip"):
         raise HTTPException(status_code=400, detail="expected_zip")
+    lane_list = [p.strip() for p in (lanes or "").split(",") if p.strip()]
+    if lane and lane.strip() and lane.strip() not in lane_list:
+        lane_list.append(lane.strip())
+    if not lane_list:
+        raise HTTPException(status_code=400, detail="lanes_required")
     import tempfile
     import zipfile
 
@@ -554,9 +563,9 @@ async def api_lookdev_ingest_sequence(
         except zipfile.BadZipFile as e:
             raise HTTPException(status_code=400, detail="bad_zip") from e
         try:
-            row = lookdev_mod.ingest_niagara_sequence(
+            result = lookdev_mod.ingest_niagara_sequence(
                 asset_id,
-                lane=lane,
+                lanes=lane_list,
                 system_name=system_name,
                 source_dir=extract_dir,
                 note=note,
@@ -565,7 +574,16 @@ async def api_lookdev_ingest_sequence(
             raise HTTPException(status_code=400, detail=str(e)) from e
         except KeyError:
             raise HTTPException(status_code=404, detail="asset_not_found") from None
-    return {"schema_version": 1, "output": row}
+    rows = result["outputs"]
+    # Back-compat single-lane shape when only one lane was requested.
+    if len(rows) == 1:
+        return {"schema_version": 1, "output": rows[0], "outputs": rows}
+    return {
+        "schema_version": 1,
+        "outputs": rows,
+        "path": result["path"],
+        "frame_count": result["frame_count"],
+    }
 
 
 @app.post("/api/scratch/record")

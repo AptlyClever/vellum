@@ -300,6 +300,29 @@ function Safe-Name([string]$Name) {
   return -join ($Name.ToCharArray() | ForEach-Object { if ($_ -match "[A-Za-z0-9_-]") { $_ } else { "_" } })
 }
 
+function New-StoreZipFromDir {
+  # PNGs are already compressed - store-only zip is much faster than Compress-Archive.
+  param([string]$SourceDir, [string]$ZipPath)
+  if (Test-Path $ZipPath) { Remove-Item -Force $ZipPath }
+  Add-Type -AssemblyName System.IO.Compression
+  Add-Type -AssemblyName System.IO.Compression.FileSystem
+  $zip = [System.IO.Compression.ZipFile]::Open($ZipPath, [System.IO.Compression.ZipArchiveMode]::Create)
+  try {
+    $root = (Resolve-Path $SourceDir).Path.TrimEnd('\','/')
+    Get-ChildItem -Path $SourceDir -Recurse -File -ErrorAction SilentlyContinue | ForEach-Object {
+      $rel = $_.FullName.Substring($root.Length).TrimStart('\','/') -replace '\\','/'
+      [void][System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
+        $zip,
+        $_.FullName,
+        $rel,
+        [System.IO.Compression.CompressionLevel]::NoCompression
+      )
+    }
+  } finally {
+    $zip.Dispose()
+  }
+}
+
 function Ingest-CapturedSystem {
   # Upload heroes + sequence immediately so an interrupt mid-batch still lands vault outputs.
   # Soft-fail: one bad upload must not abort the rest of the pack.
@@ -314,49 +337,68 @@ function Ingest-CapturedSystem {
     [System.Collections.IList]$Errors
   )
   $uploaded = 0
+  $heroTasks = New-Object System.Collections.ArrayList
   foreach ($still in $HeroStills) {
     $path = [string]$still.path
     if (-not (Test-Path $path)) { continue }
     foreach ($laneName in $Lanes) {
-      Send-VellumProgress -Message "Ingest render $SystemName $($still.role) -> $laneName"
-      $null = & curl.exe -sfS --connect-timeout 20 --max-time 180 -X POST "$VellumBase/api/lookdev/ingest-render" `
+      [void]$heroTasks.Add(@{
+          path = $path
+          lane = $laneName
+          role = [string]$still.role
+        })
+    }
+  }
+  if ($heroTasks.Count -gt 0) {
+    Send-VellumProgress -Message "Ingest $($heroTasks.Count) hero uploads $SystemName (parallel)"
+    $heroTasks | ForEach-Object -ThrottleLimit 4 -Parallel {
+      $path = $_.path
+      $laneName = $_.lane
+      $role = $_.role
+      $AssetId = $using:AssetId
+      $SystemName = $using:SystemName
+      $VellumBase = $using:VellumBase
+      $code = 0
+      & curl.exe -sfS --connect-timeout 20 --max-time 180 -X POST "$VellumBase/api/lookdev/ingest-render" `
         -F "asset_id=$AssetId" `
         -F "lane=$laneName" `
         -F "system_name=$SystemName" `
-        -F "note=auto Niagara MRQ $($still.role) $SystemName via mrq-batch" `
-        -F "file=@$path"
-      if ($LASTEXITCODE -ne 0) {
+        -F "note=auto Niagara MRQ $role $SystemName via mrq-batch" `
+        -F "file=@$path" | Out-Null
+      $code = $LASTEXITCODE
+      [pscustomobject]@{ ok = ($code -eq 0); path = $path; lane = $laneName; code = $code }
+    } | ForEach-Object {
+      if ($_.ok) {
+        $uploaded++
+        Write-Host "Ingested hero $($_.path) -> $($_.lane)"
+      } else {
         if ($Errors) {
-          [void]$Errors.Add("ingest_render_failed:$SystemName`:$laneName")
+          [void]$Errors.Add("ingest_render_failed:$SystemName`:$($_.lane)")
         }
-        Write-Host "WARNING ingest-render failed for $path lane=$laneName"
-        continue
+        Write-Host "WARNING ingest-render failed for $($_.path) lane=$($_.lane) code=$($_.code)"
       }
-      $uploaded++
-      Write-Host "Ingested hero $path -> $laneName"
     }
   }
   if ((Test-Path $SeqDir)) {
     $zipPath = Join-Path $OutDir ("seq-" + (Safe-Name $SystemName) + ".zip")
-    if (Test-Path $zipPath) { Remove-Item -Force $zipPath }
-    Send-VellumProgress -Message "Zip sequence $SystemName"
-    Compress-Archive -Path (Join-Path $SeqDir "*") -DestinationPath $zipPath -Force
-    foreach ($laneName in $Lanes) {
-      Send-VellumProgress -Message "Ingest sequence $SystemName -> $laneName"
-      $null = & curl.exe -sfS --connect-timeout 20 --max-time 900 -X POST "$VellumBase/api/lookdev/ingest-sequence" `
-        -F "asset_id=$AssetId" `
-        -F "lane=$laneName" `
-        -F "system_name=$SystemName" `
-        -F "note=auto Niagara MRQ sequence $SystemName via mrq-batch" `
-        -F "archive=@$zipPath"
-      if ($LASTEXITCODE -ne 0) {
-        if ($Errors) {
-          [void]$Errors.Add("ingest_sequence_failed:$SystemName`:$laneName")
-        }
-        Write-Host "WARNING ingest-sequence failed for $SystemName lane=$laneName"
-        continue
+    Send-VellumProgress -Message "Zip sequence $SystemName (store)"
+    New-StoreZipFromDir -SourceDir $SeqDir -ZipPath $zipPath
+    $laneCsv = ($Lanes -join ",")
+    Send-VellumProgress -Message "Ingest sequence $SystemName -> $laneCsv"
+    $null = & curl.exe -sfS --connect-timeout 20 --max-time 900 -X POST "$VellumBase/api/lookdev/ingest-sequence" `
+      -F "asset_id=$AssetId" `
+      -F "lanes=$laneCsv" `
+      -F "system_name=$SystemName" `
+      -F "note=auto Niagara MRQ sequence $SystemName via mrq-batch" `
+      -F "archive=@$zipPath"
+    if ($LASTEXITCODE -ne 0) {
+      if ($Errors) {
+        [void]$Errors.Add("ingest_sequence_failed:$SystemName")
       }
-      Write-Host "Ingested sequence $SystemName -> $laneName"
+      Write-Host "WARNING ingest-sequence failed for $SystemName lanes=$laneCsv"
+    } else {
+      $uploaded += @($Lanes).Count
+      Write-Host "Ingested sequence $SystemName -> $laneCsv"
     }
   }
   return $uploaded

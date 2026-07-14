@@ -25,6 +25,24 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+
+function New-StoreZipFromDir {
+  param([string]$SourceDir, [string]$ZipPath)
+  if (Test-Path $ZipPath) { Remove-Item -Force $ZipPath }
+  Add-Type -AssemblyName System.IO.Compression
+  Add-Type -AssemblyName System.IO.Compression.FileSystem
+  $zip = [System.IO.Compression.ZipFile]::Open($ZipPath, [System.IO.Compression.ZipArchiveMode]::Create)
+  try {
+    $root = (Resolve-Path $SourceDir).Path.TrimEnd('\','/')
+    Get-ChildItem -Path $SourceDir -Recurse -File -ErrorAction SilentlyContinue | ForEach-Object {
+      $rel = $_.FullName.Substring($root.Length).TrimStart('\','/') -replace '\\','/'
+      [void][System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
+        $zip, $_.FullName, $rel, [System.IO.Compression.CompressionLevel]::NoCompression)
+    }
+  } finally { $zip.Dispose() }
+}
+
+
 . (Join-Path $PSScriptRoot "ue-hosts.ps1")
 $RepoRoot = Resolve-Path (Join-Path $PSScriptRoot "..\..")
 $UeHost = Get-UeHostProfile -RepoRoot $RepoRoot -HostName $HostName
@@ -235,22 +253,19 @@ foreach ($dir in $dirs) {
   }
 
   $zipPath = Join-Path $OutDir ("seq-recover-" + $safeHint + ".zip")
-  if (Test-Path $zipPath) { Remove-Item -Force $zipPath }
-  Compress-Archive -Path (Join-Path $dir.FullName "*") -DestinationPath $zipPath -Force
-  foreach ($laneName in @("slots", "hail-overlay")) {
-    $out = & curl.exe -sfS --connect-timeout 20 --max-time 900 -X POST "$VellumBase/api/lookdev/ingest-sequence" `
-      -F "asset_id=$AssetId" `
-      -F "lane=$laneName" `
-      -F "system_name=$systemName" `
-      -F "note=recover MRQ sequence $systemName via mrq-sequencer" `
-      -F "archive=@$zipPath"
-    if ($LASTEXITCODE -ne 0) {
-      [void]$report.errors.Add("ingest_sequence_failed:$systemName`:$laneName")
-      Write-Host "WARNING ingest-sequence failed system=$systemName lane=$laneName"
-      continue
-    }
-    [void]$report.ingested.Add(@{ kind = "sequence"; system = $systemName; lane = $laneName; response = $out })
-    Write-Host "Ingested sequence $systemName -> $laneName"
+  New-StoreZipFromDir -SourceDir $dir.FullName -ZipPath $zipPath
+  $out = & curl.exe -sfS --connect-timeout 20 --max-time 900 -X POST "$VellumBase/api/lookdev/ingest-sequence" `
+    -F "asset_id=$AssetId" `
+    -F "lanes=slots,hail-overlay" `
+    -F "system_name=$systemName" `
+    -F "note=recover MRQ sequence $systemName via mrq-sequencer" `
+    -F "archive=@$zipPath"
+  if ($LASTEXITCODE -ne 0) {
+    [void]$report.errors.Add("ingest_sequence_failed:$systemName")
+    Write-Host "WARNING ingest-sequence failed system=$systemName"
+  } else {
+    [void]$report.ingested.Add(@{ kind = "sequence"; system = $systemName; lanes = @("slots","hail-overlay"); response = $out })
+    Write-Host "Ingested sequence $systemName -> slots,hail-overlay"
   }
 }
 

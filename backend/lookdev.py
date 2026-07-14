@@ -337,22 +337,48 @@ def ingest_niagara_render(
     return row
 
 
+def _link_or_copy(src: Path, dst: Path) -> None:
+    """Prefer hardlink (cheap); fall back to copy when cross-device / unsupported."""
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    if dst.exists():
+        return
+    try:
+        os.link(src, dst)
+    except OSError:
+        shutil.copy2(src, dst)
+
+
 def ingest_niagara_sequence(
     asset_id: str,
     *,
-    lane: str,
     system_name: str,
     source_dir: Path,
+    lane: str | None = None,
+    lanes: list[str] | None = None,
     note: str | None = None,
 ) -> dict[str, Any]:
-    """Copy an MRQ PNG sequence directory into the vault (full-fidelity retention)."""
+    """Retain an MRQ PNG sequence once; catalog one row per lane sharing the path.
+
+    Writes frames a single time under 05-derived-renders/sequences/… and hardlinks
+    (or copies) once into 04-lookdev/sequences/…. Dual-lane Capture used to zip→POST
+    twice and copy trees four times; that was the pack ingest bottleneck.
+    """
     asset = register_mod.get_asset(asset_id)
     if not asset:
         raise KeyError(f"asset_not_found:{asset_id}")
-    if lane not in KNOWN_LANES:
-        raise ValueError(f"unknown_lane:{lane}")
     if not source_dir.is_dir():
         raise FileNotFoundError(str(source_dir))
+
+    lane_list: list[str] = []
+    if lanes:
+        lane_list.extend([str(x).strip() for x in lanes if str(x).strip()])
+    if lane and str(lane).strip() and str(lane).strip() not in lane_list:
+        lane_list.append(str(lane).strip())
+    if not lane_list:
+        raise ValueError("lanes_required")
+    for ln in lane_list:
+        if ln not in KNOWN_LANES:
+            raise ValueError(f"unknown_lane:{ln}")
 
     frames = sorted(
         [p for p in source_dir.rglob("*") if p.is_file() and p.suffix.lower() in IMAGE_SUFFIXES]
@@ -362,48 +388,47 @@ def ingest_niagara_sequence(
 
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
     safe_sys = "".join(c if c.isalnum() or c in "-_" else "_" for c in system_name) or "system"
+    seq_name = f"{stamp}-{safe_sys}"
+    # Lane-agnostic path — all catalog rows share this directory.
     dest_dir = (
         vault_root()
         / "05-derived-renders"
-        / lane
-        / asset_id
-        / "niagara"
         / "sequences"
-        / f"{stamp}-{safe_sys}"
+        / asset_id
+        / seq_name
     )
     dest_dir.mkdir(parents=True, exist_ok=True)
     for src in frames:
         shutil.copy2(src, dest_dir / src.name)
 
-    lookdev_dir = (
-        vault_root()
-        / "04-lookdev"
-        / lane
-        / asset_id
-        / "niagara"
-        / "sequences"
-        / dest_dir.name
-    )
+    lookdev_dir = vault_root() / "04-lookdev" / "sequences" / asset_id / seq_name
     lookdev_dir.mkdir(parents=True, exist_ok=True)
     for src in dest_dir.iterdir():
         if src.is_file():
-            shutil.copy2(src, lookdev_dir / src.name)
+            _link_or_copy(src, lookdev_dir / src.name)
 
-    row = {
-        "id": f"derived-{stamp}-{secrets.token_hex(3)}",
-        "asset_id": asset_id,
-        "lane": lane,
-        "kind": "niagara-sequence",
-        "path": str(dest_dir),
-        "source_path": str(source_dir),
-        "frame_count": len(frames),
-        "system_name": system_name,
-        "created_at": _now(),
-        "note": note or "Niagara MRQ PNG sequence retained for lookdev.",
-    }
+    created = _now()
+    rows: list[dict[str, Any]] = []
     catalog = load_catalog()
     outputs = list(catalog.get("outputs") or [])
-    outputs.append(row)
+    for ln in lane_list:
+        row = {
+            "id": f"derived-{stamp}-{secrets.token_hex(3)}",
+            "asset_id": asset_id,
+            "lane": ln,
+            "kind": "niagara-sequence",
+            "path": str(dest_dir),
+            "lookdev_path": str(lookdev_dir),
+            "source_path": str(source_dir),
+            "frame_count": len(frames),
+            "system_name": system_name,
+            "created_at": created,
+            "note": note or "Niagara MRQ PNG sequence retained for lookdev.",
+            "shared_sequence": True,
+        }
+        outputs.append(row)
+        rows.append(row)
     catalog["outputs"] = outputs
     save_catalog(catalog)
-    return row
+    # Back-compat: single-lane callers still get a lone dict via API wrapper.
+    return {"outputs": rows, "path": str(dest_dir), "frame_count": len(frames)}
