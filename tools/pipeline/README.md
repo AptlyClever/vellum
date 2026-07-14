@@ -4,6 +4,7 @@ Headless Unreal jobs that turn Library packs into **game-ready** portable assets
 
 | Job | Script | Output |
 | --- | --- | --- |
+| inventory-pack | `jobs/inventory_pack.py` | asset-class counts + load-check manifest; no exported binaries |
 | export-models | `jobs/export_models.py` | glTF/GLB under vault `game-ready/models/` |
 | bake-vfx | `jobs/bake_vfx.py` + `jobs/pack_vfx_media.ps1` | sprite sheets + transparent WebM |
 | export-media | `jobs/export_media.py` | textures (PNG) + audio (WAV/OGG) |
@@ -22,7 +23,7 @@ $script = "E:\Dev\vellum\tools\pipeline\jobs\export_models.py"
 
 GPU jobs (`bake-vfx`) omit `-NullRHI`.
 
-Wrappers: `tools/pipeline/run_job.ps1 -Job export-models -Pack FireworksV1`.
+Wrappers: `tools/pipeline/run_job.ps1 -Job inventory-pack -Pack FireworksV1`.
 
 CI: `tools/pipeline/ci/README.md` + `.github/workflows/vellum-pipeline.yml`.
 

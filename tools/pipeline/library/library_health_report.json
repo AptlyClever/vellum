@@ -1,64 +1,6 @@
 {
-  "content_root": "F:\\Games\\AuroraVellum\\Content",
-  "unloadable_packages": [
-    {
-      "path": "F:\\Games\\AuroraVellum\\Content\\Dungeon_Ruins\\Assets\\decor_07.uasset",
-      "reason": "known_bad_or_zero",
-      "size": 2008617
-    },
-    {
-      "path": "F:\\Games\\AuroraVellum\\Content\\Dungeon_Ruins\\Assets\\Pillar_Base_02.uasset",
-      "reason": "known_bad_or_zero",
-      "size": 6030370
-    },
-    {
-      "path": "F:\\Games\\AuroraVellum\\Content\\Dungeon_Ruins\\Assets\\Pillar_Base_03.uasset",
-      "reason": "known_bad_or_zero",
-      "size": 4009230
-    }
-  ],
-  "external_exists": true,
-  "actions": [
-    "quarantine:Dungeon_Ruins\\Assets\\decor_07.uasset",
-    "quarantine:Dungeon_Ruins\\Assets\\Pillar_Base_02.uasset",
-    "quarantine:Dungeon_Ruins\\Assets\\Pillar_Base_03.uasset",
-    "move_to_external:Arabic_Dock",
-    "move_to_external:Basic_VFX",
-    "move_to_external:BefourStudios",
-    "move_to_external:ContainerCity",
-    "move_to_external:Cyperpunk_Clinic",
-    "move_to_external:Dark_Village",
-    "move_to_external:DirtyWall",
-    "move_to_external:Dungeon_Ruins",
-    "move_to_external:ExplosionVFX-2",
-    "move_to_external:FabricBundle",
-    "move_to_external:FireworksV1",
-    "move_to_external:FreeNiagaraPack",
-    "move_to_external:Garage",
-    "move_to_external:GasExplosionVFX",
-    "move_to_external:GlassBundle",
-    "move_to_external:GroundExplosionVFX",
-    "move_to_external:Hangar-X",
-    "move_to_external:Liope_Tr",
-    "move_to_external:MagicAbilitiesV3",
-    "move_to_external:MagicCastVFX",
-    "move_to_external:MagicProjectilesVol3",
-    "move_to_external:MetalMaterial3",
-    "move_to_external:MiddleEastern",
-    "move_to_external:NiagaraMegaPackVol3",
-    "move_to_external:PortalVFXEnhanced",
-    "move_to_external:Scifi_desert_city",
-    "move_to_external:SlashTrail_SoftTofu",
-    "move_to_external:Steampunk_Zepline_Station",
-    "move_to_external:StylizedVFX-Water",
-    "move_to_external:ToonAbilitiesVol1",
-    "move_to_external:Vefects",
-    "move_to_external:Warehouse",
-    "wrote:E:\\Dev\\vellum\\tools\\pipeline\\library\\content_root_migration.json"
-  ],
-  "generated_at_utc": "2026-07-14T18:57:32.9498867Z",
   "schema_version": 1,
-  "pack_count_at_root": 32,
+  "external_exists": false,
   "pack_dirs_at_root": [
     "Arabic_Dock",
     "Basic_VFX",
@@ -93,5 +35,10 @@
     "Vefects",
     "Warehouse"
   ],
-  "unloadable_count": 3
+  "content_root": "F:\\Games\\AuroraVellum\\Content",
+  "pack_count_at_root": 32,
+  "unloadable_packages": [],
+  "generated_at_utc": "2026-07-14T20:20:09.4536963Z",
+  "actions": [],
+  "unloadable_count": 0
 }

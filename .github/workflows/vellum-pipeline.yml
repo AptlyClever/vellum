@@ -8,6 +8,7 @@ on:
         required: true
         type: choice
         options:
+          - inventory-pack
           - export-models
           - bake-vfx
           - export-media

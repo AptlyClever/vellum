@@ -73,8 +73,8 @@ $knownBad = @(
 $corrupt = New-Object System.Collections.Generic.List[hashtable]
 foreach ($rel in $knownBad) {
   $p = Join-Path $ProjectContent $rel
-  if (Test-Path -LiteralPath $p) {
-    $corrupt.Add(@{ path = $p; reason = "known_bad_or_zero"; size = (Get-Item -LiteralPath $p).Length })
+  if ((Test-Path -LiteralPath $p) -and (Test-CorruptUasset -Path $p)) {
+    $corrupt.Add(@{ path = $p; reason = "known_bad_header"; size = (Get-Item -LiteralPath $p).Length })
   }
 }
 

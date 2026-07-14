@@ -5,7 +5,7 @@
 #>
 param(
   [Parameter(Mandatory = $true)]
-  [ValidateSet("export-models", "bake-vfx", "export-media")]
+  [ValidateSet("inventory-pack", "export-models", "bake-vfx", "export-media")]
   [string]$Job,
   [string]$Pack = "FireworksV1",
   [string]$ContentRoot = "",
@@ -39,6 +39,7 @@ $work = "F:\Games\AuroraVellum\Saved\VellumPipeline"
 New-Item -ItemType Directory -Force -Path $work, $VaultGameReady | Out-Null
 
 $jobMap = @{
+  "inventory-pack" = "inventory_pack.py"
   "export-models" = "export_models.py"
   "bake-vfx"      = "bake_vfx.py"
   "export-media"  = "export_media.py"
@@ -79,6 +80,9 @@ if (-not $ok) {
   throw "timeout_${TimeoutSec}s job=$Job"
 }
 Write-Host "UE exit=$($p.ExitCode) log=$log"
+if ($p.ExitCode -ne 0) {
+  throw "ue_failed exit=$($p.ExitCode) job=$Job pack=$Pack log=$log"
+}
 
 if ($Job -eq "bake-vfx") {
   $packScript = Join-Path $PSScriptRoot "jobs\pack_vfx_media.ps1"
@@ -89,6 +93,7 @@ if ($Job -eq "bake-vfx") {
 
 $manifestCandidates = @(
   (Join-Path $work "$Pack\$Job.manifest.json"),
+  (Join-Path $work "$Pack\inventory-pack.manifest.json"),
   (Join-Path $work "$Pack\export-models.manifest.json"),
   (Join-Path $work "$Pack\export-media.manifest.json"),
   (Join-Path $work "$Pack\vfx\bake-vfx.manifest.json")
