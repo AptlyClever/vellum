@@ -154,6 +154,7 @@ AVAILABILITY_STATES = (
     "vault",
     "installable",
     "need_download",
+    "deferred",
 )
 
 # List/ops paths must not stampede NFS (Path.exists per asset) or rebuild catalogs.
@@ -232,6 +233,7 @@ def availability_row(
     staged: bool,
     lookdev: bool,
     installable: bool,
+    deferred: bool = False,
 ) -> dict[str, str]:
     """Single list-row truth: can we use this pack now?"""
     if on_disk and staged and lookdev:
@@ -257,6 +259,12 @@ def availability_row(
     if staged:
         detail = "vault staged" + (" · lookdev" if lookdev else " · need lookdev")
         return {"state": "vault", "label": "Vault only", "detail": detail}
+    if deferred:
+        return {
+            "state": "deferred",
+            "label": "Deferred",
+            "detail": "Complete Project pack · create/migrate only if needed",
+        }
     return {
         "state": "need_download",
         "label": "Not on Aurora",
@@ -333,11 +341,15 @@ def availability_index(
             and aid not in on_disk_ids
             and not staged
         )
+        acq = None
+        if aid not in on_disk_ids and not staged and not installable:
+            acq = fab_library_mod.acquisition_for_asset(a)
         row = availability_row(
             on_disk=aid in on_disk_ids,
             staged=staged,
             lookdev=aid in lookdev_ids,
             installable=installable,
+            deferred=bool((acq or {}).get("deferred")),
         )
         by_id[aid] = row
         counts[row["state"]] = counts.get(row["state"], 0) + 1
@@ -788,6 +800,7 @@ def attach_availability(
                 staged=staged,
                 lookdev=lookdev_satisfied(str(a.get("id") or ""), asset=a),
                 installable=False,
+                deferred=False,
             )
         row["availability"] = av
         state = str(av.get("state") or "")
@@ -1035,12 +1048,28 @@ def import_queue(*, engine: str | None = "unreal", limit: int = 40) -> dict[str,
 
     actionable: list[dict[str, Any]] = []
     blocked_epic: list[dict[str, Any]] = []
+    deferred_epic: list[dict[str, Any]] = []
     for a in assets:
         aid = str(a["id"])
         row = by.get(aid) or {}
         state = str(row.get("state") or "need_download")
         detail = str(row.get("detail") or "")
         if state == "ready":
+            continue
+        if state == "deferred":
+            acq = fab_library_mod.acquisition_for_asset(a)
+            deferred_epic.append(
+                {
+                    "asset_id": aid,
+                    "display_name": a.get("display_name") or aid,
+                    "engine": a.get("engine"),
+                    "availability": state,
+                    "detail": detail,
+                    "next_step": acq["method"],
+                    "acquisition": acq,
+                    "blocked": False,
+                }
+            )
             continue
         if state == "need_download":
             acq = fab_library_mod.acquisition_for_asset(a)
@@ -1089,6 +1118,7 @@ def import_queue(*, engine: str | None = "unreal", limit: int = 40) -> dict[str,
         )
     )
     blocked_epic.sort(key=lambda r: str(r.get("display_name") or "").lower())
+    deferred_epic.sort(key=lambda r: str(r.get("display_name") or "").lower())
     lim = max(1, min(limit, 100))
     return {
         "schema_version": 1,
@@ -1097,6 +1127,8 @@ def import_queue(*, engine: str | None = "unreal", limit: int = 40) -> dict[str,
         "count": len(actionable),
         "blocked_epic": blocked_epic[:lim],
         "blocked_epic_count": len(blocked_epic),
+        "deferred_epic": deferred_epic[:lim],
+        "deferred_epic_count": len(deferred_epic),
     }
 
 
@@ -1141,6 +1173,7 @@ KNOWN_FOLDER_MAP: dict[str, str] = {
     "Cyberpunk_Clinic": "cyberpunk-hospital-cyberpunk-clinic-modular-cyberpunk-environment",
     "CyberpunkHospital": "cyberpunk-hospital-cyberpunk-clinic-modular-cyberpunk-environment",
     "MegaMarbleMaterial": "mega-marble-material-4k",
+    "Mansion": "the-lords-mansion",
 }
 
 # Tooling / engine noise under Content — not purchasable packs to Register & Stage.
@@ -1330,6 +1363,7 @@ def coverage(*, engine: str = "unreal", host_id: str | None = None) -> dict[str,
 
     mapped_ids = {row["asset_id"] for row in on_disk}
     need_download: list[dict[str, Any]] = []
+    deferred: list[dict[str, Any]] = []
     vault_installable: list[dict[str, Any]] = []
     staged: list[dict[str, Any]] = []
     for a in assets:
@@ -1359,13 +1393,16 @@ def coverage(*, engine: str = "unreal", host_id: str | None = None) -> dict[str,
             "display_name": a.get("display_name"),
             "list_index": a.get("list_index"),
             "source_bundle": a.get("source_bundle"),
-            "next_step": "in_project",
+            "next_step": acq["method"],
             "fab_install_candidates": cands,
             "acquisition": acq,
         }
         if cands:
             vault_installable.append(row)
-        need_download.append(row)
+        if acq.get("deferred"):
+            deferred.append(row)
+        else:
+            need_download.append(row)
 
     return {
         "schema_version": 1,
@@ -1378,6 +1415,8 @@ def coverage(*, engine: str = "unreal", host_id: str | None = None) -> dict[str,
         "vault_staged_count": len(staged),
         "need_download": need_download,
         "need_download_count": len(need_download),
+        "deferred": deferred,
+        "deferred_count": len(deferred),
         "vault_installable": vault_installable,
         "vault_installable_count": len(vault_installable),
         "known_folder_map": folder_map,

@@ -22,6 +22,11 @@ def test_import_status_and_mark(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("VELLUM_SEED_PATH", str(Path(__file__).resolve().parents[1] / "config" / "humble-seed.yaml"))
     monkeypatch.setenv("VELLUM_VAULT_ROOT", str(tmp_path / "vault"))
     register_mod.ensure_register(force_reseed=True)
+    monkeypatch.setattr(
+        import_flow_mod.ue_hosts_mod,
+        "path_known_in_content_scan",
+        lambda path, host_id=None: {"name": "FireworksV1", "path": path},
+    )
     client = TestClient(app)
     asset_id = "fireworks-vol-1-niagara"
     st = client.get(f"/api/assets/{asset_id}/import")
@@ -112,16 +117,27 @@ def test_import_queue(tmp_path: Path, monkeypatch) -> None:
     import_flow_mod.clear_ops_caches()
 
     client = TestClient(app)
-    q = client.get("/api/import/queue?engine=unreal&limit=5")
+    q = client.get("/api/import/queue?engine=unreal&limit=100")
     assert q.status_code == 200
     body = q.json()
     assert "items" in body
     assert "blocked_epic_count" in body
+    assert "deferred_epic_count" in body
     # Empty host Content + empty vault + no Fab map → Epic wall only.
     assert body["count"] == 0
     assert body["blocked_epic_count"] > 0
-    # No launcher catalog available → every UE pack is "unseen"; next_step
-    # carries the acquisition method, never a bogus "download" instruction.
+    assert body["deferred_epic_count"] == 3
+    # No launcher catalog available → generic UE packs are "unseen", while
+    # known Fab Complete Project listings still carry the migration workflow.
+    # next_step carries the acquisition method, never a bogus "download" instruction.
+    methods = {item["asset_id"]: item["next_step"] for item in body["deferred_epic"]}
+    assert methods["the-count-s-church"] == fab_library_mod.METHOD_FAB_CREATE_PROJECT_MIGRATE
+    assert methods["abandoned-cabin"] == fab_library_mod.METHOD_FAB_CREATE_PROJECT_MIGRATE
+    assert methods["loot-drops-vol-2-niagara"] == fab_library_mod.METHOD_FAB_CREATE_PROJECT_MIGRATE
+    for item in body["deferred_epic"]:
+        assert item["blocked"] is False
+        assert "Create Project" in item["acquisition"]["operator_hint"]
+        assert "Migrate" in item["acquisition"]["operator_hint"]
     for item in body["blocked_epic"]:
         assert item["next_step"] == fab_library_mod.METHOD_FAB_ADD_UNSEEN
         assert "Add to Project" in item["acquisition"]["operator_hint"]
@@ -339,6 +355,9 @@ def test_availability_row_priority() -> None:
     assert import_flow_mod.availability_row(
         on_disk=False, staged=False, lookdev=False, installable=True
     )["state"] == "installable"
+    assert import_flow_mod.availability_row(
+        on_disk=False, staged=False, lookdev=False, installable=False, deferred=True
+    )["state"] == "deferred"
     assert import_flow_mod.availability_row(
         on_disk=False, staged=True, lookdev=True, installable=False
     )["state"] == "vault"

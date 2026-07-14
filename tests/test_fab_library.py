@@ -71,6 +71,46 @@ def test_non_unreal_asset_is_manual(tmp_path: Path, monkeypatch) -> None:
     assert acq["method"] == fab_library_mod.METHOD_MANUAL
 
 
+def test_complete_project_override_uses_migration_workflow(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("VELLUM_FAB_LISTINGS_DB", str(tmp_path / "missing.db"))
+    fab_library_mod.clear_cache()
+
+    acq = fab_library_mod.acquisition_for_asset(
+        {"id": "the-count-s-church", "display_name": "The Count's Church", "engine": "unreal"}
+    )
+    assert acq["method"] == fab_library_mod.METHOD_FAB_CREATE_PROJECT_MIGRATE
+    assert acq["distribution_method"] == "Complete Project"
+    assert acq["listing_uid"] == "64097225-d031-417b-9919-1d3a1c244d1c"
+    assert acq["deferred"] is True
+    assert acq["blocking"] is False
+    assert "Create Project" in acq["operator_hint"]
+    assert "Migrate" in acq["operator_hint"]
+
+
+def test_asset_package_override_keeps_add_to_project(tmp_path: Path, monkeypatch) -> None:
+    db = tmp_path / "listings.db"
+    _make_listings_db(db)
+    conn = sqlite3.connect(str(db))
+    conn.execute(
+        "INSERT INTO local_listing VALUES ('u3', 'Arabic Fortress', 'environment', 'environments')"
+    )
+    conn.execute("INSERT INTO download_meta VALUES ('u3', 'unreal-engine', '', 0)")
+    conn.commit()
+    conn.close()
+    monkeypatch.setenv("VELLUM_FAB_LISTINGS_DB", str(db))
+    fab_library_mod.clear_cache()
+
+    acq = fab_library_mod.acquisition_for_asset(
+        {"id": "arabic-fortress", "display_name": "Arabic Fortress", "engine": "unreal"}
+    )
+    assert acq["method"] == fab_library_mod.METHOD_FAB_ADD_TO_PROJECT
+    assert acq["distribution_method"] == "Asset Package"
+    assert acq["supported_unreal_versions"] == "5.3-5.7"
+    assert acq["deferred"] is False
+    assert acq["blocking"] is True
+    assert "Show all projects" in acq["operator_hint"]
+
+
 def test_listings_db_upload_endpoint(tmp_path: Path, monkeypatch) -> None:
     src = tmp_path / "src.db"
     _make_listings_db(src)

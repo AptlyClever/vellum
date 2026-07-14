@@ -70,6 +70,18 @@ function Add-Exception([string]$Kind, [string]$Subject, [string]$Detail, [string
   $exceptions.Add([ordered]@{ kind = $Kind; subject = $Subject; detail = $Detail; fix = $FixHint })
   Write-Warning "[$Kind] $Subject — $Detail"
 }
+$acceptedDungeonRuinsQuarantine = @(
+  "Dungeon_Ruins/Assets/decor_07.uasset",
+  "Dungeon_Ruins/Assets/Pillar_Base_02.uasset",
+  "Dungeon_Ruins/Assets/Pillar_Base_03.uasset"
+)
+function Test-AcceptedQuarantine([string]$Path) {
+  $norm = ($Path -replace "\\", "/").TrimStart("/")
+  foreach ($accepted in $acceptedDungeonRuinsQuarantine) {
+    if ($norm -ieq $accepted) { return $true }
+  }
+  return $false
+}
 function Invoke-Api([string]$Method, [string]$Path, $Body = $null) {
   $uri = "$VellumBase$Path"
   if ($null -ne $Body) {
@@ -237,12 +249,21 @@ try {
     -InventoryOnly -ReportOut $healthReport | Out-Null
   $health = Get-Content $healthReport -Raw | ConvertFrom-Json
   foreach ($bad in @($health.unloadable_packages)) {
+    if (Test-AcceptedQuarantine ([string]$bad.path)) {
+      $actions.Add("accepted_quarantine:$($bad.path)")
+      continue
+    }
     Add-Exception "corrupt" $bad.path $bad.reason "Quarantine + re-Add pack from Fab"
   }
   $quarantine = Join-Path $ProjectRoot "Quarantine"
   if (Test-Path $quarantine) {
     foreach ($q in @(Get-ChildItem $quarantine -Recurse -File)) {
-      Add-Exception "quarantined" $q.FullName.Substring($quarantine.Length + 1) `
+      $rel = $q.FullName.Substring($quarantine.Length + 1)
+      if (Test-AcceptedQuarantine $rel) {
+        $actions.Add("accepted_quarantine:$rel")
+        continue
+      }
+      Add-Exception "quarantined" $rel `
         "awaiting clean re-download" "Fab: Add to Project (in-editor), then reconcile"
     }
   }

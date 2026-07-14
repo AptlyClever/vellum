@@ -31,8 +31,35 @@ ROOT = Path(__file__).resolve().parents[1]
 # Acquisition methods, most to least automated.
 METHOD_VAULT_INSTALL = "vault_install"  # bits already in VaultCache; agent can install
 METHOD_FAB_ADD_TO_PROJECT = "fab_add_to_project"  # launcher knows it; operator clicks once
+METHOD_FAB_CREATE_PROJECT_MIGRATE = "fab_create_project_migrate"  # Fab creates a temp project
 METHOD_FAB_ADD_UNSEEN = "fab_add_to_project_unseen"  # launcher has never seen it
 METHOD_MANUAL = "manual"  # non-Unreal or unknown source
+
+# Fab's launcher cache currently tells us whether Aurora has seen a listing, but
+# not every listing's Distribution Method. Keep known Humble/Fab edge cases here
+# so the product reports the real operator workflow instead of "download/add".
+LISTING_OVERRIDES: dict[str, dict[str, Any]] = {
+    "arabic-fortress": {
+        "listing_uid": "467ea478-3177-4e91-83d1-d0cd6d7b2947",
+        "distribution_method": "Asset Package",
+        "supported_unreal_versions": "5.3-5.7",
+    },
+    "the-count-s-church": {
+        "listing_uid": "64097225-d031-417b-9919-1d3a1c244d1c",
+        "distribution_method": "Complete Project",
+        "supported_unreal_versions": "5.3-5.7",
+    },
+    "abandoned-cabin": {
+        "listing_uid": "5dc08a9b-9ad5-4e9e-99f9-8dd212010497",
+        "distribution_method": "Complete Project",
+        "supported_unreal_versions": "5.3-5.7",
+    },
+    "loot-drops-vol-2-niagara": {
+        "listing_uid": "c9422fec-19c1-42bf-be3e-9f375ba4cb71",
+        "distribution_method": "Complete Project",
+        "supported_unreal_versions": "5.0-5.7",
+    },
+}
 
 
 def _db_path() -> Path:
@@ -157,10 +184,13 @@ def acquisition_for_asset(
     (``fab_install_candidates``) so the host agent can install without a human.
     """
     display = str(asset.get("display_name") or asset.get("id") or "")
+    asset_id = str(asset.get("id") or "").strip()
     engine = str(asset.get("engine") or "").strip().lower()
     listing = match_listing(display)
     formats = list((listing or {}).get("formats") or [])
     ue_only = (not formats) or formats == ["unreal-engine"]
+    override = LISTING_OVERRIDES.get(asset_id, {})
+    distribution_method = str(override.get("distribution_method") or "").strip()
 
     if installable:
         method = METHOD_VAULT_INSTALL
@@ -168,6 +198,15 @@ def acquisition_for_asset(
             "VaultCache already has the files — POST "
             f"/api/assets/{asset.get('id')}/import/fab-install "
             "(reconcile runs this automatically)."
+        )
+    elif distribution_method.lower() == "complete project":
+        method = METHOD_FAB_CREATE_PROJECT_MIGRATE
+        hint = (
+            "Deferred Complete Project pack. Not required for current Vellum readiness. "
+            "When explicitly needed: Epic Launcher/Fab -> "
+            f"\"{display}\" -> Create Project into a temporary folder, open/upgrade "
+            "that project in Unreal, then use Unreal's Migrate command to move its "
+            "Content into AuroraVellum. Reconcile will stage, validate, and submit after migration."
         )
     elif listing is not None:
         method = METHOD_FAB_ADD_TO_PROJECT
@@ -177,6 +216,13 @@ def acquisition_for_asset(
         )
         if ue_only:
             hint += "UE-only listing: no standalone file download exists."
+        if distribution_method:
+            hint += f" Fab Distribution Method: {distribution_method}."
+        if override.get("supported_unreal_versions"):
+            hint += (
+                " If AuroraVellum is hidden because it is UE 5.8, enable Show all "
+                f"projects and choose closest supported version {override['supported_unreal_versions']}."
+            )
     elif engine == "unreal":
         method = METHOD_FAB_ADD_UNSEEN
         hint = (
@@ -195,6 +241,11 @@ def acquisition_for_asset(
         "formats": formats,
         "ue_only": bool(ue_only and engine == "unreal"),
         "listing_title": (listing or {}).get("title") or None,
+        "listing_uid": override.get("listing_uid") or None,
+        "distribution_method": distribution_method or None,
+        "supported_unreal_versions": override.get("supported_unreal_versions") or None,
+        "deferred": method == METHOD_FAB_CREATE_PROJECT_MIGRATE,
+        "blocking": method != METHOD_FAB_CREATE_PROJECT_MIGRATE,
         "vault_cache_path": (listing or {}).get("vault_cache_path") or None,
         "cache_size": (listing or {}).get("cache_size") or 0,
         "operator_hint": hint,

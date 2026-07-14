@@ -66,10 +66,25 @@ launcher catalog and classifies every missing pack
 | `vault_install` | Bits already in VaultCache and mapped | Agent (`fab-install`) |
 | `fab_add_to_project` | Launcher owns it; one click: Fab Library → Add to Project → AuroraVellum | Human, once |
 | `fab_add_to_project_unseen` | Launcher on Aurora has never seen the pack; find it in Fab Library first | Human, once |
+| `fab_create_project_migrate` | Fab Distribution Method is **Complete Project** — cannot Add to Project. Deferred: create a temp project + Migrate only if the pack is ever needed | Nobody (until pulled into scope) |
 | `manual` | Non-Unreal source (e.g. Unity-only) | Human |
 
 The reconcile exception report carries the same per-pack instructions
 (`acquire_*` kinds), so the old generic "Epic Launcher: download" hint is gone.
+
+### Deferred packs (Complete Project)
+
+Fab listings whose Distribution Method is *Complete Project* (The Count's
+Church, Abandoned Cabin, Loot Drops Vol.2 - Niagara) do **not** count as
+unfinished inventory. Coverage reports them under `deferred` /
+`deferred_count`; the import queue lists them under `deferred_epic`. They are
+owned and documented, but no one owes work on them unless a game actually
+needs the content. Arabic Fortress is an *Asset Package* (UE 5.3–5.7): use
+Add to Project with "show all projects" if the UE 5.8 AuroraVellum is hidden.
+
+Dungeon Ruins ships with three permanently corrupt assets
+(`decor_07`, `Pillar_Base_02`, `Pillar_Base_03`); these are accepted debt —
+reconcile logs them as `accepted_quarantine` actions, not exceptions.
 
 ## Recovery
 
