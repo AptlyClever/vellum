@@ -1181,6 +1181,46 @@ def api_game_ready_ingest_manifest(body: GameReadyIngestManifestRequest) -> dict
     return result
 
 
+@app.post("/api/assets/{asset_id}/game-ready/upload-run")
+async def api_game_ready_upload_run(
+    asset_id: str,
+    pack: str = Form(...),
+    archive: UploadFile = File(...),
+) -> dict[str, Any]:
+    """Aurora uploads a zip of a Conversion Factory run's output tree for a pack."""
+    if register_mod.get_asset(asset_id) is None:
+        raise HTTPException(status_code=404, detail="asset_not_found")
+    name = archive.filename or "run.zip"
+    if not name.lower().endswith(".zip"):
+        raise HTTPException(status_code=400, detail="expected_zip")
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as td:
+        td_path = Path(td)
+        zip_path = td_path / "run.zip"
+        with zip_path.open("wb") as fh:
+            while True:
+                chunk = await archive.read(1024 * 1024)
+                if not chunk:
+                    break
+                fh.write(chunk)
+        extract_dir = td_path / "run"
+        extract_dir.mkdir()
+        try:
+            with zipfile.ZipFile(zip_path, "r") as zf:
+                zf.extractall(extract_dir)
+        except zipfile.BadZipFile as e:
+            raise HTTPException(status_code=400, detail="bad_zip") from e
+        try:
+            result = game_ready_mod.ingest_run_archive(
+                extract_dir, asset_id=asset_id, pack=pack
+            )
+        except KeyError:
+            raise HTTPException(status_code=404, detail="asset_not_found") from None
+    import_flow_mod.clear_ops_caches()
+    return result
+
+
 @app.post("/api/game-ready/elements/{element_id}/publish")
 def api_game_ready_publish(element_id: str, body: GameReadyPublishRequest) -> dict[str, Any]:
     try:

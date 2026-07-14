@@ -57,6 +57,58 @@ def test_ingest_manifest_export_models(tmp_path, monkeypatch):
     assert result["elements"][0]["kind"] == "model-gltf"
 
 
+def test_ingest_run_archive(tmp_path, monkeypatch):
+    monkeypatch.setenv("VELLUM_VAULT_ROOT", str(tmp_path / "vault"))
+    monkeypatch.setenv("VELLUM_GAME_READY_PATH", str(tmp_path / "game-ready.yaml"))
+    register_mod.ensure_register()
+
+    run = tmp_path / "run"
+    (run / "models" / "FireworksV1").mkdir(parents=True)
+    (run / "models" / "FireworksV1" / "SM_Rocket.glb").write_bytes(b"glb")
+    (run / "textures" / "FireworksV1").mkdir(parents=True)
+    (run / "textures" / "FireworksV1" / "T_Spark.png").write_bytes(b"png")
+    (run / "vfx" / "FireworksV1").mkdir(parents=True)
+    (run / "vfx" / "FireworksV1" / "bake-plan.json").write_text("{}", encoding="utf-8")
+    (run / "vfx" / "FireworksV1" / "pack-manifest.json").write_text("{}", encoding="utf-8")
+    (run / "models" / "FireworksV1" / "ignore.tmp").write_bytes(b"x")
+
+    result = gr.ingest_run_archive(
+        run, asset_id="fireworks-vol-1-niagara", pack="FireworksV1"
+    )
+    assert result["ok"] is True
+    assert result["registered"] == 4
+    assert result["skipped"] == 1
+    kinds = {r["kind"] for r in gr.list_elements(asset_id="fireworks-vol-1-niagara", limit=50)}
+    assert kinds == {"model-gltf", "texture", "bake-plan"}
+
+
+def test_upload_run_endpoint(tmp_path, monkeypatch):
+    import io
+    import zipfile
+
+    from fastapi.testclient import TestClient
+
+    from backend.main import app
+
+    monkeypatch.setenv("VELLUM_VAULT_ROOT", str(tmp_path / "vault"))
+    monkeypatch.setenv("VELLUM_GAME_READY_PATH", str(tmp_path / "game-ready.yaml"))
+    register_mod.ensure_register()
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("models/FireworksV1/SM_Rocket.glb", b"glb")
+    buf.seek(0)
+    client = TestClient(app)
+    res = client.post(
+        "/api/assets/fireworks-vol-1-niagara/game-ready/upload-run",
+        data={"pack": "FireworksV1"},
+        files={"archive": ("run.zip", buf, "application/zip")},
+    )
+    assert res.status_code == 200, res.text
+    assert res.json()["registered"] == 1
+    assert gr.list_elements(asset_id="fireworks-vol-1-niagara", limit=5)[0]["kind"] == "model-gltf"
+
+
 def test_publish_to_lane(tmp_path, monkeypatch):
     monkeypatch.setenv("VELLUM_VAULT_ROOT", str(tmp_path / "vault"))
     monkeypatch.setenv("VELLUM_GAME_READY_PATH", str(tmp_path / "game-ready.yaml"))

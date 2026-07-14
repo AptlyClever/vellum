@@ -12,6 +12,8 @@
   4. Zip + stage-upload packs that are on disk but not in the vault
   5. p4 reconcile + submit Content changes
   6. Unreal load-check (inventory-pack) any pack without a manifest
+  6b. Conversion Factory: export/bake packs missing game-ready evidence and
+      upload outputs to the hub (machine-owned; no operator lookdev)
   7. Corrupt-package health scan
   8. Detect stray Unreal projects (Fab installed into the wrong project)
   9. Write an exception report; operator only ever reads the exceptions
@@ -29,7 +31,9 @@ param(
   [string]$P4Client = "aurora-vellum-library",
   [int]$MaxInventoryPerRun = 40,
   [int]$MaxStagePerRun = 5,
+  [int]$MaxFactoryPerRun = 2,
   [switch]$SkipInventory,
+  [switch]$SkipFactory,
   [switch]$InstallTask
 )
 
@@ -256,6 +260,61 @@ try {
       } else {
         $actions.Add("validated:$($pack.Name):$($m.asset_count)_assets")
       }
+    }
+  }
+
+  # ---- 6b. Conversion Factory (machine-owned "lookdev") ------------------------
+  # Packs on disk with no game-ready catalog evidence get factory jobs run
+  # locally (export-models, export-media, bake-vfx) and the output tree
+  # uploaded to the hub, which flips their availability without any operator
+  # action. Bounded per run; every element registered on the hub counts.
+  Write-Host "== 6b/8 conversion factory"
+  if (-not $SkipFactory) {
+    $factoryOut = Join-Path $ProjectRoot "Saved\VellumPipeline\game-ready-out"
+    $cov2 = Invoke-Api GET "/api/import/coverage"
+    $ranFactory = 0
+    foreach ($row in @($cov2.on_disk)) {
+      if ($ranFactory -ge $MaxFactoryPerRun) { break }
+      $aid = [string]$row.asset_id
+      $packName = [string]$row.folder
+      if (-not $aid -or -not $packName) { continue }
+      try {
+        $ev = Invoke-Api GET "/api/game-ready/elements?asset_id=$aid&limit=1"
+        if ([int]$ev.count -gt 0) { continue }
+      } catch {
+        Add-Exception "factory" $aid "hub game-ready query failed: $($_.Exception.Message)"
+        continue
+      }
+      $ranFactory++
+      Write-Host "   factory $packName ($aid)"
+      $jobFailures = @()
+      foreach ($job in @("export-models", "export-media", "bake-vfx")) {
+        & pwsh -NoProfile -File (Join-Path $RepoRoot "tools\pipeline\run_job.ps1") `
+          -Job $job -Pack $packName -TimeoutSec 3600 *> (Join-Path $StateDir "factory-$job-$packName.log")
+        if ($LASTEXITCODE -ne 0) { $jobFailures += $job }
+      }
+      # Collect this pack's slice of the output tree and ship it to the hub.
+      $packOutDirs = @("models\$packName", "textures\$packName", "audio\$packName", "vfx\$packName") |
+        ForEach-Object { Join-Path $factoryOut $_ } | Where-Object { Test-Path $_ }
+      if (-not $packOutDirs) {
+        Add-Exception "factory" $packName "no factory output produced (jobs failed: $($jobFailures -join ', '))" "See $StateDir\factory-*-$packName.log"
+        continue
+      }
+      $zipPath = Join-Path $StateDir "factory-$packName.zip"
+      Remove-Item $zipPath -Force -ErrorAction SilentlyContinue
+      Compress-Archive -Path $packOutDirs -DestinationPath $zipPath -CompressionLevel Optimal
+      try {
+        $resp = Invoke-RestMethod -Method Post -Uri "$VellumBase/api/assets/$aid/game-ready/upload-run" `
+          -Form @{ pack = $packName; archive = Get-Item $zipPath } -TimeoutSec 1800
+        $actions.Add("converted:$($packName):$($resp.registered)_elements")
+        if ($jobFailures.Count -gt 0) {
+          $actions.Add("factory_partial:$($packName):failed=$($jobFailures -join '+')")
+        }
+      } catch {
+        Add-Exception "factory" $packName "game-ready upload failed: $($_.Exception.Message)" "Zip kept at $zipPath"
+        continue
+      }
+      Remove-Item $zipPath -Force -ErrorAction SilentlyContinue
     }
   }
 

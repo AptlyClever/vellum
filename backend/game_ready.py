@@ -157,6 +157,69 @@ def register_element(
     return row
 
 
+_RUN_KIND_BY_SUFFIX = {
+    ".glb": "model-gltf",
+    ".gltf": "model-gltf",
+    ".png": "texture",
+    ".jpg": "texture",
+    ".jpeg": "texture",
+    ".webp": "texture",
+    ".wav": "audio",
+    ".ogg": "audio",
+    ".mp3": "audio",
+    ".webm": "vfx-clip",
+}
+
+MAX_RUN_ELEMENTS = 500
+
+
+def ingest_run_archive(extract_dir: Path, *, asset_id: str, pack: str) -> dict[str, Any]:
+    """Ingest an extracted Conversion Factory run (all jobs for one pack).
+
+    Aurora zips its local game-ready output tree for a pack and uploads it;
+    every recognizable portable file becomes a catalog element. Manifests are
+    registered too so a run with zero exports (pure-Niagara bake plan) still
+    counts as conversion evidence and the factory does not retry forever.
+    """
+    if register_mod.get_asset(asset_id) is None:
+        raise KeyError(asset_id)
+    registered: list[dict[str, Any]] = []
+    skipped = 0
+    for path in sorted(extract_dir.rglob("*")):
+        if not path.is_file():
+            continue
+        name = path.name.lower()
+        if name.endswith("manifest.json") or name == "bake-plan.json":
+            kind = "manifest"
+            if "bake" in name or "vfx" in str(path.parent).lower():
+                kind = "bake-plan"
+            registered.append(
+                register_element(
+                    asset_id=asset_id, kind=kind, path=path, pack=pack,
+                    note="factory-run manifest",
+                )
+            )
+            continue
+        kind = _RUN_KIND_BY_SUFFIX.get(path.suffix.lower())
+        if kind is None:
+            skipped += 1
+            continue
+        if len(registered) >= MAX_RUN_ELEMENTS:
+            skipped += 1
+            continue
+        registered.append(
+            register_element(asset_id=asset_id, kind=kind, path=path, pack=pack)
+        )
+    return {
+        "schema_version": 1,
+        "ok": True,
+        "asset_id": asset_id,
+        "pack": pack,
+        "registered": len(registered),
+        "skipped": skipped,
+    }
+
+
 def ingest_manifest(manifest_path: Path, *, asset_id: str, pack: str | None = None) -> dict[str, Any]:
     """Ingest a Conversion Factory manifest.json into the catalog."""
     data = json.loads(manifest_path.read_text(encoding="utf-8"))

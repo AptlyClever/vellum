@@ -354,6 +354,35 @@ def test_resolve_folder_fuzzy_maps_marble(tmp_path: Path, monkeypatch) -> None:
     assert import_flow_mod.resolve_folder_to_asset_id("FireworksV1") == "fireworks-vol-1-niagara"
 
 
+def test_game_ready_elements_count_as_conversion_evidence(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("VELLUM_REGISTER_PATH", str(tmp_path / "reg.yaml"))
+    monkeypatch.setenv(
+        "VELLUM_SEED_PATH",
+        str(Path(__file__).resolve().parents[1] / "config" / "humble-seed.yaml"),
+    )
+    monkeypatch.setenv("VELLUM_VAULT_ROOT", str(tmp_path / "vault"))
+    monkeypatch.setenv("VELLUM_DERIVED_OUTPUTS_PATH", str(tmp_path / "outputs.yaml"))
+    (tmp_path / "outputs.yaml").write_text("schema_version: 1\noutputs: []\n", encoding="utf-8")
+    monkeypatch.setenv("VELLUM_GAME_READY_PATH", str(tmp_path / "game-ready.yaml"))
+    register_mod.ensure_register(force_reseed=True)
+    import_flow_mod.clear_ops_caches()
+
+    assert "fireworks-vol-1-niagara" not in import_flow_mod._lookdev_asset_ids()
+
+    from backend import game_ready as game_ready_mod
+
+    src = tmp_path / "SM_Rocket.glb"
+    src.write_bytes(b"glb")
+    game_ready_mod.register_element(
+        asset_id="fireworks-vol-1-niagara",
+        kind="model-gltf",
+        path=src,
+        pack="FireworksV1",
+    )
+    import_flow_mod.clear_ops_caches()
+    assert "fireworks-vol-1-niagara" in import_flow_mod._lookdev_asset_ids()
+
+
 def test_availability_row_priority() -> None:
     assert import_flow_mod.availability_row(
         on_disk=True, staged=True, lookdev=True, installable=False

@@ -222,6 +222,14 @@ def _lookdev_asset_ids() -> set[str]:
         asset = assets_by_id.get(aid)
         if lookdev_mode_for_asset(asset) == "texture":
             ok.add(aid)
+    # Conversion Factory evidence (product path): any game-ready catalog
+    # element counts — the reconcile loop on Aurora runs the factory jobs and
+    # uploads outputs, so this bit flips without any operator action.
+    from . import game_ready as game_ready_mod
+
+    for el in game_ready_mod.load_catalog().get("elements") or []:
+        if isinstance(el, dict) and el.get("asset_id"):
+            ok.add(str(el["asset_id"]))
     _LOOKDEV_IDS_CACHE = ok
     _LOOKDEV_IDS_CACHE_AT = now
     return ok
@@ -240,15 +248,15 @@ def availability_row(
         return {
             "state": "ready",
             "label": "Ready",
-            "detail": "on disk · staged · lookdev",
+            "detail": "on disk · staged · converted",
         }
     if on_disk:
         missing = []
         if not staged:
-            missing.append("stage")
+            missing.append("stage (auto)")
         if not lookdev:
-            missing.append("lookdev")
-        detail = "on F: · need " + (" + ".join(missing) if missing else "finish")
+            missing.append("conversion (auto)")
+        detail = "on F: · awaiting " + (" + ".join(missing) if missing else "finish")
         return {"state": "on_disk", "label": "On disk", "detail": detail}
     if installable:
         return {
@@ -257,7 +265,7 @@ def availability_row(
             "detail": "VaultCache → install",
         }
     if staged:
-        detail = "vault staged" + (" · lookdev" if lookdev else " · need lookdev")
+        detail = "vault staged" + (" · converted" if lookdev else " · awaiting conversion (auto)")
         return {"state": "vault", "label": "Vault only", "detail": detail}
     if deferred:
         return {
@@ -1100,7 +1108,7 @@ def import_queue(*, engine: str | None = "unreal", limit: int = 40) -> dict[str,
         elif state == "on_disk":
             next_step = "staged" if "stage" in detail else "captured"
         elif state == "vault":
-            next_step = "captured" if "need lookdev" in detail else "in_project"
+            next_step = "captured" if "awaiting conversion" in detail else "in_project"
         else:
             next_step = "captured"
         actionable.append(

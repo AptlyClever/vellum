@@ -43,6 +43,10 @@ operator bookkeeping:
 5. Stage un-vaulted packs (zip upload)
 6. `p4 reconcile` + submit Content changes
 7. Unreal load-check (`inventory-pack`) new/changed packs
+7. Conversion Factory — packs with no game-ready catalog evidence get
+   export-models / export-media / bake-vfx run headless and the output tree
+   uploaded to the hub (`/api/assets/{id}/game-ready/upload-run`); this is
+   what clears "awaiting conversion" — never an operator step
 8. Corrupt-package scan + quarantine report
 9. Launcher visibility guard — keeps `CreatedProjectPaths=F:/Games` (the
    **parent** folder, not the project folder) in the launcher ini so

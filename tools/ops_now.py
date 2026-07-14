@@ -87,7 +87,7 @@ def main() -> int:
         f"| State | Count |",
         f"| --- | ---: |",
         f"| Ready | {counts.get('ready', 0)} |",
-        f"| On disk (need lookdev) | {counts.get('on_disk', 0)} |",
+        f"| On disk (awaiting auto conversion) | {counts.get('on_disk', 0)} |",
         f"| Vault only | {counts.get('vault', 0)} |",
         f"| Installable (VaultCache) | {counts.get('installable', 0)} |",
         f"| Need download | {counts.get('need_download', 0)} |",
@@ -130,7 +130,7 @@ def main() -> int:
     lines.extend(
         [
             "",
-            "## On disk — still need lookdev",
+            "## On disk — awaiting auto conversion (factory-owned)",
             "",
         ]
     )
