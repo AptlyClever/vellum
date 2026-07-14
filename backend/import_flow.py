@@ -1334,6 +1334,13 @@ def coverage(*, engine: str = "unreal", host_id: str | None = None) -> dict[str,
     staged: list[dict[str, Any]] = []
     for a in assets:
         aid = str(a["id"])
+        if str(a.get("redemption_status") or "").lower() in {
+            "superseded",
+            "retired",
+            "archived",
+            "deleted",
+        }:
+            continue
         if aid in staged_by_id:
             staged.append(
                 {
