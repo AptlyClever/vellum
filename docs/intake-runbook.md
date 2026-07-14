@@ -29,6 +29,26 @@
 - `raw_location` — vault `01-source-bundles/...` after stage
 - Game-ready manifests — vault `05-derived-renders/game-ready/...` + catalog API
 
+## Reconcile (the anti-"man in the middle" loop)
+
+`tools/pipeline/reconcile_aurora.ps1` runs on Aurora at logon + hourly
+(scheduled task `VellumReconcile`) and makes every layer agree without
+operator bookkeeping:
+
+1. Push fresh Content scan to hub
+2. Register unknown folders (orphans) in Vellum
+3. Patch register rows missing `host_content_path` / `in_project`
+4. Stage un-vaulted packs (zip upload)
+5. `p4 reconcile` + submit Content changes
+6. Unreal load-check (`inventory-pack`) new/changed packs
+7. Corrupt-package scan + quarantine report
+8. Stray-project scan (Fab installed into the wrong project)
+
+Everything it cannot fix lands in
+`F:\Games\AuroraVellum\Saved\VellumReconcile\reconcile_report.json`
+as an exception with a fix hint. **After adding a pack, either wait for the
+hourly run or run the script once — no manual registration steps.**
+
 ## Recovery
 
 - Corrupt packages → `<ProjectRoot>/Quarantine/` (outside Content) then re-Add from Fab
