@@ -980,31 +980,14 @@ if ($batchSystems.Count -gt 0) {
         if (-not $py) { $py = Get-Command py -ErrorAction SilentlyContinue }
         if (-not $py) { throw "python/py not found on PATH for pick_heroes.py" }
         Send-VellumProgress -Message "Phase C[$slotIndex] pick heroes $systemName"
-        # Do not redirect native stdout with *>$null - PowerShell can hang after
-        # python exits (observed after heroes-0.json was already written).
+        # Sync call: --json-out is quiet (no stdout). Start-Process+PID wait hung
+        # after heroes JSON was already on disk (ingest-only pack freeze).
         $pickArgs = @($StagedPickHeroesPy, $seqOutDir, "--json-out", $HeroJson, "--score-budget", "8")
         if (Test-Path $HeroJson) { Remove-Item -Force $HeroJson -ErrorAction SilentlyContinue }
-        $pickProc = Start-Process -FilePath $py.Source -ArgumentList $pickArgs `
-          -PassThru -WindowStyle Hidden
-        $pickPid = [int]$pickProc.Id
-        $pickProc = $null
-        $pickDeadline = (Get-Date).AddMinutes(5)
-        $pickLastBeat = Get-Date
-        while ($null -ne (Get-Process -Id $pickPid -ErrorAction SilentlyContinue)) {
-          if ((Get-Date) -gt $pickDeadline) {
-            try { Stop-Process -Id $pickPid -Force -ErrorAction SilentlyContinue } catch { }
-            Send-VellumProgress -Message "FAIL hero pick timeout $systemName"
-            break
-          }
-          if (((Get-Date) - $pickLastBeat).TotalSeconds -ge 10) {
-            Send-VellumProgress -Message "Phase C[$slotIndex] pick still running $systemName"
-            $pickLastBeat = Get-Date
-          }
-          Start-Sleep -Seconds 2
-        }
-        if (-not (Test-Path $HeroJson)) {
+        & $py.Source @pickArgs
+        if ($LASTEXITCODE -ne 0 -or -not (Test-Path $HeroJson)) {
           [void]$allErrors.Add("hero_pick_failed:$systemName")
-          Send-VellumProgress -Message "FAIL hero pick $systemName (no json)"
+          Send-VellumProgress -Message "FAIL hero pick $systemName code=$LASTEXITCODE"
           $slotIndex++
           continue
         }
@@ -1079,29 +1062,16 @@ if ($toIngestOnly.Count -gt 0) {
     }
     $HeroJson = Join-Path $OutDir "heroes-ingest-$safeHint.json"
     if (Test-Path $HeroJson) { Remove-Item -Force $HeroJson -ErrorAction SilentlyContinue }
+    Send-VellumProgress -Message "Ingest-only[$slotIndex] pick heroes $systemName"
     $pickArgs = @($StagedPickHeroesPy, $seqOutDir, "--json-out", $HeroJson, "--score-budget", "8")
-    $pickProc = Start-Process -FilePath $py.Source -ArgumentList $pickArgs -PassThru -WindowStyle Hidden
-    $pickPid = [int]$pickProc.Id
-    $pickProc = $null
-    $pickDeadline = (Get-Date).AddMinutes(5)
-    $pickLastBeat = Get-Date
-    while ($null -ne (Get-Process -Id $pickPid -ErrorAction SilentlyContinue)) {
-      if ((Get-Date) -gt $pickDeadline) {
-        try { Stop-Process -Id $pickPid -Force -ErrorAction SilentlyContinue } catch { }
-        Send-VellumProgress -Message "FAIL ingest-only pick timeout $systemName"
-        break
-      }
-      if (((Get-Date) - $pickLastBeat).TotalSeconds -ge 10) {
-        Send-VellumProgress -Message "Ingest-only pick still running $systemName"
-        $pickLastBeat = Get-Date
-      }
-      Start-Sleep -Seconds 2
-    }
-    if (-not (Test-Path $HeroJson)) {
+    & $py.Source @pickArgs
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path $HeroJson)) {
       [void]$allErrors.Add("ingest_only_hero_pick_failed:$systemName")
+      Send-VellumProgress -Message "FAIL ingest-only pick $systemName code=$LASTEXITCODE"
       $slotIndex++
       continue
     }
+    Send-VellumProgress -Message "Ingest-only[$slotIndex] heroes ready $systemName"
     $heroDoc = Get-Content $HeroJson -Raw | ConvertFrom-Json
     if (-not [bool]$heroDoc.ok) {
       [void]$allErrors.Add("ingest_only_hero_rejected:$systemName`:$($heroDoc.error)")
