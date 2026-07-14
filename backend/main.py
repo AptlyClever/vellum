@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 import zipfile
 
 from . import attach as attach_mod
+from . import fab_library as fab_library_mod
 from . import game_ready as game_ready_mod
 from . import import_flow as import_flow_mod
 from . import intake as intake_mod
@@ -329,6 +330,30 @@ def api_import_queue(
     limit: int = Query(default=40, ge=1, le=100),
 ) -> dict[str, Any]:
     return import_flow_mod.import_queue(engine=engine, limit=limit)
+
+
+@app.post("/api/import/fab-listings-db")
+async def api_import_fab_listings_db(
+    db: UploadFile = File(...),
+) -> dict[str, Any]:
+    """Aurora pushes the launcher's Fab library catalog (listings_v1.db).
+
+    This is the launcher's own record of what the account owns, whether the
+    launcher has seen each pack, and each pack's download format — used to
+    give per-pack acquisition instructions instead of a generic "download".
+    """
+    data = await db.read()
+    try:
+        dest = fab_library_mod.save_listings_db(data)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    index = fab_library_mod.library_index(force_refresh=True)
+    import_flow_mod.clear_ops_caches()
+    return {
+        "schema_version": 1,
+        "saved_to": str(dest),
+        "listing_count": len(index),
+    }
 
 
 @app.get("/api/assets/{asset_id}")

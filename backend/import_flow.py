@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from . import fab_library as fab_library_mod
 from . import lookdev as lookdev_mod
 from . import register as register_mod
 from . import ue_hosts as ue_hosts_mod
@@ -1042,6 +1043,7 @@ def import_queue(*, engine: str | None = "unreal", limit: int = 40) -> dict[str,
         if state == "ready":
             continue
         if state == "need_download":
+            acq = fab_library_mod.acquisition_for_asset(a)
             blocked_epic.append(
                 {
                     "asset_id": aid,
@@ -1049,7 +1051,10 @@ def import_queue(*, engine: str | None = "unreal", limit: int = 40) -> dict[str,
                     "engine": a.get("engine"),
                     "availability": state,
                     "detail": detail,
-                    "next_step": "epic_download",
+                    # Fab UE listings have no standalone download; the launcher
+                    # metadata tells us the real acquisition path per pack.
+                    "next_step": acq["method"],
+                    "acquisition": acq,
                     "blocked": True,
                 }
             )
@@ -1279,6 +1284,7 @@ def coverage(*, engine: str = "unreal", host_id: str | None = None) -> dict[str,
         if aid in mapped_ids:
             continue
         cands = fab_install_candidates(aid)
+        acq = fab_library_mod.acquisition_for_asset(a, installable=bool(cands))
         row = {
             "asset_id": aid,
             "display_name": a.get("display_name"),
@@ -1286,6 +1292,7 @@ def coverage(*, engine: str = "unreal", host_id: str | None = None) -> dict[str,
             "source_bundle": a.get("source_bundle"),
             "next_step": "in_project",
             "fab_install_candidates": cands,
+            "acquisition": acq,
         }
         if cands:
             vault_installable.append(row)

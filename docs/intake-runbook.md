@@ -36,18 +36,37 @@
 operator bookkeeping:
 
 1. Push fresh Content scan to hub
-2. Register unknown folders (orphans) in Vellum
-3. Patch register rows missing `host_content_path` / `in_project`
-4. Stage un-vaulted packs (zip upload)
-5. `p4 reconcile` + submit Content changes
-6. Unreal load-check (`inventory-pack`) new/changed packs
-7. Corrupt-package scan + quarantine report
-8. Stray-project scan (Fab installed into the wrong project)
+2. Push the launcher's Fab catalog (`VaultCache/FabLibrary/listings_v1.db`) to
+   the hub — the launcher's own record of ownership and download formats
+3. Register unknown folders (orphans) in Vellum
+4. Patch register rows missing `host_content_path` / `in_project`
+5. Stage un-vaulted packs (zip upload)
+6. `p4 reconcile` + submit Content changes
+7. Unreal load-check (`inventory-pack`) new/changed packs
+8. Corrupt-package scan + quarantine report
+9. Stray-project scan (Fab installed into the wrong project)
 
 Everything it cannot fix lands in
 `F:\Games\AuroraVellum\Saved\VellumReconcile\reconcile_report.json`
 as an exception with a fix hint. **After adding a pack, either wait for the
 hourly run or run the script once — no manual registration steps.**
+
+### How "not on Aurora" packs are classified
+
+Fab Unreal listings have **no standalone file download** — content only
+materializes inside an Unreal project via *Add to Project*. The hub reads the
+launcher catalog and classifies every missing pack
+(`acquisition` on `/api/import/coverage` and `/api/import/queue`):
+
+| Method | Meaning | Who acts |
+| --- | --- | --- |
+| `vault_install` | Bits already in VaultCache and mapped | Agent (`fab-install`) |
+| `fab_add_to_project` | Launcher owns it; one click: Fab Library → Add to Project → AuroraVellum | Human, once |
+| `fab_add_to_project_unseen` | Launcher on Aurora has never seen the pack; find it in Fab Library first | Human, once |
+| `manual` | Non-Unreal source (e.g. Unity-only) | Human |
+
+The reconcile exception report carries the same per-pack instructions
+(`acquire_*` kinds), so the old generic "Epic Launcher: download" hint is gone.
 
 ## Recovery
 

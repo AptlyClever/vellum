@@ -91,6 +91,21 @@ try {
     throw
   }
 
+  # ---- 1b. Push launcher Fab catalog (free acquisition intel) ----------------
+  # The launcher's listings_v1.db says which owned packs it has seen and that
+  # UE listings have no standalone download — the hub uses it to emit real
+  # per-pack acquisition instructions instead of a generic "download" hint.
+  $fabDb = "C:\ProgramData\Epic\EpicGamesLauncher\VaultCache\FabLibrary\listings_v1.db"
+  if (Test-Path $fabDb) {
+    try {
+      Invoke-RestMethod -Method Post -Uri "$VellumBase/api/import/fab-listings-db" `
+        -Form @{ db = Get-Item $fabDb } -TimeoutSec 120 | Out-Null
+      $actions.Add("fab_listings_pushed")
+    } catch {
+      Add-Exception "fab_listings" $fabDb $_.Exception.Message "Hub rejected launcher catalog; acquisition hints may be stale."
+    }
+  }
+
   # ---- 2. Register orphan folders --------------------------------------------
   Write-Host "== 2/8 register orphans"
   $cov = Invoke-Api GET "/api/import/coverage?engine=unreal"
@@ -246,9 +261,14 @@ try {
     }
   }
 
-  # Redeemed-but-not-downloaded (operator work, listed so nothing is forgotten)
+  # Redeemed-but-not-in-project. The hub classifies each pack from the
+  # launcher's own catalog (fab_add_to_project / vault_install / unseen);
+  # UE-only listings cannot be "downloaded" — only added to a project.
   foreach ($nd in @($cov.need_download)) {
-    Add-Exception "need_download" $nd.asset_id $nd.display_name "Epic Launcher: download / Add to Project -> AuroraVellum"
+    $acq = $nd.acquisition
+    $kind = if ($acq -and $acq.method) { "acquire_$($acq.method)" } else { "need_download" }
+    $hint = if ($acq -and $acq.operator_hint) { [string]$acq.operator_hint } else { "Epic Launcher: Fab Library -> Add to Project -> AuroraVellum" }
+    Add-Exception $kind $nd.asset_id $nd.display_name $hint
   }
 }
 finally {

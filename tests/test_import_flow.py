@@ -105,6 +105,10 @@ def test_import_queue(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(import_flow_mod, "fab_install_candidates", lambda asset_id: [])
     monkeypatch.setenv("VELLUM_DERIVED_OUTPUTS_PATH", str(tmp_path / "empty-outputs.yaml"))
     (tmp_path / "empty-outputs.yaml").write_text("schema_version: 1\noutputs: []\n", encoding="utf-8")
+    monkeypatch.setenv("VELLUM_FAB_LISTINGS_DB", str(tmp_path / "no-listings.db"))
+    from backend import fab_library as fab_library_mod
+
+    fab_library_mod.clear_cache()
     import_flow_mod.clear_ops_caches()
 
     client = TestClient(app)
@@ -116,7 +120,11 @@ def test_import_queue(tmp_path: Path, monkeypatch) -> None:
     # Empty host Content + empty vault + no Fab map → Epic wall only.
     assert body["count"] == 0
     assert body["blocked_epic_count"] > 0
-    assert all(i.get("next_step") == "epic_download" for i in body["blocked_epic"])
+    # No launcher catalog available → every UE pack is "unseen"; next_step
+    # carries the acquisition method, never a bogus "download" instruction.
+    for item in body["blocked_epic"]:
+        assert item["next_step"] == fab_library_mod.METHOD_FAB_ADD_UNSEEN
+        assert "Add to Project" in item["acquisition"]["operator_hint"]
 
 
 def test_skip_folders_excludes_python_tooling() -> None:
