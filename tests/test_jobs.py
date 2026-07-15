@@ -18,6 +18,10 @@ def test_worker_prepares_stage_and_updates_intake(tmp_path: Path, monkeypatch) -
     monkeypatch.setenv("VELLUM_INTAKE_RUNS_PATH", str(runs))
     monkeypatch.setenv("VELLUM_JOBS_DB_PATH", str(db))
     monkeypatch.setenv("VELLUM_VAULT_ROOT", str(vault))
+    monkeypatch.setenv("VELLUM_DERIVED_PATH", str(tmp_path / "derived.yaml"))
+    monkeypatch.setenv(
+        "VELLUM_VAULT_DERIVED_PATH", str(vault / "02-index" / "derived-outputs.yaml")
+    )
     monkeypatch.delenv("VELLUM_VAULT_REGISTER_PATH", raising=False)
     monkeypatch.delenv("VELLUM_VAULT_INTAKE_RUNS_PATH", raising=False)
     ensure_register(force_reseed=True)
@@ -39,7 +43,7 @@ def test_worker_prepares_stage_and_updates_intake(tmp_path: Path, monkeypatch) -
     assert by_id["stage_vault"]["status"] == "done"
     assert by_id["record_paths"]["status"] == "done"
     assert by_id["confirm_project_fit"]["status"] == "done"
-    assert by_id["derive_lookdev"]["status"] == "skipped"
+    assert by_id["derive_lookdev"]["status"] == "done"
     assert by_id["download_epic"]["status"] == "needs-human"
 
     asset = get_asset("portal-vfx-enhanced")
