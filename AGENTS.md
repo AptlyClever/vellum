@@ -16,16 +16,18 @@ Vellum is the Control Alt Games asset vault and intake/prototyping project.
 3. **`docs/asset-pipeline-product.md`** — **product SoT** (Library + Conversion Factory + delivery catalog).
 4. **`docs/factory-operations.md`** — binding factory execution, evidence,
    recovery, verified baseline, and next slice.
-5. Live CFD: `GET /api/cfd/inspirations/cfd-inspiration-20260713-015950-vellum-control-alt-games-asset-vault-register-in` (Axiom) or mirror `docs/cfd/governing-inspiration.json`.
-6. `docs/cfd/architecture-research.md` — locked architecture lessons.
-7. `docs/humble-asset-vault-inventory.md` — 37-item inventory (no keys).
-8. `docs/intake-runbook.md` — redeem → Fab → automatic reconcile.
-9. `docs/library-project.md` — curated Unreal Library layout.
-10. `docs/api-intake.md` — IntakeRun + jobs + asset patch API for agents.
-11. `docs/api-lookdev.md` / `docs/api-game-ready.md` — derived + game-ready catalog APIs.
-12. `docs/slice-e-epic-staging.md` — Epic/Fab Add-to-Project notes.
-13. `docs/brand-canon.md` — core vs Games classification rules.
-14. Frozen archaeology: `docs/ue-lookdev-worker.md`, `docs/ue-mrq-capture.md`, `archive/prototype-v0/`.
+5. **`docs/machine-roles.md`** — Borealis is dev-primary; Aurora remains
+   asset/factory-primary and still useful for host-local agents.
+6. Live CFD: `GET /api/cfd/inspirations/cfd-inspiration-20260713-015950-vellum-control-alt-games-asset-vault-register-in` (Axiom) or mirror `docs/cfd/governing-inspiration.json`.
+7. `docs/cfd/architecture-research.md` — locked architecture lessons.
+8. `docs/humble-asset-vault-inventory.md` — 37-item inventory (no keys).
+9. `docs/intake-runbook.md` — redeem → Fab → automatic reconcile.
+10. `docs/library-project.md` — curated Unreal Library layout.
+11. `docs/api-intake.md` — IntakeRun + jobs + asset patch API for agents.
+12. `docs/api-lookdev.md` / `docs/api-game-ready.md` — derived + game-ready catalog APIs.
+13. `docs/slice-e-epic-staging.md` — Epic/Fab Add-to-Project notes.
+14. `docs/brand-canon.md` — core vs Games classification rules.
+15. Frozen archaeology: `docs/ue-lookdev-worker.md`, `docs/ue-mrq-capture.md`, `archive/prototype-v0/`.
 
 ## Working rules
 
@@ -33,6 +35,10 @@ Vellum is the Control Alt Games asset vault and intake/prototyping project.
 - Never store Humble/Epic/Unity keys in git or in Axiom registry files.
 - Keep derived / game-ready outputs project-lane-scoped under the vault; leave raw packs in `01-source-bundles/`.
 - Factory jobs live under `tools/pipeline/`; do not revive the Capture agent polling loop without operator unpark.
+- Do not confuse machine roles: Borealis is primary for development; Aurora is
+  still primary for the asset Library, Epic/Fab state, Perforce Library,
+  reconcile, and Conversion Factory. Do not move factory responsibility to
+  Borealis without an explicit migration plan.
 - After a pack appears under `AuroraVellum/Content`, reconcile owns register,
   stage, P4, validation, and conversion. Never present "lookdev" as manual
   operator work.

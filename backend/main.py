@@ -939,7 +939,7 @@ def api_ue_capture(body: UeCaptureRequest) -> dict[str, Any]:
 
 @app.get("/api/ue/hosts")
 def api_ue_hosts() -> dict[str, Any]:
-    """Aurora / Borealis capture host profiles (active = preferred workstation)."""
+    """Aurora/Borealis UE host profiles (active = asset/factory host)."""
     try:
         return ue_hosts_mod.public_hosts_payload()
     except FileNotFoundError as exc:

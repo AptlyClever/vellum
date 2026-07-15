@@ -1,11 +1,11 @@
 {
   "schema_version": 1,
   "active": "aurora",
-  "notes": "UE capture host profiles. Only one agent should poll at a time. Flip active (or pass -Host / VELLUM_UE_HOST) when moving between machines. Aurora is primary; Borealis is secondary. Fab Add-to-Project MUST target fab_target_project = F:\\Games\\AuroraVellum only. C:\\dev\\AuroraVellum is retired (consolidated 2026-07-14).",
+  "notes": "Machine roles are split intentionally. Aurora remains the primary asset/factory host and active UE host for the AuroraVellum Library; Borealis is the primary human development workstation. Do not move the Library or factory to Borealis without an explicit migration plan. Fab Add-to-Project MUST target Aurora fab_target_project = F:\\Games\\AuroraVellum only. C:\\dev\\AuroraVellum is retired (consolidated 2026-07-14). Agents may still run directly on Aurora for asset/factory/host-specific work.",
   "hosts": {
     "aurora": {
       "label": "Aurora",
-      "role": "primary",
+      "role": "asset-factory-primary",
       "repo": "E:\\Dev\\vellum",
       "ssh_user": "jaked",
       "ssh_host": "192.168.68.100",
@@ -25,7 +25,7 @@
     },
     "borealis": {
       "label": "Borealis",
-      "role": "secondary",
+      "role": "dev-primary-secondary-ue",
       "repo": "C:\\dev\\vellum",
       "ue_editor": "C:\\Program Files\\Epic Games\\UE_5.8\\Engine\\Binaries\\Win64\\UnrealEditor.exe",
       "ue_cmd": "C:\\Program Files\\Epic Games\\UE_5.8\\Engine\\Binaries\\Win64\\UnrealEditor-Cmd.exe",

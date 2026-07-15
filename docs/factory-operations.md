@@ -2,8 +2,11 @@
 
 **Status:** active operating contract  
 **Product SoT:** [`asset-pipeline-product.md`](./asset-pipeline-product.md)  
-**Host:** Aurora (`F:\Games\AuroraVellum`)  
+**Host:** Aurora (`F:\Games\AuroraVellum`) — primary asset/factory workstation  
 **Controller:** `tools/pipeline/reconcile_aurora.ps1`
+
+Borealis is the primary development workstation. That does not move this
+factory role off Aurora; see [`machine-roles.md`](./machine-roles.md).
 
 ## What the factory owns
 

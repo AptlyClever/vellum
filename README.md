@@ -31,6 +31,7 @@ pytest -q
 | **[DEV_TRACKER.md](./DEV_TRACKER.md)** | Active issue + Governing CFD |
 | **[docs/asset-pipeline-product.md](./docs/asset-pipeline-product.md)** | **Product SoT** — Library + Factory + catalog |
 | **[docs/factory-operations.md](./docs/factory-operations.md)** | Binding factory runtime, evidence, recovery, and continuation point |
+| **[docs/machine-roles.md](./docs/machine-roles.md)** | Borealis dev-primary / Aurora factory-primary split |
 | **[docs/intake-runbook.md](./docs/intake-runbook.md)** | Redeem → Fab → P4 → register |
 | **[docs/cfd/](./docs/cfd/)** | CFD mirrors + architecture research |
 | **[docs/humble-asset-vault-inventory.md](./docs/humble-asset-vault-inventory.md)** | Authoritative **37-item** inventory (keys excluded) |

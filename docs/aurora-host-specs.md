@@ -1,4 +1,4 @@
-# Aurora (primary UE capture host) — hardware snapshot
+# Aurora (primary asset/factory host) — hardware snapshot
 
 Collected by `tools/unreal/report_host_specs.ps1` → `POST /api/ue/hosts/specs`
 (live API is source of truth; this file is a human mirror for planning).

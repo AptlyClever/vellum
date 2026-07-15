@@ -36,7 +36,9 @@ We need an operator path:
 Done when all of the following are true:
 
 1. Operator stays in **Vellum** (Capture control + job progress).
-2. Active UE **host profile** runs the job (Aurora primary; Borealis secondary; only one agent polling).
+2. Active UE **asset/factory host profile** runs the job. Aurora remains the
+   factory host; Borealis is the primary dev workstation unless a deliberate
+   host migration happens.
 3. Capture uses **Movie Render Queue + Sequencer** (Epic pipeline), not HighResShot / SceneCapture improvisation.
 4. Outputs show **real Fireworks Niagara** (distinct systems; not pure black; not a debug cube).
 5. Outputs land via existing lookdev ingest into vault lanes (`05-derived-renders/…`, `DerivedOutput` / `niagara-render` or successor kind).
@@ -199,8 +201,8 @@ Canonical file: [`config/ue-hosts.json`](../config/ue-hosts.json).
 
 | id | role | notes |
 | --- | --- | --- |
-| `aurora` | primary / **active** | `F:\Games\UE_5.8\…`, project `F:\Games\AuroraVellum` |
-| `borealis` | secondary | Epic Launcher default paths; do not debug capture quality here unless operator reopens |
+| `aurora` | asset/factory primary / **active** | `F:\Games\UE_5.8\…`, project `F:\Games\AuroraVellum` |
+| `borealis` | dev primary / secondary UE profile | Epic Launcher default paths; do not move factory here without migration plan |
 
 Switching hosts = flip `active` (and restart the single polling agent). Capture backend must be host-agnostic aside from paths in the profile.
 

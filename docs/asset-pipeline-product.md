@@ -4,9 +4,10 @@
 **Status:** active product direction  
 **Supersedes:** `docs/ue-lookdev-worker.md` (frozen), ad-hoc Capture agent stack (`vellum_ue_agent.ps1` polling), science-project lookdev-as-product framing  
 **Related:** [`factory-operations.md`](./factory-operations.md) (binding runtime
-and continuation contract), `docs/capture-hosting-decision.md` (Epic Cmd batch
-pattern retained as **one factory job type**, not the product), Governing CFD
-slices A–F (complete)
+and continuation contract), [`machine-roles.md`](./machine-roles.md) (Borealis
+dev-primary / Aurora factory-primary split), `docs/capture-hosting-decision.md`
+(Epic Cmd batch pattern retained as **one factory job type**, not the product),
+Governing CFD slices A–F (complete)
 
 ## Problem the product solves
 
@@ -50,6 +51,9 @@ Unpark phrases (operator only): `Unpark: Lookdev Worker` / `Unpark: Capture Agen
   `awaiting conversion (auto)`; that is factory backlog, not operator work.
 - **One Library:** Fab installs only into
   `F:\Games\AuroraVellum`; never move `.uasset` folders on disk.
+- **Machine split:** Borealis is the primary development workstation. Aurora
+  remains the primary asset/factory workstation and the active UE host; agents
+  may still run directly on Aurora for asset/factory/host-specific work.
 - **One controller:** `tools/pipeline/reconcile_aurora.ps1`, scheduled at logon
   and hourly. Do not revive the retired polling Capture agent.
 - **Factory shape:** one Unreal boot per pack, three parallel read-only pack

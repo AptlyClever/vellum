@@ -1,4 +1,4 @@
-"""UE capture host profiles (Aurora primary / Borealis secondary)."""
+"""UE host profiles (Aurora asset/factory host; Borealis dev workstation)."""
 
 from __future__ import annotations
 
