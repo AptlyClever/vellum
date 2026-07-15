@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from typing import Any
 
 _HERE = Path(__file__).resolve().parent
 if str(_HERE) not in sys.path:
@@ -13,6 +14,10 @@ if str(_HERE) not in sys.path:
 import unreal  # type: ignore
 
 from _common import pack_content_root, pack_name, quit_editor, vault_game_ready, work_dir, write_manifest
+
+# Keep under hub MAX_RUN_ELEMENTS (500) with room for models/manifests.
+MAX_TEXTURE_EXPORTS = 200
+MAX_AUDIO_EXPORTS = 50
 
 
 def _get_assets(class_name: str, module: str, package_root: str):
@@ -25,7 +30,8 @@ def _get_assets(class_name: str, module: str, package_root: str):
     return list(registry.get_assets(filt) or [])
 
 
-def main() -> None:
+def run() -> dict[str, Any]:
+    """Export textures/audio; does not quit the editor."""
     root = pack_content_root()
     pack = pack_name()
     out_tex = vault_game_ready() / "textures" / pack
@@ -35,8 +41,12 @@ def main() -> None:
 
     exported = []
     errors = []
+    tex_seen = 0
+    aud_seen = 0
 
     for asset_data in _get_assets("Texture2D", "/Script/Engine", root):
+        if tex_seen >= MAX_TEXTURE_EXPORTS:
+            break
         name = str(asset_data.asset_name)
         pkg = str(asset_data.package_name)
         try:
@@ -54,19 +64,23 @@ def main() -> None:
             task.automated = True
             exporters = unreal.Exporter.get_exporter(task.object, "PNG")
             if not exporters:
-                # Fallback: write raw via TextureExporterPNG if available
                 ok = unreal.Exporter.run_asset_export_task(task)
             else:
                 task.exporter = exporters[0]
                 ok = unreal.Exporter.run_asset_export_task(task)
             if ok and dest.exists():
-                exported.append({"kind": "texture", "asset": name, "path": str(dest), "bytes": dest.stat().st_size})
+                exported.append(
+                    {"kind": "texture", "asset": name, "path": str(dest), "bytes": dest.stat().st_size}
+                )
+                tex_seen += 1
             else:
                 errors.append(f"tex_export:{name}")
         except Exception as exc:  # noqa: BLE001
             errors.append(f"tex_exc:{name}:{exc}")
 
     for asset_data in _get_assets("SoundWave", "/Script/Engine", root):
+        if aud_seen >= MAX_AUDIO_EXPORTS:
+            break
         name = str(asset_data.asset_name)
         pkg = str(asset_data.package_name)
         try:
@@ -84,7 +98,10 @@ def main() -> None:
             task.automated = True
             ok = unreal.Exporter.run_asset_export_task(task)
             if ok and dest.exists():
-                exported.append({"kind": "audio", "asset": name, "path": str(dest), "bytes": dest.stat().st_size})
+                exported.append(
+                    {"kind": "audio", "asset": name, "path": str(dest), "bytes": dest.stat().st_size}
+                )
+                aud_seen += 1
             else:
                 errors.append(f"aud_export:{name}")
         except Exception as exc:  # noqa: BLE001
@@ -99,10 +116,17 @@ def main() -> None:
         "exported": exported[:500],
         "errors": errors[:200],
         "error_count": len(errors),
+        "texture_cap": MAX_TEXTURE_EXPORTS,
+        "audio_cap": MAX_AUDIO_EXPORTS,
     }
     write_manifest(work_dir() / pack / "export-media.manifest.json", manifest)
     write_manifest(vault_game_ready() / "textures" / pack / "manifest.json", manifest)
     unreal.log(f"[VellumPipeline] export-media pack={pack} exported={len(exported)} errors={len(errors)}")
+    return manifest
+
+
+def main() -> None:
+    run()
     quit_editor(0)
 
 

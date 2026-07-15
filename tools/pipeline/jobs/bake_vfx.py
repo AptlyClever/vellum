@@ -7,9 +7,9 @@ script stays resilient and artifact-gated. Env: VELLUM_PACK, VELLUM_CONTENT_ROOT
 """
 from __future__ import annotations
 
-import json
 import sys
 from pathlib import Path
+from typing import Any
 
 _HERE = Path(__file__).resolve().parent
 if str(_HERE) not in sys.path:
@@ -22,7 +22,6 @@ from _common import pack_content_root, pack_name, quit_editor, vault_game_ready,
 
 def _list_niagara(package_root: str):
     registry = unreal.AssetRegistryHelpers.get_asset_registry()
-    # NiagaraSystem class path
     class_paths = [
         unreal.TopLevelAssetPath("/Script/Niagara", "NiagaraSystem"),
     ]
@@ -32,7 +31,6 @@ def _list_niagara(package_root: str):
         recursive_paths=True,
     )
     assets = list(registry.get_assets(filt) or [])
-    # Fallback: any path containing NS_
     if not assets:
         all_niag = registry.get_assets_by_class(
             unreal.TopLevelAssetPath("/Script/Niagara", "NiagaraSystem"), True
@@ -45,7 +43,8 @@ def _list_niagara(package_root: str):
     return assets
 
 
-def main() -> None:
+def run() -> dict[str, Any]:
+    """Author bake plan; does not quit the editor."""
     root = pack_content_root()
     pack = pack_name()
     wd = work_dir() / pack / "vfx"
@@ -53,14 +52,14 @@ def main() -> None:
     out_dir = vault_game_ready() / "vfx" / pack
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    listed = _list_niagara(root)
     systems = []
-    for asset_data in _list_niagara(root):
+    for asset_data in listed:
         name = str(asset_data.asset_name)
         pkg = str(asset_data.package_name)
         # Prefer *Single over *Loop siblings (product filter)
         if name.endswith("_Loop") and any(
-            str(a.asset_name) == name[: -len("_Loop")] + "_Single"
-            for a in _list_niagara(root)
+            str(a.asset_name) == name[: -len("_Loop")] + "_Single" for a in listed
         ):
             continue
         frame_dir = wd / "mrq" / name
@@ -91,25 +90,26 @@ def main() -> None:
     write_manifest(wd / "bake-plan.json", plan)
     write_manifest(out_dir / "bake-plan.json", plan)
 
-    # Lightweight Flipbook Baker probe note (manual API varies by UE version)
     notes = [
         "Use Niagara Editor Baker for sprite sheets when automatable; otherwise MRQ alpha PNG → ffmpeg.",
         "Enable project alpha post-process for transparent PNG (Engine/Rendering).",
     ]
-    write_manifest(
-        wd / "bake-vfx.manifest.json",
-        {
-            "job": "bake-vfx",
-            "pack": pack,
-            "ok": True,
-            "systems_found": len(systems),
-            "plan": str(wd / "bake-plan.json"),
-            "notes": notes,
-        },
-    )
+    manifest = {
+        "job": "bake-vfx",
+        "pack": pack,
+        "ok": True,
+        "systems_found": len(systems),
+        "plan": str(wd / "bake-plan.json"),
+        "notes": notes,
+    }
+    write_manifest(wd / "bake-vfx.manifest.json", manifest)
     unreal.log(f"[VellumPipeline] bake-vfx plan systems={len(systems)} pack={pack}")
-    # Persist plan path for outer PowerShell
     (wd / "READY").write_text("ok\n", encoding="utf-8")
+    return manifest
+
+
+def main() -> None:
+    run()
     quit_editor(0)
 
 

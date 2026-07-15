@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from typing import Any
 
 # Allow importing sibling _common when executed from disk
 _HERE = Path(__file__).resolve().parent
@@ -29,7 +30,8 @@ def _assets_of_class(class_path: str, package_root: str):
     return list(registry.get_assets(filt) or [])
 
 
-def main() -> None:
+def run() -> dict[str, Any]:
+    """Export meshes; does not quit the editor (safe to call from factory_all)."""
     root = pack_content_root()
     pack = pack_name()
     out_dir = vault_game_ready() / "models" / pack
@@ -85,9 +87,13 @@ def main() -> None:
 
     man_path = work_dir() / pack / "export-models.manifest.json"
     write_manifest(man_path, manifest)
-    out_manifest = out_dir / "manifest.json"
-    write_manifest(out_manifest, manifest)
+    write_manifest(out_dir / "manifest.json", manifest)
     unreal.log(f"[VellumPipeline] export-models pack={pack} exported={len(exported)} errors={len(errors)}")
+    return manifest
+
+
+def main() -> None:
+    manifest = run()
     quit_editor(0 if manifest["ok"] else 1)
 
 
