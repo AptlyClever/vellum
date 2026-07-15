@@ -13,9 +13,11 @@
 
 ```powershell
 # 1) Plan / inventory bake (Cmd)
-pwsh -File tools/pipeline/run_job.ps1 -Job bake-vfx -Pack FireworksV1
+pwsh -File tools/pipeline/run_job.ps1 `
+  -Job bake-vfx -Pack FireworksV1 -RunVfxMrq -MaxVfxSystems 1
 
-# 2) After MRQ frames exist, pack_vfx_media runs inside run_job for bake-vfx
+# 2) After MRQ frames exist, pack_vfx_media runs inside run_job for bake-vfx.
+#    If ffmpeg is on PATH this emits WebM; otherwise it emits a validated sprite sheet.
 # 3) Ingest manifest into Vellum (from hub or Aurora with vault mount)
 curl -sS -X POST http://192.168.68.93:8770/api/game-ready/ingest-manifest \
   -H "Content-Type: application/json" \

@@ -177,7 +177,6 @@ def register_element(
 _RUN_KIND_BY_SUFFIX = {
     ".glb": "model-gltf",
     ".gltf": "model-gltf",
-    ".png": "texture",
     ".jpg": "texture",
     ".jpeg": "texture",
     ".webp": "texture",
@@ -188,6 +187,62 @@ _RUN_KIND_BY_SUFFIX = {
 }
 
 MAX_RUN_ELEMENTS = 500
+
+
+def _path_parts_lower(path: Path) -> list[str]:
+    return [p.lower() for p in path.parts]
+
+
+def _is_vfx_sprite_sheet(path: Path) -> bool:
+    name = path.name.lower()
+    return (
+        path.suffix.lower() == ".png"
+        and ("sprite-sheet" in name or "spritesheet" in name)
+    )
+
+
+def _run_kind_for_path(path: Path) -> str | None:
+    if _is_vfx_sprite_sheet(path):
+        return "sprite-sheet"
+    if path.suffix.lower() == ".png":
+        return "texture"
+    return _RUN_KIND_BY_SUFFIX.get(path.suffix.lower())
+
+
+def _load_vfx_pack_metadata(extract_dir: Path) -> dict[str, dict[str, Any]]:
+    """Read pack_vfx_media manifests so catalog rows carry validation evidence."""
+    by_system: dict[str, dict[str, Any]] = {}
+    for manifest in extract_dir.rglob("pack-manifest.json"):
+        try:
+            data = json.loads(manifest.read_text(encoding="utf-8-sig"))
+        except Exception:  # noqa: BLE001
+            continue
+        packed = data.get("packed") or []
+        if not isinstance(packed, list):
+            continue
+        for entry in packed:
+            if isinstance(entry, dict) and entry.get("system"):
+                by_system[str(entry["system"])] = entry
+    return by_system
+
+
+def _vfx_meta_for_path(path: Path, by_system: dict[str, dict[str, Any]]) -> dict[str, Any] | None:
+    if path.suffix.lower() != ".webm" and not _is_vfx_sprite_sheet(path):
+        return None
+    entry = by_system.get(path.parent.name)
+    if not entry:
+        return None
+    meta: dict[str, Any] = {
+        "system": entry.get("system"),
+        "frames": entry.get("frames"),
+        "frame_rate": entry.get("frame_rate"),
+        "validation": entry.get("validation"),
+    }
+    if path.suffix.lower() == ".webm":
+        meta["webm_probe"] = entry.get("webm_probe")
+    elif _is_vfx_sprite_sheet(path):
+        meta["sprite_sheet"] = entry.get("sprite_sheet")
+    return {k: v for k, v in meta.items() if v is not None}
 
 
 def ingest_run_archive(extract_dir: Path, *, asset_id: str, pack: str) -> dict[str, Any]:
@@ -204,6 +259,7 @@ def ingest_run_archive(extract_dir: Path, *, asset_id: str, pack: str) -> dict[s
     # register_element() would rewrite the full YAML catalog per file.
     rows: list[dict[str, Any]] = []
     skipped = 0
+    vfx_meta_by_system = _load_vfx_pack_metadata(extract_dir)
     for path in sorted(extract_dir.rglob("*")):
         if not path.is_file():
             continue
@@ -219,14 +275,22 @@ def ingest_run_archive(extract_dir: Path, *, asset_id: str, pack: str) -> dict[s
                 )
             )
             continue
-        kind = _RUN_KIND_BY_SUFFIX.get(path.suffix.lower())
+        kind = _run_kind_for_path(path)
         if kind is None:
             skipped += 1
             continue
         if len(rows) >= MAX_RUN_ELEMENTS:
             skipped += 1
             continue
-        rows.append(_build_element(asset_id=asset_id, kind=kind, path=path, pack=pack))
+        rows.append(
+            _build_element(
+                asset_id=asset_id,
+                kind=kind,
+                path=path,
+                pack=pack,
+                meta=_vfx_meta_for_path(path, vfx_meta_by_system),
+            )
+        )
     if rows:
         doc = load_catalog()
         # Re-upload of the same pack replaces its previous rows instead of duplicating.

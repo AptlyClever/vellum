@@ -57,6 +57,7 @@ Recognized file mappings:
 | `.png`, `.jpg`, `.jpeg`, `.webp` | `texture` |
 | `.wav`, `.ogg`, `.mp3` | `audio` |
 | `.webm` | `vfx-clip` |
+| `*.sprite-sheet.png` under `vfx/` | `sprite-sheet` |
 | `bake-plan.json`, VFX manifests | `bake-plan` |
 | other `*manifest.json` | `manifest` |
 
@@ -80,6 +81,10 @@ Catalog presence is **conversion evidence**, not a final quality guarantee.
 A `bake-plan` proves discovery/planning only; playable VFX requires a
 `vfx-clip` or `sprite-sheet` that passes the acceptance gates in
 [`factory-operations.md`](./factory-operations.md).
+
+When `pack_vfx_media.ps1` writes `pack-manifest.json`, upload ingest carries
+per-system validation metadata onto VFX rows: frame count, dimensions, alpha,
+duration, and non-empty motion evidence.
 
 ## Publish to lane
 

@@ -67,19 +67,56 @@ def test_ingest_run_archive(tmp_path, monkeypatch):
     (run / "models" / "FireworksV1" / "SM_Rocket.glb").write_bytes(b"glb")
     (run / "textures" / "FireworksV1").mkdir(parents=True)
     (run / "textures" / "FireworksV1" / "T_Spark.png").write_bytes(b"png")
-    (run / "vfx" / "FireworksV1").mkdir(parents=True)
-    (run / "vfx" / "FireworksV1" / "bake-plan.json").write_text("{}", encoding="utf-8")
-    (run / "vfx" / "FireworksV1" / "pack-manifest.json").write_text("{}", encoding="utf-8")
+    # pack_factory_run.ps1 zips each source dir by its leaf, so a VFX-only upload
+    # extracted from vfx/FireworksV1 starts at FireworksV1/, not vfx/FireworksV1/.
+    (run / "FireworksV1").mkdir(parents=True)
+    (run / "FireworksV1" / "bake-plan.json").write_text("{}", encoding="utf-8")
+    (run / "FireworksV1" / "NS_Burst").mkdir()
+    (run / "FireworksV1" / "NS_Burst" / "NS_Burst.webm").write_bytes(b"webm")
+    (run / "FireworksV1" / "NS_Burst" / "NS_Burst.sprite-sheet.png").write_bytes(
+        b"png"
+    )
+    (run / "FireworksV1" / "pack-manifest.json").write_text(
+        json.dumps(
+            {
+                "packed": [
+                    {
+                        "system": "NS_Burst",
+                        "frames": 24,
+                        "frame_rate": 30,
+                        "validation": {
+                            "ok": True,
+                            "frame_count": 24,
+                            "alpha": True,
+                            "non_empty_motion": True,
+                        },
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
     (run / "models" / "FireworksV1" / "ignore.tmp").write_bytes(b"x")
 
     result = gr.ingest_run_archive(
         run, asset_id="fireworks-vol-1-niagara", pack="FireworksV1"
     )
     assert result["ok"] is True
-    assert result["registered"] == 4
+    assert result["registered"] == 6
     assert result["skipped"] == 1
-    kinds = {r["kind"] for r in gr.list_elements(asset_id="fireworks-vol-1-niagara", limit=50)}
-    assert kinds == {"model-gltf", "texture", "bake-plan"}
+    rows = gr.list_elements(asset_id="fireworks-vol-1-niagara", limit=50)
+    kinds = {r["kind"] for r in rows}
+    assert kinds == {
+        "model-gltf",
+        "texture",
+        "bake-plan",
+        "manifest",
+        "vfx-clip",
+        "sprite-sheet",
+    }
+    vfx_rows = [r for r in rows if r["kind"] in {"vfx-clip", "sprite-sheet"}]
+    assert {r["meta"]["system"] for r in vfx_rows} == {"NS_Burst"}
+    assert all(r["meta"]["validation"]["alpha"] is True for r in vfx_rows)
 
 
 def test_upload_run_endpoint(tmp_path, monkeypatch):

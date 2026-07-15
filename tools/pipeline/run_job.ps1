@@ -14,6 +14,8 @@ param(
   [string]$VaultGameReady = "",
   [string]$WorkDir = "",
   [switch]$AllowGpu,
+  [switch]$RunVfxMrq,
+  [int]$MaxVfxSystems = $(if ($env:VELLUM_MAX_VFX_SYSTEMS) { [int]$env:VELLUM_MAX_VFX_SYSTEMS } else { 0 }),
   [int]$TimeoutSec = 7200
 )
 
@@ -111,10 +113,23 @@ if ($p.ExitCode -ne 0) {
   }
 }
 
+if ($RunVfxMrq) {
+  if ($Job -ne "bake-vfx") {
+    throw "RunVfxMrq is exclusive targeted work; run it with -Job bake-vfx, not $Job"
+  }
+  $mrqScript = Join-Path $PSScriptRoot "jobs\run_vfx_mrq.ps1"
+  if (-not (Test-Path $mrqScript)) {
+    throw "missing_mrq_script:$mrqScript"
+  }
+  & $mrqScript -Pack $Pack -Project $Project -UeCmd $UeCmd -WorkDir $WorkDir `
+    -MaxSystems $MaxVfxSystems -TimeoutSec $TimeoutSec
+}
+
 if ($Job -eq "bake-vfx" -or $Job -eq "factory-all") {
   $packScript = Join-Path $PSScriptRoot "jobs\pack_vfx_media.ps1"
   if (Test-Path $packScript) {
-    & $packScript -Pack $Pack -WorkDir $WorkDir -OutDir (Join-Path $VaultGameReady "vfx\$Pack")
+    & $packScript -Pack $Pack -WorkDir $WorkDir -OutDir (Join-Path $VaultGameReady "vfx\$Pack") `
+      -RequireArtifacts:$RunVfxMrq
   }
 }
 
