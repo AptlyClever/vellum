@@ -292,6 +292,7 @@ Get-ChildItem -LiteralPath $mrqRoot -Directory | ForEach-Object {
     webm = $null
     webm_probe = $null
     contained = $null
+    breakout = $null
     sprite_sheet = $null
   }
 
@@ -310,32 +311,39 @@ Get-ChildItem -LiteralPath $mrqRoot -Directory | ForEach-Object {
       Write-Warning "ffmpeg failed for $sys; keeping sprite sheet / frame validation only"
     }
 
-    # Contained derivative: tight-crop to visible content and cap size so TV
-    # runtimes decode a small anchored burst instead of a full 1080p canvas.
+    # Anchored derivatives: tight-crop to visible content and cap size so TV
+    # runtimes decode a small positioned burst instead of a full 1080p canvas.
+    # "contained" serves normal wins inside the anchor; "breakout" serves
+    # big-win escapes at a higher cap (until dedicated breakout media exists).
     if ($entry.webm) {
       $bbox = Get-AlphaBoundingBox -Frames $pngs
       if ($bbox) {
         $crop = Get-ContainedCrop -Bbox $bbox -FrameWidth $firstInfo.width -FrameHeight $firstInfo.height
-        $maxDim = 720
-        $scaleFactor = [Math]::Min(1.0, $maxDim / [double][Math]::Max($crop.width, $crop.height))
-        $outW = [Math]::Max(2, [int]([Math]::Floor($crop.width * $scaleFactor / 2) * 2))
-        $outH = [Math]::Max(2, [int]([Math]::Floor($crop.height * $scaleFactor / 2) * 2))
-        $destContained = Join-Path $clipDir "$sys.contained.webm"
-        $filter = "crop=$($crop.width):$($crop.height):$($crop.x):$($crop.y),scale=${outW}:${outH}"
-        & $ffmpeg.Source -y -hide_banner -loglevel error -f concat -safe 0 -r $FrameRate -i $list -vf $filter -c:v libvpx-vp9 -pix_fmt yuva420p -auto-alt-ref 0 $destContained
-        if ($LASTEXITCODE -eq 0 -and (Test-Path $destContained)) {
-          $entry.contained = @{
-            webm = $destContained
-            source_crop = @{ x = $crop.x; y = $crop.y; width = $crop.width; height = $crop.height }
-            width = $outW
-            height = $outH
-            probe = Get-WebMProbe -Path $destContained
+        foreach ($variant in @(
+          @{ name = "contained"; max_dim = 720 },
+          @{ name = "breakout"; max_dim = 960 }
+        )) {
+          $maxDim = $variant.max_dim
+          $scaleFactor = [Math]::Min(1.0, $maxDim / [double][Math]::Max($crop.width, $crop.height))
+          $outW = [Math]::Max(2, [int]([Math]::Floor($crop.width * $scaleFactor / 2) * 2))
+          $outH = [Math]::Max(2, [int]([Math]::Floor($crop.height * $scaleFactor / 2) * 2))
+          $destVariant = Join-Path $clipDir "$sys.$($variant.name).webm"
+          $filter = "crop=$($crop.width):$($crop.height):$($crop.x):$($crop.y),scale=${outW}:${outH}"
+          & $ffmpeg.Source -y -hide_banner -loglevel error -f concat -safe 0 -r $FrameRate -i $list -vf $filter -c:v libvpx-vp9 -pix_fmt yuva420p -auto-alt-ref 0 $destVariant
+          if ($LASTEXITCODE -eq 0 -and (Test-Path $destVariant)) {
+            $entry[$variant.name] = @{
+              webm = $destVariant
+              source_crop = @{ x = $crop.x; y = $crop.y; width = $crop.width; height = $crop.height }
+              width = $outW
+              height = $outH
+              probe = Get-WebMProbe -Path $destVariant
+            }
+          } else {
+            Write-Warning "$($variant.name) derivative failed for $sys"
           }
-        } else {
-          Write-Warning "contained derivative failed for $sys; full-frame webm only"
         }
       } else {
-        Write-Warning "no visible pixels found for contained crop of $sys"
+        Write-Warning "no visible pixels found for anchored derivatives of $sys"
       }
     }
   } else {

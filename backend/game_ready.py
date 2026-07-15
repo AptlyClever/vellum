@@ -238,11 +238,15 @@ def _vfx_meta_for_path(path: Path, by_system: dict[str, dict[str, Any]]) -> dict
         "frame_rate": entry.get("frame_rate"),
         "validation": entry.get("validation"),
     }
-    if path.name.lower().endswith(".contained.webm"):
-        meta["variant"] = "contained"
-        contained = entry.get("contained") or {}
-        meta["contained"] = {
-            k: contained.get(k) for k in ("source_crop", "width", "height")
+    name = path.name.lower()
+    variant = next(
+        (v for v in ("contained", "breakout") if name.endswith(f".{v}.webm")), None
+    )
+    if variant:
+        meta["variant"] = variant
+        details = entry.get(variant) or {}
+        meta[variant] = {
+            k: details.get(k) for k in ("source_crop", "width", "height")
         }
     elif path.suffix.lower() == ".webm":
         meta["webm_probe"] = entry.get("webm_probe")
