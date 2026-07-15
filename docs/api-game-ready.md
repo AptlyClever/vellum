@@ -29,6 +29,58 @@ Kinds: `vfx-clip`, `sprite-sheet`, `model-gltf`, `texture`, `audio`, `bake-plan`
 
 Copies referenced artifacts under vault `05-derived-renders/game-ready/` and appends catalog rows (`data/game-ready.yaml` + vault index).
 
+This path is retained for targeted/manual manifest ingestion. Normal Aurora
+operation uses the run-upload endpoint below.
+
+## Upload a factory run
+
+`POST /api/assets/{asset_id}/game-ready/upload-run`
+
+Multipart form:
+
+- `pack`: Unreal Content folder / factory pack name
+- `archive`: ZIP produced by `tools/pipeline/pack_factory_run.ps1`
+
+The hub:
+
+1. extracts the run;
+2. recognizes portable files and manifests;
+3. copies them under vault `05-derived-renders/game-ready/`;
+4. replaces prior catalog rows for the same asset + pack;
+5. writes the local and vault-mirror catalogs once.
+
+Recognized file mappings:
+
+| Extension/file | Catalog kind |
+| --- | --- |
+| `.glb`, `.gltf` | `model-gltf` |
+| `.png`, `.jpg`, `.jpeg`, `.webp` | `texture` |
+| `.wav`, `.ogg`, `.mp3` | `audio` |
+| `.webm` | `vfx-clip` |
+| `bake-plan.json`, VFX manifests | `bake-plan` |
+| other `*manifest.json` | `manifest` |
+
+Ingest is capped at 500 rows per run. Aurora smart-ZIP packing sends at most
+480 files to leave room for manifests.
+
+Example response:
+
+```json
+{
+  "schema_version": 1,
+  "ok": true,
+  "asset_id": "fireworks-vol-1-niagara",
+  "pack": "FireworksV1",
+  "registered": 42,
+  "skipped": 0
+}
+```
+
+Catalog presence is **conversion evidence**, not a final quality guarantee.
+A `bake-plan` proves discovery/planning only; playable VFX requires a
+`vfx-clip` or `sprite-sheet` that passes the acceptance gates in
+[`factory-operations.md`](./factory-operations.md).
+
 ## Publish to lane
 
 `POST /api/game-ready/elements/{id}/publish`

@@ -12,9 +12,8 @@ Do not invent next work from chat memory when this file exists.
 from __future__ import annotations
 
 import argparse
-import json
 import urllib.request
-from collections import Counter
+import json
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -38,10 +37,10 @@ def main() -> int:
     ops = _get(base, "/api/ops/now?engine=unreal")
     av = _get(base, "/api/import/availability?engine=unreal")
     cov = _get(base, "/api/import/coverage?engine=unreal")
-    jobs = _get(base, "/api/jobs?limit=100").get("jobs") or []
+    queue = _get(base, "/api/import/queue?engine=unreal&limit=100")
+    game_ready = _get(base, "/api/game-ready/elements?limit=1000")
 
     counts = av.get("counts") or {}
-    finish = ops.get("finish") or {}
     op = ops.get("operator") or {}
     by = av.get("by_asset_id") or {}
     assets = {
@@ -58,29 +57,31 @@ def main() -> int:
             out.append(str(a.get("display_name") or aid))
         return sorted(out)
 
-    caps = [j for j in jobs if j.get("kind") == "ue_capture"]
-    running = [j for j in caps if j.get("status") == "running"]
-    queued = [j for j in caps if j.get("status") == "queued"]
-    queued = sorted(queued, key=lambda j: j.get("created_at") or "")
+    deferred = queue.get("deferred_epic") or []
+    blocked = queue.get("blocked_epic") or []
+    game_ready_count = int(game_ready.get("count") or 0)
+    game_ready_label = f"{game_ready_count}+" if game_ready_count >= 1000 else str(
+        game_ready_count
+    )
 
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     lines = [
         "# OPS_NOW — Vellum (binding)",
         "",
-        f"> Regenerated: `{now}` via `tools/ops_now.py`  ",
-        f"> API: `{base}`  ",
+        f"> Regenerated: `{now}` via `tools/ops_now.py`",
+        f"> API: `{base}`",
         "> **Agents must read this before inventing next work.** Refresh with "
         "`PYTHONPATH=. python3 tools/ops_now.py`.",
         "",
         "## Mission (do not renegotiate in chat)",
         "",
-        "1. Finish lookdev for every pack **already on F: / vault-staged** "
-        "(texture → derive; Niagara/VFX → single-flight `ue_capture` MRQ).",
-        "2. Do **not** wait on the operator for agent-owned steps.",
-        "3. **Need download** is unfinished inventory. Close it with agent-owned "
-        "VaultCache fill + `host_fab_install` — not parking, not 'hand-click 19×'.",
-        "4. Unity stays parked.",
-        "5. CFD A–F is already met; this is post-CFD finish-line ops.",
+        "1. Preserve boring intake: after Fab puts content in AuroraVellum, "
+        "reconcile owns register, stage, P4, validation, and conversion.",
+        "2. Never present `awaiting conversion (auto)` or lookdev as operator work.",
+        "3. Complete Project listings are deferred/non-blocking until a game needs them.",
+        "4. Build the missing product slice: execute Niagara bake plans into validated "
+        "WebM/sprite-sheet artifacts and prove one in a Games runtime.",
+        "5. Keep Unity parked and the Capture agent / warm Lookdev Worker frozen.",
         "",
         "## Scoreboard (Unreal)",
         "",
@@ -90,43 +91,29 @@ def main() -> int:
         f"| On disk (awaiting auto conversion) | {counts.get('on_disk', 0)} |",
         f"| Vault only | {counts.get('vault', 0)} |",
         f"| Installable (VaultCache) | {counts.get('installable', 0)} |",
-        f"| Need download | {counts.get('need_download', 0)} |",
+        f"| Active acquisition blocked | {len(blocked)} |",
+        f"| Deferred Complete Projects | {len(deferred)} |",
         f"| Coverage on_disk / staged | {cov.get('on_disk_count')} / {cov.get('vault_staged_count')} |",
+        f"| Game-ready elements listed | {game_ready_label} (API cap 1000) |",
         "",
-        "## Finish (system truth — not chat)",
+        "## Intake closure (system truth — not chat)",
         "",
-        f"- **Inventory Ready:** `{finish.get('percent_complete')}%` "
-        f"({finish.get('ready')}/{finish.get('total')}; remaining {finish.get('remaining')})",
-        f"- **Done:** `{finish.get('done')}`",
+        f"- **Active intake closed:** `{len(blocked) == 0 and cov.get('orphan_count', 0) == 0}`",
+        f"- **Blocked / orphan / deferred:** `{len(blocked)}` / "
+        f"`{cov.get('orphan_count', 0)}` / `{len(deferred)}`",
+        "- **Product complete:** `False` — playable Niagara media + runtime proof remain",
         f"- **Operator responsibility:** `{op.get('responsibility')}` · redeem `{op.get('redeem')}`",
         f"- **Watch:** {op.get('how_to_watch')}",
         "",
-        "## Active capture pipeline (single-flight)",
+        "## Factory ownership and continuation",
+        "",
+        "- Controller: `tools/pipeline/reconcile_aurora.ps1` (logon + hourly)",
+        "- Runtime: `factory-all`, one UE boot/pack, 3 isolated parallel workers",
+        "- Current evidence means catalog presence; a bake plan is not a playable VFX clip",
+        "- Next slice: MRQ/Niagara Baker → transparent WebM/sprite sheet → validation → game proof",
+        "- Contract: `docs/factory-operations.md`",
         "",
     ]
-    if running:
-        run_prog = {
-            str(r.get("job_id")): r
-            for r in ((ops.get("capture") or {}).get("running") or [])
-        }
-        for j in running:
-            info = run_prog.get(str(j.get("job_id"))) or {}
-            stall = " STALLED" if info.get("stalled") else ""
-            pct = info.get("percent")
-            phase = info.get("phase") or ""
-            extra = f" · {pct}% · {phase}{stall}" if phase or pct is not None else stall
-            lines.append(
-                f"- **RUNNING:** `{j.get('asset_id')}` (`{j.get('job_id')}`){extra}"
-            )
-    else:
-        lines.append("- **RUNNING:** none — agent idle or stuck; check Aurora `VellumUeAgent`")
-    lines.append("")
-    lines.append(f"- **Queued ({len(queued)}):**")
-    if queued:
-        for j in queued:
-            lines.append(f"  - `{j.get('asset_id')}`")
-    else:
-        lines.append("  - (empty)")
     lines.extend(
         [
             "",
@@ -143,28 +130,47 @@ def main() -> int:
     lines.extend(
         [
             "",
-            "## Need download (unfinished — agent must close VaultCache → install)",
+            f"## Blocked acquisition ({len(blocked)} operator-visible)",
             "",
         ]
     )
-    for n in names("need_download"):
-        lines.append(f"- {n}")
+    if blocked:
+        for row in blocked:
+            lines.append(
+                f"- {row.get('display_name') or row.get('asset_id')}: "
+                f"{(row.get('acquisition') or {}).get('operator_hint') or row.get('detail')}"
+            )
+    else:
+        lines.append("- (none)")
     lines.extend(
         [
             "",
-            "## Forbidden excuses",
+            f"## Deferred Complete Projects ({len(deferred)}; no work owed)",
             "",
-            "- \"when the agent can\" / optional MRQ for Niagara",
-            "- Fab catalog thumbs counting as Niagara lookdev done",
-            "- Asking the operator before derive/capture for staged packs",
-            "- Treating Need download as a mystery after seed+install coverage already said it",
-            "- Parking / relabeling unfinished Fab downloads as 'not operator homework'",
-            "- Asking the operator to hand-click Add-to-Project N times after assuring Fab was done",
+        ]
+    )
+    if deferred:
+        for row in deferred:
+            lines.append(f"- {row.get('display_name') or row.get('asset_id')}")
+    else:
+        lines.append("- (none)")
+    lines.extend(
+        [
+            "",
+            "## Truth rules",
+            "",
+            "- Process existence or a launch message is not progress evidence.",
+            "- Verify machine activity, fresh manifests/plausible counts, catalog rows, "
+            "and reconcile exceptions.",
+            "- Do not count a Niagara bake plan as a playable game element.",
+            "- Do not revive retired capture/lookdev control planes.",
+            "- Do not turn deferred Complete Projects into operator homework.",
             "",
             "## Health snapshot",
             "",
             f"- jobs_queued (health): `{health.get('jobs_queued')}`",
-            f"- capture status mix: `{dict(Counter(j.get('status') for j in caps))}`",
+            f"- reconcile/import actionable: `{queue.get('count', 0)}`",
+            f"- acquisition blocked/deferred: `{len(blocked)}` / `{len(deferred)}`",
             "",
             "## Refresh",
             "",

@@ -1,8 +1,8 @@
-"""Operator import flow — pack checklist, vault stage, content_root.
+"""Product import/reconcile flow — Library, vault, conversion, availability.
 
-Goal: operator stays in Vellum for Redeemed → In project → Staged → Captured.
-Fab Add-to-Project UI is abandoned: install from Epic VaultCache via host_fab_install,
-then vault stage via host_stage.
+Epic/Fab acquisition remains a human UI boundary when required. Once content
+appears in AuroraVellum, reconcile owns register, stage, P4, validation, and
+machine conversion. "Lookdev" is not an operator gate.
 """
 
 from __future__ import annotations
@@ -24,6 +24,19 @@ TRUSTED_CAPTURE_NOTE = "via mrq-batch"
 TRUSTED_CAPTURE_AFTER = os.environ.get(
     "VELLUM_TRUSTED_CAPTURE_AFTER", "2026-07-13T23:15:00"
 )
+INACTIVE_REDEMPTION_STATES = {
+    "superseded",
+    "retired",
+    "archived",
+    "deleted",
+}
+
+
+def _is_inactive_asset(asset: dict[str, Any]) -> bool:
+    return (
+        str(asset.get("redemption_status") or "").lower()
+        in INACTIVE_REDEMPTION_STATES
+    )
 
 
 def _now() -> str:
@@ -340,6 +353,8 @@ def availability_index(
     counts = {s: 0 for s in AVAILABILITY_STATES}
     for a in assets:
         aid = str(a["id"])
+        if _is_inactive_asset(a):
+            continue
         # Trust register stage pointer for list/ops. Do not Path.exists() across
         # vault NFS on every homepage load — that alone made /api/ops/now ~30s+.
         raw = str(a.get("raw_location") or "").strip()
@@ -1059,12 +1074,7 @@ def import_queue(*, engine: str | None = "unreal", limit: int = 40) -> dict[str,
     deferred_epic: list[dict[str, Any]] = []
     for a in assets:
         aid = str(a["id"])
-        if str(a.get("redemption_status") or "").lower() in {
-            "superseded",
-            "retired",
-            "archived",
-            "deleted",
-        }:
+        if _is_inactive_asset(a):
             continue
         row = by.get(aid) or {}
         state = str(row.get("state") or "need_download")
@@ -1383,12 +1393,7 @@ def coverage(*, engine: str = "unreal", host_id: str | None = None) -> dict[str,
     staged: list[dict[str, Any]] = []
     for a in assets:
         aid = str(a["id"])
-        if str(a.get("redemption_status") or "").lower() in {
-            "superseded",
-            "retired",
-            "archived",
-            "deleted",
-        }:
+        if _is_inactive_asset(a):
             continue
         if aid in staged_by_id:
             staged.append(

@@ -30,6 +30,7 @@ pytest -q
 | --- | --- |
 | **[DEV_TRACKER.md](./DEV_TRACKER.md)** | Active issue + Governing CFD |
 | **[docs/asset-pipeline-product.md](./docs/asset-pipeline-product.md)** | **Product SoT** — Library + Factory + catalog |
+| **[docs/factory-operations.md](./docs/factory-operations.md)** | Binding factory runtime, evidence, recovery, and continuation point |
 | **[docs/intake-runbook.md](./docs/intake-runbook.md)** | Redeem → Fab → P4 → register |
 | **[docs/cfd/](./docs/cfd/)** | CFD mirrors + architecture research |
 | **[docs/humble-asset-vault-inventory.md](./docs/humble-asset-vault-inventory.md)** | Authoritative **37-item** inventory (keys excluded) |
@@ -44,11 +45,17 @@ pytest -q
 - **D (shipped):** Axiom Read `#/axiom/vellum` + `?embed=axiom`
 - **E (shipped):** Epic Add-to-Project → vault stage (Fireworks pilot); `PATCH /api/assets`; `docs/slice-e-epic-staging.md`
 - **F (shipped):** lookdev derive into project lanes (`docs/api-lookdev.md`); Fireworks stills → slots + hail-overlay
-- **Now:** **Asset Pipeline Product** (`docs/asset-pipeline-product.md`) — curated Library + P4, Conversion Factory (`tools/pipeline/`), game-ready catalog. Capture science-project frozen as `prototype-v0`. Unity reconcile parked.
+- **Now:** **Asset Pipeline Product** (`docs/asset-pipeline-product.md`) —
+  curated Library + P4, automatic reconcile, parallel Conversion Factory, and
+  game-ready catalog. Intake and baseline extraction are reconciled. The next
+  required slice is real Niagara MRQ/Baker output (transparent WebM / sprite
+  sheets) proven in a Games runtime. Capture science-project remains frozen as
+  `prototype-v0`; Unity reconcile remains parked.
 
 
 ## Boundaries
 
 - Raw assets and keys stay under `/mnt/data/vault/vellum` (private data), never in this repo.
-- Product repos consume derived lookdev only.
+- Product repos consume validated game-ready artifacts, never raw marketplace
+  packs. A bake plan is evidence, not a playable artifact.
 - Redeem-by expiry is an indicator only — it does not invalidate staged assets.

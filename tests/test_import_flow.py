@@ -404,6 +404,36 @@ def test_availability_row_priority() -> None:
     )["state"] == "need_download"
 
 
+def test_availability_index_excludes_superseded_rows(monkeypatch) -> None:
+    assets = [
+        {
+            "id": "current-pack",
+            "display_name": "Current Pack",
+            "engine": "unreal",
+            "redemption_status": "owned",
+        },
+        {
+            "id": "old-duplicate",
+            "display_name": "Old Duplicate",
+            "engine": "unreal",
+            "redemption_status": "superseded",
+        },
+    ]
+    monkeypatch.setattr(register_mod, "list_assets", lambda: assets)
+    monkeypatch.setattr(
+        import_flow_mod.ue_hosts_mod,
+        "list_content_folders",
+        lambda host_id=None: {"folders": []},
+    )
+    monkeypatch.setattr(import_flow_mod, "_lookdev_asset_ids", lambda: set())
+    monkeypatch.setattr(import_flow_mod, "fab_install_candidates", lambda asset_id: [])
+    import_flow_mod.clear_ops_caches()
+
+    result = import_flow_mod.availability_index(force_refresh=True)
+    assert set(result["by_asset_id"]) == {"current-pack"}
+    assert result["counts"]["need_download"] == 1
+
+
 def test_assets_list_includes_availability(tmp_path: Path, monkeypatch) -> None:
     reg = tmp_path / "reg.yaml"
     monkeypatch.setenv("VELLUM_REGISTER_PATH", str(reg))

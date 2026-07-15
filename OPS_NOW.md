@@ -1,80 +1,74 @@
 # OPS_NOW — Vellum (binding)
 
-> Regenerated: `2026-07-14T18:19:07Z` via `tools/ops_now.py`  
-> API: `http://192.168.68.93:8770`  
+> Regenerated: `2026-07-15T02:00:18Z` via `tools/ops_now.py`
+> API: `http://192.168.68.93:8770`
 > **Agents must read this before inventing next work.** Refresh with `PYTHONPATH=. python3 tools/ops_now.py`.
 
 ## Mission (do not renegotiate in chat)
 
-1. Finish lookdev for every pack **already on F: / vault-staged** (texture → derive; Niagara/VFX → single-flight `ue_capture` MRQ).
-2. Do **not** wait on the operator for agent-owned steps.
-3. **Need download** is unfinished inventory. Close it with agent-owned VaultCache fill + `host_fab_install` — not parking, not 'hand-click 19×'.
-4. Unity stays parked.
-5. CFD A–F is already met; this is post-CFD finish-line ops.
+1. Preserve boring intake: after Fab puts content in AuroraVellum, reconcile owns register, stage, P4, validation, and conversion.
+2. Never present `awaiting conversion (auto)` or lookdev as operator work.
+3. Complete Project listings are deferred/non-blocking until a game needs them.
+4. Build the missing product slice: execute Niagara bake plans into validated WebM/sprite-sheet artifacts and prove one in a Games runtime.
+5. Keep Unity parked and the Capture agent / warm Lookdev Worker frozen.
 
 ## Scoreboard (Unreal)
 
 | State | Count |
 | --- | ---: |
-| Ready | 23 |
-| On disk (need lookdev) | 12 |
+| Ready | 39 |
+| On disk (awaiting auto conversion) | 0 |
 | Vault only | 0 |
 | Installable (VaultCache) | 0 |
-| Need download | 7 |
-| Coverage on_disk / staged | 35 / 25 |
+| Active acquisition blocked | 0 |
+| Deferred Complete Projects | 3 |
+| Coverage on_disk / staged | 39 / 39 |
+| Game-ready elements listed | 1000+ (API cap 1000) |
 
-## Finish (system truth — not chat)
+## Intake closure (system truth — not chat)
 
-- **Inventory Ready:** `55%` (23/42; remaining 19)
-- **Done:** `False`
+- **Active intake closed:** `True`
+- **Blocked / orphan / deferred:** `0` / `0` / `3`
+- **Product complete:** `False` — playable Niagara media + runtime proof remain
 - **Operator responsibility:** `none` · redeem `closed`
 - **Watch:** http://192.168.68.93:8770/ — Live ops strip (poll /api/ops/pulse)
 
-## Active capture pipeline (single-flight)
+## Factory ownership and continuation
 
-- **RUNNING:** `slash-trail-fx-elemental` (`job-20260714-181802-c5eb61`) · 5% · Phase B batch author still running (57s)
+- Controller: `tools/pipeline/reconcile_aurora.ps1` (logon + hourly)
+- Runtime: `factory-all`, one UE boot/pack, 3 isolated parallel workers
+- Current evidence means catalog presence; a bake plan is not a playable VFX clip
+- Next slice: MRQ/Niagara Baker → transparent WebM/sprite sheet → validation → game proof
+- Contract: `docs/factory-operations.md`
 
-- **Queued (0):**
-  - (empty)
 
-## On disk — still need lookdev
+## On disk — awaiting auto conversion (factory-owned)
 
-- Arabic Dock
-- Glass Bundle Material
-- Magic Abilities Vol. 3 Niagara
-- Magic Projectiles Vol.3 - Niagara
-- Master Mega Dirty Wall Pack Material 4K
-- Middle Eastern Town
-- Motel Reception Interior Environment
-- Niagara Mega Pack Vol. 3
-- Oil Rig Liope
-- Slash Trail FX Elemental
-- Stylized VFX - Water
-- Vertical Warehouse
+- (none)
 
-## Need download (unfinished — agent must close VaultCache → install)
+## Blocked acquisition (0 operator-visible)
+
+- (none)
+
+## Deferred Complete Projects (3; no work owed)
 
 - Abandoned Cabin
-- Arabic Fortress
-- Ice Fortress
 - Loot Drops Vol.2 - Niagara
-- Mega Marble Material 4K
 - The Count's Church
-- The Lords' Mansion
 
-## Forbidden excuses
+## Truth rules
 
-- "when the agent can" / optional MRQ for Niagara
-- Fab catalog thumbs counting as Niagara lookdev done
-- Asking the operator before derive/capture for staged packs
-- Treating Need download as a mystery after seed+install coverage already said it
-- Parking / relabeling unfinished Fab downloads as 'not operator homework'
-- Asking the operator to hand-click Add-to-Project N times after assuring Fab was done
+- Process existence or a launch message is not progress evidence.
+- Verify machine activity, fresh manifests/plausible counts, catalog rows, and reconcile exceptions.
+- Do not count a Niagara bake plan as a playable game element.
+- Do not revive retired capture/lookdev control planes.
+- Do not turn deferred Complete Projects into operator homework.
 
 ## Health snapshot
 
-- jobs_queued (health): `11`
-- capture status mix: `{'running': 1, 'failed': 28, 'succeeded': 2, 'cancelled': 12}`
+- jobs_queued (health): `0`
+- reconcile/import actionable: `0`
+- acquisition blocked/deferred: `0` / `3`
 
 ## Refresh
 

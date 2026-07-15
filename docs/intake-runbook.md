@@ -10,9 +10,9 @@
 | 1 | Human | Redeem / purchase on Epic/Fab if needed (keys never enter git) |
 | 2 | Human | Fab **Add to Project** → **AuroraVellum** only (`F:\Games\AuroraVellum`). Pack lands at `Content/<PackFolder>` — leave it there. **Never move pack folders on disk** (breaks .uasset references; see [`library-project.md`](./library-project.md)) |
 | 3 | Human / agent | Open project once if Fab prompts compile |
-| 4 | Agent | `p4 reconcile` + `p4 submit -d "Add pack <id>"` (see [`p4-library.md`](./p4-library.md)) |
-| 5 | Agent | Stage pack to vault + update register (`content_root=/Game/<Pack>`, `host_content_path`, staged files). Prefer Vellum `host_stage` / `stage_pack_to_vellum.py` |
-| 6 | CI | Conversion Factory jobs: `export-models` / `bake-vfx` / `export-media` for that pack (artifact-gated) |
+| 4 | Reconcile | `p4 reconcile` + submit (see [`p4-library.md`](./p4-library.md)) |
+| 5 | Reconcile | Stage pack to vault + update register (`content_root=/Game/<Pack>`, `host_content_path`, staged files) |
+| 6 | Reconcile | Conversion Factory `factory-all`: models + media + VFX plan in one Unreal boot; upload game-ready rows |
 | 7 | Operator | Publish game-ready rows to lanes from Vellum catalog UI |
 
 ## Do not
@@ -43,20 +43,35 @@ operator bookkeeping:
 5. Stage un-vaulted packs (zip upload)
 6. `p4 reconcile` + submit Content changes
 7. Unreal load-check (`inventory-pack`) new/changed packs
-7. Conversion Factory — packs with no game-ready catalog evidence get
-   export-models / export-media / bake-vfx run headless and the output tree
-   uploaded to the hub (`/api/assets/{id}/game-ready/upload-run`); this is
-   what clears "awaiting conversion" — never an operator step
-8. Corrupt-package scan + quarantine report
-9. Launcher visibility guard — keeps `CreatedProjectPaths=F:/Games` (the
+8. Conversion Factory — packs with no game-ready catalog evidence enter a
+   bounded queue. Three isolated workers run `factory-all` (models + media +
+   VFX plan) with one Unreal boot per pack, smart-ZIP outputs, and upload them
+   to `/api/assets/{id}/game-ready/upload-run`. This clears
+   `awaiting conversion (auto)` without operator action.
+9. Corrupt-package scan + quarantine report
+10. Launcher visibility guard — keeps `CreatedProjectPaths=F:/Games` (the
    **parent** folder, not the project folder) in the launcher ini so
    AuroraVellum always appears in Fab's *Add to Project* dropdown
-10. Stray-project scan (Fab installed into the wrong project)
+11. Stray-project scan (Fab installed into the wrong project)
 
 Everything it cannot fix lands in
 `F:\Games\AuroraVellum\Saved\VellumReconcile\reconcile_report.json`
 as an exception with a fix hint. **After adding a pack, either wait for the
 hourly run or run the script once — no manual registration steps.**
+
+Factory implementation, status semantics, observability, recovery, and the
+next product slice are binding in
+[`factory-operations.md`](./factory-operations.md).
+
+### What the operator still owns
+
+- Redeem/purchase in Epic/Fab.
+- Use Fab **Add to Project** when the listing supports it.
+- Decide when a deferred Complete Project pack is worth migrating.
+- Select which validated game-ready elements are published into a game lane.
+
+The operator does **not** manually register, stage, submit, inventory,
+"lookdev", or convert a pack after it appears in the Library.
 
 ### How "not on Aurora" packs are classified
 
