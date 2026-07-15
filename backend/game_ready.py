@@ -238,7 +238,13 @@ def _vfx_meta_for_path(path: Path, by_system: dict[str, dict[str, Any]]) -> dict
         "frame_rate": entry.get("frame_rate"),
         "validation": entry.get("validation"),
     }
-    if path.suffix.lower() == ".webm":
+    if path.name.lower().endswith(".contained.webm"):
+        meta["variant"] = "contained"
+        contained = entry.get("contained") or {}
+        meta["contained"] = {
+            k: contained.get(k) for k in ("source_crop", "width", "height")
+        }
+    elif path.suffix.lower() == ".webm":
         meta["webm_probe"] = entry.get("webm_probe")
     elif _is_vfx_sprite_sheet(path):
         meta["sprite_sheet"] = entry.get("sprite_sheet")

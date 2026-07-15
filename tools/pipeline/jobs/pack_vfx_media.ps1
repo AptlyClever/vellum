@@ -117,6 +117,66 @@ function Get-FrameVisualStats {
   }
 }
 
+function Get-AlphaBoundingBox {
+  <#
+    Union bounding box of visible (alpha >= 16) pixels across sampled frames.
+    Runtimes position effects relative to their anchor, so the contained
+    derivative must crop away the empty canvas around the actual burst.
+  #>
+  param(
+    [Parameter(Mandatory = $true)][System.IO.FileInfo[]]$Frames,
+    [int]$MaxSampledFrames = 12,
+    [int]$PixelStep = 6
+  )
+  Add-Type -AssemblyName System.Drawing
+  $stride = [Math]::Max(1, [Math]::Floor($Frames.Count / $MaxSampledFrames))
+  $minX = [int]::MaxValue; $minY = [int]::MaxValue
+  $maxX = -1; $maxY = -1
+  for ($f = 0; $f -lt $Frames.Count; $f += $stride) {
+    $bitmap = [System.Drawing.Bitmap]::new($Frames[$f].FullName)
+    try {
+      for ($y = 0; $y -lt $bitmap.Height; $y += $PixelStep) {
+        for ($x = 0; $x -lt $bitmap.Width; $x += $PixelStep) {
+          if ($bitmap.GetPixel($x, $y).A -ge 16) {
+            if ($x -lt $minX) { $minX = $x }
+            if ($x -gt $maxX) { $maxX = $x }
+            if ($y -lt $minY) { $minY = $y }
+            if ($y -gt $maxY) { $maxY = $y }
+          }
+        }
+      }
+    } finally {
+      $bitmap.Dispose()
+    }
+  }
+  if ($maxX -lt 0) { return $null }
+  [pscustomobject]@{
+    x = $minX
+    y = $minY
+    width = ($maxX - $minX + 1)
+    height = ($maxY - $minY + 1)
+  }
+}
+
+function Get-ContainedCrop {
+  <# Pad the content bbox, clamp to the frame, force even dimensions. #>
+  param(
+    [Parameter(Mandatory = $true)]$Bbox,
+    [Parameter(Mandatory = $true)][int]$FrameWidth,
+    [Parameter(Mandatory = $true)][int]$FrameHeight,
+    [int]$Padding = 24
+  )
+  $x = [Math]::Max(0, $Bbox.x - $Padding)
+  $y = [Math]::Max(0, $Bbox.y - $Padding)
+  $right = [Math]::Min($FrameWidth, $Bbox.x + $Bbox.width + $Padding)
+  $bottom = [Math]::Min($FrameHeight, $Bbox.y + $Bbox.height + $Padding)
+  $w = $right - $x
+  $h = $bottom - $y
+  if ($w % 2 -ne 0) { $w = [Math]::Max(2, $w - 1) }
+  if ($h % 2 -ne 0) { $h = [Math]::Max(2, $h - 1) }
+  [pscustomobject]@{ x = $x; y = $y; width = $w; height = $h }
+}
+
 function New-SpriteSheet {
   param(
     [Parameter(Mandatory = $true)][System.IO.FileInfo[]]$Frames,
@@ -231,6 +291,7 @@ Get-ChildItem -LiteralPath $mrqRoot -Directory | ForEach-Object {
     validation = $frameValidation
     webm = $null
     webm_probe = $null
+    contained = $null
     sprite_sheet = $null
   }
 
@@ -247,6 +308,35 @@ Get-ChildItem -LiteralPath $mrqRoot -Directory | ForEach-Object {
       $entry.webm_probe = Get-WebMProbe -Path $destWebm
     } else {
       Write-Warning "ffmpeg failed for $sys; keeping sprite sheet / frame validation only"
+    }
+
+    # Contained derivative: tight-crop to visible content and cap size so TV
+    # runtimes decode a small anchored burst instead of a full 1080p canvas.
+    if ($entry.webm) {
+      $bbox = Get-AlphaBoundingBox -Frames $pngs
+      if ($bbox) {
+        $crop = Get-ContainedCrop -Bbox $bbox -FrameWidth $firstInfo.width -FrameHeight $firstInfo.height
+        $maxDim = 720
+        $scaleFactor = [Math]::Min(1.0, $maxDim / [double][Math]::Max($crop.width, $crop.height))
+        $outW = [Math]::Max(2, [int]([Math]::Floor($crop.width * $scaleFactor / 2) * 2))
+        $outH = [Math]::Max(2, [int]([Math]::Floor($crop.height * $scaleFactor / 2) * 2))
+        $destContained = Join-Path $clipDir "$sys.contained.webm"
+        $filter = "crop=$($crop.width):$($crop.height):$($crop.x):$($crop.y),scale=${outW}:${outH}"
+        & $ffmpeg.Source -y -hide_banner -loglevel error -f concat -safe 0 -r $FrameRate -i $list -vf $filter -c:v libvpx-vp9 -pix_fmt yuva420p -auto-alt-ref 0 $destContained
+        if ($LASTEXITCODE -eq 0 -and (Test-Path $destContained)) {
+          $entry.contained = @{
+            webm = $destContained
+            source_crop = @{ x = $crop.x; y = $crop.y; width = $crop.width; height = $crop.height }
+            width = $outW
+            height = $outH
+            probe = Get-WebMProbe -Path $destContained
+          }
+        } else {
+          Write-Warning "contained derivative failed for $sys; full-frame webm only"
+        }
+      } else {
+        Write-Warning "no visible pixels found for contained crop of $sys"
+      }
     }
   } else {
     Write-Warning "ffmpeg not on PATH - generating sprite sheet only"

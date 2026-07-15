@@ -119,6 +119,34 @@ def test_ingest_run_archive(tmp_path, monkeypatch):
     assert all(r["meta"]["validation"]["alpha"] is True for r in vfx_rows)
 
 
+def test_vfx_meta_tags_contained_variant(tmp_path):
+    entry = {
+        "system": "NS_Burst",
+        "frames": 24,
+        "frame_rate": 30,
+        "validation": {"ok": True},
+        "contained": {
+            "source_crop": {"x": 468, "y": 216, "width": 972, "height": 864},
+            "width": 720,
+            "height": 640,
+            "probe": {"streams": []},
+        },
+    }
+    by_system = {"NS_Burst": entry}
+    sysdir = tmp_path / "NS_Burst"
+    sysdir.mkdir()
+    contained = sysdir / "NS_Burst.contained.webm"
+    contained.write_bytes(b"webm")
+    meta = gr._vfx_meta_for_path(contained, by_system)
+    assert meta["variant"] == "contained"
+    assert meta["contained"]["width"] == 720
+    assert meta["contained"]["source_crop"]["x"] == 468
+    full = sysdir / "NS_Burst.webm"
+    full.write_bytes(b"webm")
+    meta_full = gr._vfx_meta_for_path(full, by_system)
+    assert "variant" not in meta_full
+
+
 def test_upload_run_endpoint(tmp_path, monkeypatch):
     import io
     import zipfile
