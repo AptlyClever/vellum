@@ -52,6 +52,31 @@ def write_manifest(path: Path, payload: dict[str, Any]) -> None:
     path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
+def wait_for_asset_registry(package_root: str) -> None:
+    """Block until the asset registry actually knows about the pack.
+
+    On warm editor boots the registry scan is async and get_assets() returns
+    empty if queried too early — jobs would report 0 assets and "succeed".
+    """
+    import unreal  # type: ignore
+
+    registry = unreal.AssetRegistryHelpers.get_asset_registry()
+    try:
+        registry.scan_paths_synchronous([package_root], True)
+    except Exception:
+        pass
+    try:
+        registry.wait_for_completion()
+    except Exception:
+        # Older API: poll the loading flag.
+        import time as _time
+
+        for _ in range(600):
+            if not registry.is_loading_assets():
+                break
+            _time.sleep(0.5)
+
+
 def quit_editor(code: int = 0) -> None:
     try:
         import unreal  # type: ignore

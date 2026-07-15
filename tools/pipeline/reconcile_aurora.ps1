@@ -305,6 +305,7 @@ try {
         $out = Join-Path $work "game-ready-out"
         New-Item -ItemType Directory -Force -Path $work, $out | Out-Null
         $log = Join-Path $stateDir "factory-all-$packName.log"
+        $ErrorActionPreference = "Stop"
         $result = [ordered]@{
           pack = $packName; asset_id = $aid; ok = $false
           registered = 0; detail = ""; keep_zip = $false; zip = $null
@@ -324,8 +325,9 @@ try {
             return [pscustomobject]$result
           }
           $zipPath = Join-Path $stateDir "factory-$packName.zip"
-          & pwsh -NoProfile -File $packZipPath -SourceDirs $packOutDirs `
-            -DestinationZip $zipPath -MaxFiles 480
+          # In-process call: an external pwsh -File would splat the array into
+          # positional args and break parameter binding.
+          & $packZipPath -SourceDirs $packOutDirs -DestinationZip $zipPath -MaxFiles 480
           $resp = Invoke-RestMethod -Method Post `
             -Uri "$vellumBase/api/assets/$aid/game-ready/upload-run" `
             -Form @{ pack = $packName; archive = Get-Item $zipPath } -TimeoutSec 600

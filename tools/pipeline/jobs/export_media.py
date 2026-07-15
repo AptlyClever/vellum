@@ -13,7 +13,15 @@ if str(_HERE) not in sys.path:
 
 import unreal  # type: ignore
 
-from _common import pack_content_root, pack_name, quit_editor, vault_game_ready, work_dir, write_manifest
+from _common import (
+    pack_content_root,
+    pack_name,
+    quit_editor,
+    vault_game_ready,
+    wait_for_asset_registry,
+    work_dir,
+    write_manifest,
+)
 
 # Keep under hub MAX_RUN_ELEMENTS (500) with room for models/manifests.
 MAX_TEXTURE_EXPORTS = 200
@@ -34,6 +42,7 @@ def run() -> dict[str, Any]:
     """Export textures/audio; does not quit the editor."""
     root = pack_content_root()
     pack = pack_name()
+    wait_for_asset_registry(root)
     out_tex = vault_game_ready() / "textures" / pack
     out_aud = vault_game_ready() / "audio" / pack
     out_tex.mkdir(parents=True, exist_ok=True)
@@ -62,12 +71,7 @@ def run() -> dict[str, Any]:
             task.replace_identical = True
             task.prompt = False
             task.automated = True
-            exporters = unreal.Exporter.get_exporter(task.object, "PNG")
-            if not exporters:
-                ok = unreal.Exporter.run_asset_export_task(task)
-            else:
-                task.exporter = exporters[0]
-                ok = unreal.Exporter.run_asset_export_task(task)
+            ok = unreal.Exporter.run_asset_export_task(task)
             if ok and dest.exists():
                 exported.append(
                     {"kind": "texture", "asset": name, "path": str(dest), "bytes": dest.stat().st_size}

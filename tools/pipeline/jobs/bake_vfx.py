@@ -17,7 +17,15 @@ if str(_HERE) not in sys.path:
 
 import unreal  # type: ignore
 
-from _common import pack_content_root, pack_name, quit_editor, vault_game_ready, work_dir, write_manifest
+from _common import (
+    pack_content_root,
+    pack_name,
+    quit_editor,
+    vault_game_ready,
+    wait_for_asset_registry,
+    work_dir,
+    write_manifest,
+)
 
 
 def _list_niagara(package_root: str):
@@ -47,6 +55,7 @@ def run() -> dict[str, Any]:
     """Author bake plan; does not quit the editor."""
     root = pack_content_root()
     pack = pack_name()
+    wait_for_asset_registry(root)
     wd = work_dir() / pack / "vfx"
     wd.mkdir(parents=True, exist_ok=True)
     out_dir = vault_game_ready() / "vfx" / pack

@@ -73,7 +73,6 @@ $log = Join-Path $WorkDir "$Job-$Pack.log"
 $argList = @(
   "`"$Project`"",
   "-unattended", "-nopause", "-nosplash",
-  "-DDC-ForceMemoryCache",
   "-ExecutePythonScript=`"$pyExec`"",
   "-AbsLog=`"$log`""
 )

@@ -17,7 +17,15 @@ if str(_HERE) not in sys.path:
 
 import unreal  # type: ignore
 
-from _common import pack_content_root, pack_name, quit_editor, vault_game_ready, work_dir, write_manifest
+from _common import (
+    pack_content_root,
+    pack_name,
+    quit_editor,
+    vault_game_ready,
+    wait_for_asset_registry,
+    work_dir,
+    write_manifest,
+)
 
 
 def _assets_of_class(class_path: str, package_root: str):
@@ -34,6 +42,7 @@ def run() -> dict[str, Any]:
     """Export meshes; does not quit the editor (safe to call from factory_all)."""
     root = pack_content_root()
     pack = pack_name()
+    wait_for_asset_registry(root)
     out_dir = vault_game_ready() / "models" / pack
     out_dir.mkdir(parents=True, exist_ok=True)
     options = unreal.GLTFExportOptions()
