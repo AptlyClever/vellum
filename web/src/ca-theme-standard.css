@@ -4,9 +4,13 @@
  * aligned when this file changes.
  *
  * HTML contract:
- *   - Set data-ca-theme="light" | "dark" on <html>.
+ *   - Set data-ca-theme="light" | "dark" | "games" on <html>.
+ *   - Set data-ca-density="dense" | "default" | "airy" | "touch" (expression profiles).
+ *   - Set data-ca-motion="subtle" | "standard" | "celebratory" (expression profiles).
  *   - If you use Tailwind with darkMode: "class", also toggle class "dark" on
  *     <html> in sync with data-ca-theme (see THEMING.md in this repo).
+ *   - Or call foundation/expression/apply-expression-profile.ts with the app's
+ *     contracts/expression/<app>.expression.json.
  *
  * Typography: two-family stack — Plus Jakarta Sans for display / section titles;
  * Inter for body, UI chrome, and monospace reserved for technical strings
@@ -95,7 +99,42 @@
   --ca-status-info-fg: #a3cce8;
   --ca-status-info-muted: color-mix(in srgb, #356891 28%, var(--ca-surface));
   --ca-status-info-border: color-mix(in srgb, var(--ca-status-info-fg) 40%, var(--ca-surface-border));
+  /*
+   * Quiet hierarchy accents (promoted from Axiom Home v004 pixel calibration).
+   * Prefer these over ad-hoc muted hex in operator UI.
+   */
+  --ca-text-faint: #6b7c95;
+  --ca-border-soft: #1a2433;
+  --ca-progress-complete: #52b788;
+  --ca-progress-stalled: #e0a458;
+  --ca-on-brand-ink: #04141f;
+  /* Spacing scale (4px base). Density presets remap --ca-space-* consumers below. */
+  --ca-space-1: 0.25rem;
+  --ca-space-2: 0.5rem;
+  --ca-space-3: 0.75rem;
+  --ca-space-4: 1rem;
+  --ca-space-5: 1.25rem;
+  --ca-space-6: 1.5rem;
+  --ca-space-7: 1.75rem;
+  --ca-space-8: 2rem;
+  --ca-space-9: 2.25rem;
+  --ca-space-10: 2.5rem;
+  --ca-space-11: 2.75rem;
+  --ca-space-12: 3rem;
+  /* Radius scale */
+  --ca-radius-sm: 0.375rem;
   --ca-radius-md: 0.75rem;
+  --ca-radius-lg: 1rem;
+  --ca-radius-full: 9999px;
+  /* Control height (density remaps). Default / dense sit at compact console size. */
+  --ca-control-height: 2rem;
+  --ca-control-height-sm: 1.75rem;
+  --ca-control-height-lg: 2.25rem;
+  /* Motion (budget presets remap durations; prefers-reduced-motion zeros them). */
+  --ca-motion-duration-fast: 120ms;
+  --ca-motion-duration: 180ms;
+  --ca-motion-duration-slow: 280ms;
+  --ca-motion-ease: cubic-bezier(0.16, 1, 0.3, 1);
   --ca-shadow-lg: 0 1px 0 rgba(255, 255, 255, 0.05) inset, 0 18px 48px rgba(0, 0, 0, 0.55);
   /* Layout rhythm (Stitch “Quiet Chrome” framework; optional for apps) */
   --ca-container-max: 80rem; /* 1280px */
@@ -380,10 +419,96 @@
   /* Vellum's own components (.pill, .stat, .table-wrap) use a 2px radius --
      square, ledger/ink-stamp cornered, deliberately not Core's soft rounded
      "ops console" look. Real, load-bearing difference, not an oversight. */
+  --ca-radius-sm: 0.0625rem;
   --ca-radius-md: 0.125rem;
+  --ca-radius-lg: 0.25rem;
+  --ca-text-faint: color-mix(in srgb, var(--ca-text-secondary) 55%, var(--ca-bg) 45%);
+  --ca-border-soft: color-mix(in srgb, var(--ca-surface-border) 70%, var(--ca-bg) 30%);
+  --ca-progress-complete: var(--ca-status-success-fg);
+  --ca-progress-stalled: var(--ca-accent-500);
+  --ca-on-brand-ink: var(--ca-on-brand);
   --ca-shadow-lg: 0 10px 24px rgba(26, 31, 28, 0.1);
   --ca-leading-body: 1.55;
   --ca-tracking-body: 0;
+}
+
+/*
+ * Density presets (Foundation Layer 2). Set data-ca-density on <html>.
+ * Remaps control heights, gutters, and lane gaps — semantic color tokens stay put.
+ */
+[data-ca-density="dense"] {
+  --ca-control-height: 1.75rem;
+  --ca-control-height-sm: 1.5rem;
+  --ca-control-height-lg: 2rem;
+  --ca-gutter: 1rem;
+  --ca-page-margin: 1.5rem;
+  --ca-app-frame-pad-y: 1rem;
+  --ca-shell-lane-gap-md: 1rem;
+  --ca-shell-lane-gap-lg: 1.25rem;
+}
+
+[data-ca-density="default"] {
+  --ca-control-height: 2rem;
+  --ca-control-height-sm: 1.75rem;
+  --ca-control-height-lg: 2.25rem;
+}
+
+[data-ca-density="airy"] {
+  --ca-control-height: 2.5rem;
+  --ca-control-height-sm: 2rem;
+  --ca-control-height-lg: 2.75rem;
+  --ca-gutter: 2rem;
+  --ca-page-margin: 3rem;
+  --ca-app-frame-pad-y: 2rem;
+  --ca-shell-lane-gap-md: 2rem;
+  --ca-shell-lane-gap-lg: 2.5rem;
+  --ca-space-3: 0.875rem;
+  --ca-space-4: 1.125rem;
+  --ca-space-6: 1.75rem;
+}
+
+[data-ca-density="touch"] {
+  --ca-control-height: 2.75rem; /* ≥44px at default root */
+  --ca-control-height-sm: 2.5rem;
+  --ca-control-height-lg: 3rem;
+  --ca-gutter: 1.75rem;
+  --ca-page-margin: 2rem;
+  --ca-app-frame-pad-y: 1.75rem;
+  --ca-text-sm: 1rem;
+  --ca-text-base: 1.125rem;
+}
+
+/*
+ * Motion budgets (Foundation Layer 2). Set data-ca-motion on <html>.
+ * prefers-reduced-motion always wins.
+ */
+[data-ca-motion="subtle"] {
+  --ca-motion-duration-fast: 80ms;
+  --ca-motion-duration: 140ms;
+  --ca-motion-duration-slow: 200ms;
+}
+
+[data-ca-motion="standard"] {
+  --ca-motion-duration-fast: 120ms;
+  --ca-motion-duration: 180ms;
+  --ca-motion-duration-slow: 280ms;
+}
+
+[data-ca-motion="celebratory"] {
+  --ca-motion-duration-fast: 160ms;
+  --ca-motion-duration: 260ms;
+  --ca-motion-duration-slow: 420ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root,
+  [data-ca-motion="subtle"],
+  [data-ca-motion="standard"],
+  [data-ca-motion="celebratory"] {
+    --ca-motion-duration-fast: 0.01ms;
+    --ca-motion-duration: 0.01ms;
+    --ca-motion-duration-slow: 0.01ms;
+  }
 }
 
 body {
