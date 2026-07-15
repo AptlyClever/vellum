@@ -119,7 +119,7 @@ def resolve_safe_file(row: dict[str, Any]) -> Path:
     return path
 
 
-def register_element(
+def _build_element(
     *,
     asset_id: str,
     kind: str,
@@ -129,6 +129,7 @@ def register_element(
     meta: dict[str, Any] | None = None,
     note: str | None = None,
 ) -> dict[str, Any]:
+    """Copy the file into the vault and build a catalog row (no catalog I/O)."""
     if kind not in ELEMENT_KINDS:
         raise ValueError(f"unsupported_kind:{kind}")
     if register_mod.get_asset(asset_id) is None:
@@ -140,7 +141,7 @@ def register_element(
     if src != dest:
         shutil.copy2(src, dest)
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
-    row = {
+    return {
         "id": f"gr-{stamp}-{secrets.token_hex(3)}",
         "asset_id": asset_id,
         "pack": pack or asset_id,
@@ -151,6 +152,22 @@ def register_element(
         "note": note,
         "created_at": _now(),
     }
+
+
+def register_element(
+    *,
+    asset_id: str,
+    kind: str,
+    path: Path,
+    pack: str | None = None,
+    lanes: list[str] | None = None,
+    meta: dict[str, Any] | None = None,
+    note: str | None = None,
+) -> dict[str, Any]:
+    row = _build_element(
+        asset_id=asset_id, kind=kind, path=path, pack=pack,
+        lanes=lanes, meta=meta, note=note,
+    )
     doc = load_catalog()
     doc["elements"].append(row)
     save_catalog(doc)
@@ -183,7 +200,9 @@ def ingest_run_archive(extract_dir: Path, *, asset_id: str, pack: str) -> dict[s
     """
     if register_mod.get_asset(asset_id) is None:
         raise KeyError(asset_id)
-    registered: list[dict[str, Any]] = []
+    # Build all rows first, then write the catalog once — per-element
+    # register_element() would rewrite the full YAML catalog per file.
+    rows: list[dict[str, Any]] = []
     skipped = 0
     for path in sorted(extract_dir.rglob("*")):
         if not path.is_file():
@@ -193,8 +212,8 @@ def ingest_run_archive(extract_dir: Path, *, asset_id: str, pack: str) -> dict[s
             kind = "manifest"
             if "bake" in name or "vfx" in str(path.parent).lower():
                 kind = "bake-plan"
-            registered.append(
-                register_element(
+            rows.append(
+                _build_element(
                     asset_id=asset_id, kind=kind, path=path, pack=pack,
                     note="factory-run manifest",
                 )
@@ -204,18 +223,25 @@ def ingest_run_archive(extract_dir: Path, *, asset_id: str, pack: str) -> dict[s
         if kind is None:
             skipped += 1
             continue
-        if len(registered) >= MAX_RUN_ELEMENTS:
+        if len(rows) >= MAX_RUN_ELEMENTS:
             skipped += 1
             continue
-        registered.append(
-            register_element(asset_id=asset_id, kind=kind, path=path, pack=pack)
-        )
+        rows.append(_build_element(asset_id=asset_id, kind=kind, path=path, pack=pack))
+    if rows:
+        doc = load_catalog()
+        # Re-upload of the same pack replaces its previous rows instead of duplicating.
+        doc["elements"] = [
+            e for e in (doc.get("elements") or [])
+            if not (e.get("asset_id") == asset_id and e.get("pack") == pack)
+        ]
+        doc["elements"].extend(rows)
+        save_catalog(doc)
     return {
         "schema_version": 1,
         "ok": True,
         "asset_id": asset_id,
         "pack": pack,
-        "registered": len(registered),
+        "registered": len(rows),
         "skipped": skipped,
     }
 
