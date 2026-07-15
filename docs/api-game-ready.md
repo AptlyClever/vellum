@@ -95,3 +95,37 @@ duration, and non-empty motion evidence.
 ```
 
 Copies into `05-derived-renders/<lane>/<asset>/game-ready/<kind>/` and records `lanes` + `lane_paths`.
+
+### Presentation contract (optional)
+
+Publishing may attach a per-lane **presentation contract** that tells game
+runtimes how the effect behaves relative to its anchor (the game area, a
+glyph frame, etc.). Runtimes render what the contract says; they decide
+nothing themselves.
+
+```json
+{
+  "lane": "slots",
+  "presentation": {
+    "anchor": "reel-window",
+    "containment": "breakout",
+    "tier": "big-win",
+    "spread": "radial",
+    "scale": 1.6,
+    "max_duration_seconds": 5
+  }
+}
+```
+
+| Field | Required | Values |
+| --- | --- | --- |
+| `anchor` | yes | free-form anchor id known to the consuming game (`reel-window`, `bezel`, `glyph`, ...) |
+| `containment` | yes | `contained` (stays inside the anchor), `breakout` (originates in the anchor, escapes it), `ambient` (soft full-stage field) |
+| `tier` | yes | free-form win/event class the consuming game maps to (`win`, `big-win`, ...) |
+| `spread` | no | `radial`, `directional`, `ambient-field` |
+| `scale` | no | effect size relative to the anchor (`1.0` = anchor-sized) |
+| `max_duration_seconds` | no | hard auto-clear ceiling; capped at 10s |
+
+The contract is stored on the element as `presentation.<lane>` and is served
+by the list/get endpoints, so consumers (e.g. Bandit) can select effects by
+tier and forward the contract in their own presentation payloads.

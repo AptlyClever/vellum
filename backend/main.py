@@ -135,6 +135,7 @@ class GameReadyIngestManifestRequest(BaseModel):
 
 class GameReadyPublishRequest(BaseModel):
     lane: str = Field(min_length=1, max_length=64)
+    presentation: dict[str, Any] | None = Field(default=None)
 
 
 class AttachRequest(BaseModel):
@@ -1224,7 +1225,9 @@ async def api_game_ready_upload_run(
 @app.post("/api/game-ready/elements/{element_id}/publish")
 def api_game_ready_publish(element_id: str, body: GameReadyPublishRequest) -> dict[str, Any]:
     try:
-        row = game_ready_mod.publish_to_lane(element_id, body.lane)
+        row = game_ready_mod.publish_to_lane(
+            element_id, body.lane, presentation=body.presentation
+        )
     except KeyError:
         raise HTTPException(status_code=404, detail="game_ready_not_found") from None
     except ValueError as exc:

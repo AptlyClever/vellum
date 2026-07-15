@@ -161,3 +161,72 @@ def test_publish_to_lane(tmp_path, monkeypatch):
     assert "slots" in published["lanes"]
     lane_path = Path(published["lane_paths"]["slots"])
     assert lane_path.is_file()
+
+
+def test_publish_with_presentation_contract(tmp_path, monkeypatch):
+    monkeypatch.setenv("VELLUM_VAULT_ROOT", str(tmp_path / "vault"))
+    monkeypatch.setenv("VELLUM_GAME_READY_PATH", str(tmp_path / "game-ready.yaml"))
+    src = tmp_path / "clip.webm"
+    src.write_bytes(b"webm")
+    row = gr.register_element(
+        asset_id="fireworks-vol-1-niagara",
+        kind="vfx-clip",
+        path=src,
+        pack="FireworksV1",
+    )
+    published = gr.publish_to_lane(
+        row["id"],
+        "slots",
+        presentation={
+            "anchor": "reel-window",
+            "containment": "breakout",
+            "tier": "big-win",
+            "spread": "radial",
+            "scale": 1.6,
+            "max_duration_seconds": 5,
+        },
+    )
+    contract = published["presentation"]["slots"]
+    assert contract == {
+        "anchor": "reel-window",
+        "containment": "breakout",
+        "tier": "big-win",
+        "spread": "radial",
+        "scale": 1.6,
+        "max_duration_seconds": 5.0,
+    }
+    # Contract persists in the catalog.
+    reloaded = gr.get_element(row["id"])
+    assert reloaded["presentation"]["slots"]["tier"] == "big-win"
+
+
+def test_publish_presentation_rejects_invalid(tmp_path, monkeypatch):
+    import pytest
+
+    monkeypatch.setenv("VELLUM_VAULT_ROOT", str(tmp_path / "vault"))
+    monkeypatch.setenv("VELLUM_GAME_READY_PATH", str(tmp_path / "game-ready.yaml"))
+    src = tmp_path / "clip.webm"
+    src.write_bytes(b"webm")
+    row = gr.register_element(
+        asset_id="fireworks-vol-1-niagara",
+        kind="vfx-clip",
+        path=src,
+        pack="FireworksV1",
+    )
+    with pytest.raises(ValueError, match="presentation_containment_invalid"):
+        gr.publish_to_lane(
+            row["id"],
+            "slots",
+            presentation={"anchor": "reel-window", "containment": "everywhere", "tier": "win"},
+        )
+    with pytest.raises(ValueError, match="presentation_max_duration_invalid"):
+        gr.publish_to_lane(
+            row["id"],
+            "slots",
+            presentation={
+                "anchor": "reel-window",
+                "containment": "breakout",
+                "tier": "win",
+                "max_duration_seconds": 60,
+            },
+        )

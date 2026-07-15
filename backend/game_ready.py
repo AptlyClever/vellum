@@ -377,9 +377,64 @@ def ingest_manifest(manifest_path: Path, *, asset_id: str, pack: str | None = No
     }
 
 
-def publish_to_lane(element_id: str, lane: str) -> dict[str, Any]:
+PRESENTATION_CONTAINMENTS = ("contained", "breakout", "ambient")
+PRESENTATION_SPREADS = ("radial", "directional", "ambient-field")
+PRESENTATION_MAX_DURATION_SECONDS = 10.0
+
+
+def _validate_presentation(presentation: dict[str, Any]) -> dict[str, Any]:
+    """Validate an authored presentation contract for a lane.
+
+    The contract tells game runtimes how an effect behaves relative to its
+    anchor (the game area / glyph frame): whether it stays contained, breaks
+    out beyond the anchor, or runs as an ambient field.
+    """
+    anchor = str(presentation.get("anchor") or "").strip()
+    if not anchor:
+        raise ValueError("presentation_anchor_required")
+    containment = str(presentation.get("containment") or "").strip()
+    if containment not in PRESENTATION_CONTAINMENTS:
+        raise ValueError(f"presentation_containment_invalid:{containment}")
+    tier = str(presentation.get("tier") or "").strip()
+    if not tier:
+        raise ValueError("presentation_tier_required")
+
+    cleaned: dict[str, Any] = {
+        "anchor": anchor,
+        "containment": containment,
+        "tier": tier,
+    }
+    spread = presentation.get("spread")
+    if spread is not None:
+        if str(spread) not in PRESENTATION_SPREADS:
+            raise ValueError(f"presentation_spread_invalid:{spread}")
+        cleaned["spread"] = str(spread)
+    scale = presentation.get("scale")
+    if scale is not None:
+        scale = float(scale)
+        if scale <= 0:
+            raise ValueError("presentation_scale_invalid")
+        cleaned["scale"] = scale
+    duration = presentation.get("max_duration_seconds")
+    if duration is not None:
+        duration = float(duration)
+        if not 0 < duration <= PRESENTATION_MAX_DURATION_SECONDS:
+            raise ValueError("presentation_max_duration_invalid")
+        cleaned["max_duration_seconds"] = duration
+    return cleaned
+
+
+def publish_to_lane(
+    element_id: str,
+    lane: str,
+    *,
+    presentation: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     if lane not in lookdev_mod.KNOWN_LANES:
         raise ValueError(f"unknown_lane:{lane}")
+    cleaned_presentation = (
+        _validate_presentation(presentation) if presentation is not None else None
+    )
     doc = load_catalog()
     row = None
     for r in doc.get("elements") or []:
@@ -392,6 +447,12 @@ def publish_to_lane(element_id: str, lane: str) -> dict[str, Any]:
     if lane not in lanes:
         lanes.append(lane)
         row["lanes"] = lanes
+        row["updated_at"] = _now()
+        save_catalog(doc)
+    if cleaned_presentation is not None:
+        presentations = dict(row.get("presentation") or {})
+        presentations[lane] = cleaned_presentation
+        row["presentation"] = presentations
         row["updated_at"] = _now()
         save_catalog(doc)
     # Copy into lane-scoped game-ready bundle folder
