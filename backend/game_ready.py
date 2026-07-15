@@ -54,16 +54,37 @@ def _empty() -> dict[str, Any]:
     return {"schema_version": 1, "elements": []}
 
 
+# The catalog YAML grows past a megabyte with factory validation evidence;
+# pyyaml's pure-Python loader takes seconds on it, so prefer libyaml and
+# cache the parsed document keyed by file mtime/size.
+_YAML_LOADER = getattr(yaml, "CSafeLoader", yaml.SafeLoader)
+_catalog_cache: dict[str, Any] = {}
+
+
+def _catalog_cache_key(path: Path) -> tuple[str, float, int] | None:
+    try:
+        stat = path.stat()
+    except OSError:
+        return None
+    return (str(path), stat.st_mtime, stat.st_size)
+
+
 def load_catalog() -> dict[str, Any]:
     path = catalog_path()
     if not path.is_file():
         return _empty()
-    raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+    key = _catalog_cache_key(path)
+    if key is not None and _catalog_cache.get("key") == key:
+        return _catalog_cache["doc"]
+    raw = yaml.load(path.read_text(encoding="utf-8"), Loader=_YAML_LOADER)
     if not isinstance(raw, dict):
         return _empty()
     if not isinstance(raw.get("elements"), list):
         raw["elements"] = []
     raw.setdefault("schema_version", 1)
+    if key is not None:
+        _catalog_cache["key"] = key
+        _catalog_cache["doc"] = raw
     return raw
 
 
@@ -75,6 +96,12 @@ def save_catalog(doc: dict[str, Any]) -> None:
     mirror = _vault_catalog_path()
     mirror.parent.mkdir(parents=True, exist_ok=True)
     mirror.write_text(text, encoding="utf-8")
+    key = _catalog_cache_key(path)
+    if key is not None:
+        _catalog_cache["key"] = key
+        _catalog_cache["doc"] = doc
+    else:
+        _catalog_cache.clear()
 
 
 def list_elements(
