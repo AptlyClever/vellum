@@ -40,8 +40,8 @@ foreach ($dir in $SourceDirs) {
 
 # Prefer manifests, then smaller binaries, then the rest — stay under MaxFiles.
 $selected = @(
-  ($files | Where-Object IsManifest) +
-  ($files | Where-Object { -not $_.IsManifest } | Sort-Object Length)
+  @($files | Where-Object IsManifest) +
+  @($files | Where-Object { -not $_.IsManifest } | Sort-Object Length)
 ) | Select-Object -First $MaxFiles
 
 if (Test-Path $DestinationZip) { Remove-Item $DestinationZip -Force }

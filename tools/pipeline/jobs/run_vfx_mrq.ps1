@@ -155,6 +155,10 @@ if ($systems.Count -eq 0) {
 $mrqRoot = Join-Path $WorkDir "$Pack\vfx\mrq"
 $runDir = Join-Path $WorkDir "$Pack\vfx\mrq-run"
 New-Item -ItemType Directory -Force -Path $mrqRoot, $runDir | Out-Null
+# A targeted bake is authoritative for this packing run. Remove stale frames
+# from previously selected systems so the packer cannot republish old clips.
+Get-ChildItem -LiteralPath $mrqRoot -Recurse -File -Filter "*.png" -ErrorAction SilentlyContinue |
+  Remove-Item -Force -ErrorAction SilentlyContinue
 $runStamp = (Get-Date).ToUniversalTime().ToString("yyyyMMddHHmmss")
 $scratchPackage = "/Game/Vellum/PipelineScratch/$Pack/$runStamp"
 

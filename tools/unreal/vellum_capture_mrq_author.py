@@ -17,7 +17,7 @@ from pathlib import Path
 
 ACTOR_PREFIX = "VellumMRQ_"
 STUDIO_PREFIX = "VellumStudio_"
-DEFAULT_MAP = "/Game/Vellum/Maps/VellumLookdevStudio"
+DEFAULT_MAP = "/Game/Vellum/Maps/VellumVfxStage"
 # Max window (locked §12.2): 4s @ 30fps. Per-system estimate may be shorter.
 DEFAULT_FRAMES = 120
 MIN_FRAMES = 24
@@ -564,8 +564,8 @@ def _estimate_capture_frames(
 def _fireworks_camera_pose(unreal_mod):
     """Fixed aerial lookdev framing — do not trust empty pre-sim Niagara bounds."""
     # Origin at system spawn; shells bloom upward into Z+.
-    look = unreal_mod.Vector(0.0, 0.0, 700.0)
-    cam = unreal_mod.Vector(-2200.0, -1600.0, 500.0)
+    look = unreal_mod.Vector(0.0, 0.0, 650.0)
+    cam = unreal_mod.Vector(-1000.0, -700.0, 500.0)
     try:
         rot = unreal_mod.MathLibrary.find_look_at_rotation(cam, look)
     except Exception:  # noqa: BLE001
@@ -590,7 +590,7 @@ def _configure_cine_camera(unreal_mod, camera, notes: list[str]) -> None:
     _set_prop(cine, ("current_focal_length",), 35.0)
     _set_prop(cine, ("current_aperture",), 2.8)
     try:
-        cine.set_field_of_view(55.0)
+        cine.set_field_of_view(50.0)
     except Exception:  # noqa: BLE001
         pass
 
@@ -603,11 +603,15 @@ def _configure_cine_camera(unreal_mod, camera, notes: list[str]) -> None:
         if manual is not None:
             _set_prop(pps, ("auto_exposure_method",), manual)
         _set_prop(pps, ("override_auto_exposure_bias", "b_override_auto_exposure_bias"), True)
-        _set_prop(pps, ("auto_exposure_bias",), 2.0)
+        # Marketplace Niagara often assumes a dark authored demo map and can
+        # otherwise quantize to near-black in transparent MRQ output.
+        _set_prop(pps, ("auto_exposure_bias",), 8.0)
         _set_prop(pps, ("override_auto_exposure_min_brightness", "b_override_auto_exposure_min_brightness"), True)
         _set_prop(pps, ("auto_exposure_min_brightness",), 1.0)
         _set_prop(pps, ("override_auto_exposure_max_brightness", "b_override_auto_exposure_max_brightness"), True)
         _set_prop(pps, ("auto_exposure_max_brightness",), 1.0)
+        _set_prop(pps, ("override_bloom_intensity", "b_override_bloom_intensity"), True)
+        _set_prop(pps, ("bloom_intensity",), 1.5)
         notes.append("cine_manual_exposure")
     except Exception as exc:  # noqa: BLE001
         notes.append(f"cine_exposure_failed:{exc}")

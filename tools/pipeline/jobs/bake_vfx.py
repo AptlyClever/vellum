@@ -27,6 +27,8 @@ from _common import (
     write_manifest,
 )
 
+VFX_STAGE_MAP = "/Game/Vellum/Maps/VellumVfxStage"
+
 
 def _list_niagara(package_root: str):
     registry = unreal.AssetRegistryHelpers.get_asset_registry()
@@ -51,6 +53,27 @@ def _list_niagara(package_root: str):
     return assets
 
 
+def _vfx_system_priority(asset_data) -> tuple[int, str]:
+    """Put representative one-shot effects before ambient/ground utilities."""
+    name = str(asset_data.asset_name)
+    package = str(asset_data.package_name)
+    search = f"{package}/{name}".lower()
+    score = 0
+    if "/aerial/" in search:
+        score += 100
+    if name.endswith("_Single"):
+        score += 50
+    if any(word in search for word in ("chrysanthemum", "peony", "brocade", "shell")):
+        score += 40
+    if any(word in search for word in ("rocket", "strobe", "glitter")):
+        score += 20
+    if "/ground/" in search:
+        score -= 50
+    if any(word in search for word in ("smoke", "machine", "sparkler", "curtain")):
+        score -= 100
+    return (-score, name.lower())
+
+
 def run() -> dict[str, Any]:
     """Author bake plan; does not quit the editor."""
     root = pack_content_root()
@@ -61,7 +84,7 @@ def run() -> dict[str, Any]:
     out_dir = vault_game_ready() / "vfx" / pack
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    listed = _list_niagara(root)
+    listed = sorted(_list_niagara(root), key=_vfx_system_priority)
     systems = []
     for asset_data in listed:
         name = str(asset_data.asset_name)
@@ -86,11 +109,11 @@ def run() -> dict[str, Any]:
         "job": "bake-vfx",
         "pack": pack,
         "content_root": root,
-        "map_path": "/Game/Vellum/Maps/VellumLookdevStudio",
+        "map_path": VFX_STAGE_MAP,
         "width": 1920,
         "height": 1080,
         "frame_rate": 30,
-        "frame_count": 60,
+        "frame_count": 120,
         "alpha": True,
         "systems": systems,
         "ok": True,

@@ -15,6 +15,9 @@ param(
 $ErrorActionPreference = "Stop"
 $mrqRoot = Join-Path $WorkDir "$Pack\vfx\mrq"
 if (-not $OutDir) { $OutDir = Join-Path $WorkDir "$Pack\vfx\packed" }
+if (Test-Path -LiteralPath $OutDir) {
+  Remove-Item -LiteralPath $OutDir -Recurse -Force
+}
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
 
 $ffmpeg = Get-Command ffmpeg -ErrorAction SilentlyContinue
@@ -74,6 +77,44 @@ function Test-FrameMotion {
   $middle = (Get-FileHash -Algorithm SHA256 -LiteralPath $Frames[[Math]::Floor($Frames.Count / 2)].FullName).Hash
   $last = (Get-FileHash -Algorithm SHA256 -LiteralPath $Frames[$Frames.Count - 1].FullName).Hash
   return ($first -ne $middle) -or ($first -ne $last)
+}
+
+function Get-FrameVisualStats {
+  param([Parameter(Mandatory = $true)][string]$Path)
+  Add-Type -AssemblyName System.Drawing
+  $bitmap = [System.Drawing.Bitmap]::new($Path)
+  try {
+    $stepX = [Math]::Max(1, [Math]::Floor($bitmap.Width / 240))
+    $stepY = [Math]::Max(1, [Math]::Floor($bitmap.Height / 135))
+    $samples = 0
+    $opaque = 0
+    $visible = 0
+    $bright = 0
+    for ($y = 0; $y -lt $bitmap.Height; $y += $stepY) {
+      for ($x = 0; $x -lt $bitmap.Width; $x += $stepX) {
+        $pixel = $bitmap.GetPixel($x, $y)
+        $samples++
+        if ($pixel.A -lt 16) { continue }
+        $opaque++
+        $peak = [Math]::Max($pixel.R, [Math]::Max($pixel.G, $pixel.B))
+        if ($peak -ge 24) { $visible++ }
+        if ($peak -ge 64) { $bright++ }
+      }
+    }
+    $visibleToOpaque = if ($opaque -gt 0) { $visible / [double]$opaque } else { 0.0 }
+    [pscustomobject]@{
+      frame = $Path
+      sampled_pixels = $samples
+      opaque_pixels = $opaque
+      visible_pixels = $visible
+      bright_pixels = $bright
+      opaque_fraction = [Math]::Round($opaque / [double]$samples, 6)
+      visible_fraction = [Math]::Round($visible / [double]$samples, 6)
+      visible_to_opaque_ratio = [Math]::Round($visibleToOpaque, 6)
+    }
+  } finally {
+    $bitmap.Dispose()
+  }
 }
 
 function New-SpriteSheet {
@@ -158,14 +199,29 @@ Get-ChildItem -LiteralPath $mrqRoot -Directory | ForEach-Object {
     }
   }
   $motion = Test-FrameMotion -Frames $pngs
+  $sampleFrames = @(
+    $pngs[0]
+    $pngs[[Math]::Floor($pngs.Count / 2)]
+    $pngs[$pngs.Count - 1]
+  ) | Select-Object -Unique
+  $visualSamples = @($sampleFrames | ForEach-Object {
+    Get-FrameVisualStats -Path $_.FullName
+  })
+  $maxVisibleRatio = [double](($visualSamples | Measure-Object -Property visible_to_opaque_ratio -Maximum).Maximum ?? 0)
+  $maxBrightPixels = [int](($visualSamples | Measure-Object -Property bright_pixels -Maximum).Maximum ?? 0)
+  $visibleContent = ($maxVisibleRatio -ge 0.05) -and ($maxBrightPixels -ge 2)
   $frameValidation = @{
-    ok = ($pngs.Count -ge $MinFrames) -and $dimsOk -and [bool]$firstInfo.alpha -and $motion
+    ok = ($pngs.Count -ge $MinFrames) -and $dimsOk -and [bool]$firstInfo.alpha -and $motion -and $visibleContent
     frame_count = $pngs.Count
     width = $firstInfo.width
     height = $firstInfo.height
     alpha = [bool]$firstInfo.alpha
     dimensions_consistent = $dimsOk
     non_empty_motion = $motion
+    visible_content = $visibleContent
+    max_visible_to_opaque_ratio = [Math]::Round($maxVisibleRatio, 6)
+    max_bright_sample_pixels = $maxBrightPixels
+    visual_samples = $visualSamples
     duration_seconds = [Math]::Round($pngs.Count / [double]$FrameRate, 3)
   }
   $entry = @{
@@ -204,10 +260,11 @@ Get-ChildItem -LiteralPath $mrqRoot -Directory | ForEach-Object {
   $results += $entry
 }
 
+$packOk = ($results.Count -gt 0) -and (($results | Where-Object { -not $_.validation.ok }).Count -eq 0) -and ((-not $RequireArtifacts) -or (($results | Where-Object { $_.webm -or $_.sprite_sheet }).Count -gt 0))
 @{
   schema_version = 1
   pack = $Pack
-  ok = ($results.Count -gt 0) -and (($results | Where-Object { -not $_.validation.ok }).Count -eq 0) -and ((-not $RequireArtifacts) -or (($results | Where-Object { $_.webm -or $_.sprite_sheet }).Count -gt 0))
+  ok = $packOk
   packed = $results
   ffmpeg = [bool]$ffmpeg
   ffprobe = [bool]$ffprobe
@@ -218,4 +275,4 @@ Get-ChildItem -LiteralPath $mrqRoot -Directory | ForEach-Object {
   }
 } | ConvertTo-Json -Depth 8 | Set-Content (Join-Path $OutDir "pack-manifest.json") -Encoding utf8
 Write-Host "Packed $($results.Count) systems -> $OutDir"
-if ($RequireArtifacts -and ($results.Count -eq 0)) { exit 1 }
+if ($RequireArtifacts -and -not $packOk) { exit 1 }

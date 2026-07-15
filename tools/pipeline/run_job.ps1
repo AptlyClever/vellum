@@ -100,7 +100,11 @@ Write-Host "UE exit=$($p.ExitCode) log=$log"
 if ($p.ExitCode -ne 0) {
   # UE sometimes access-violates during process teardown after the job already
   # finished. Trust a fresh ok manifest over the exit code.
-  $jobManifest = Join-Path $WorkDir "$Pack\$Job.manifest.json"
+  $jobManifest = if ($Job -eq "bake-vfx") {
+    Join-Path $WorkDir "$Pack\vfx\bake-vfx.manifest.json"
+  } else {
+    Join-Path $WorkDir "$Pack\$Job.manifest.json"
+  }
   $fresh = (Test-Path $jobManifest) -and ((Get-Item $jobManifest).LastWriteTime -ge $startedAt)
   $manifestOk = $false
   if ($fresh) {
@@ -130,6 +134,9 @@ if ($Job -eq "bake-vfx" -or $Job -eq "factory-all") {
   if (Test-Path $packScript) {
     & $packScript -Pack $Pack -WorkDir $WorkDir -OutDir (Join-Path $VaultGameReady "vfx\$Pack") `
       -RequireArtifacts:$RunVfxMrq
+    if ($LASTEXITCODE -ne 0) {
+      throw "vfx_pack_validation_failed:pack=$Pack"
+    }
   }
 }
 
