@@ -9,6 +9,19 @@ Vellum is the Control Alt Games asset vault and intake/prototyping project.
 - **Repo:** `/mnt/temp/config/vellum`
 - **Data vault:** `/mnt/data/vault/vellum` (private; never commit raw assets or keys)
 
+## Art ownership vs Eidolon (HARD)
+
+**Vellum converts and catalogs art we already own. Eidolon/OpenAI authors art
+that does not exist yet.** Canonical table lives in Eidolon:
+`../eidolon/docs/art-ownership.md` (or `ctrl-alt-eidolon` `docs/art-ownership.md`).
+
+- **Vellum IS for:** vault packs → factory (Niagara MRQ → WebM + sprite-sheet),
+  game-ready catalog, lane publish. Celebration **particle** FX =
+  `fireworks-vol-1-niagara` (and similar), not OpenAI redraws.
+- **Vellum is NOT for:** inventing float numerals, typed “BIG WIN” banners, or
+  keycap legends with no source frames — that is Eidolon brief work.
+- **Vellum does not call OpenAI.** Do not turn the vault into an image generator.
+
 ## Read first
 
 1. `README.md` — project identity, paths, first slice.
