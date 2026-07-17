@@ -344,6 +344,18 @@ def ingest_run_archive(extract_dir: Path, *, asset_id: str, pack: str) -> dict[s
         "pack": pack,
         "registered": len(rows),
         "skipped": skipped,
+        # Return IDs so publishers can bind immediately without a catalog race
+        # against a concurrent same-pack upload that replaces these rows.
+        "elements": [
+            {
+                "id": r.get("id"),
+                "kind": r.get("kind"),
+                "path": r.get("path"),
+                "pack": r.get("pack") or pack,
+            }
+            for r in rows
+            if r.get("id")
+        ],
     }
 
 
