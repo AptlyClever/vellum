@@ -191,6 +191,33 @@ def test_publish_to_lane(tmp_path, monkeypatch):
     assert lane_path.is_file()
 
 
+def test_unpublish_from_lane_removes_lane_copy(tmp_path, monkeypatch):
+    monkeypatch.setenv("VELLUM_VAULT_ROOT", str(tmp_path / "vault"))
+    monkeypatch.setenv("VELLUM_GAME_READY_PATH", str(tmp_path / "game-ready.yaml"))
+    src = tmp_path / "clip.webm"
+    src.write_bytes(b"webm")
+    row = gr.register_element(
+        asset_id="fireworks-vol-1-niagara",
+        kind="vfx-clip",
+        path=src,
+        pack="FireworksV1",
+    )
+    published = gr.publish_to_lane(
+        row["id"],
+        "slots",
+        presentation={"anchor": "reel-window", "containment": "contained", "tier": "win"},
+    )
+    lane_path = Path(published["lane_paths"]["slots"])
+    assert lane_path.is_file()
+
+    unpublished = gr.unpublish_from_lane(row["id"], "slots")
+
+    assert "slots" not in unpublished.get("lanes", [])
+    assert "slots" not in unpublished.get("presentation", {})
+    assert "slots" not in unpublished.get("lane_paths", {})
+    assert not lane_path.exists()
+
+
 def test_publish_with_presentation_contract(tmp_path, monkeypatch):
     monkeypatch.setenv("VELLUM_VAULT_ROOT", str(tmp_path / "vault"))
     monkeypatch.setenv("VELLUM_GAME_READY_PATH", str(tmp_path / "game-ready.yaml"))

@@ -6,8 +6,29 @@ Vellum is the Control Alt Games asset vault and intake/prototyping project.
 
 - **Canonical home:** Control Alt Games (creative label).
 - **Not** Control Alt core. Axiom and Eidolon are Control Alt core projects; Vellum is not.
-- **Repo:** `/mnt/temp/config/vellum`
-- **Data vault:** `/mnt/data/vault/vellum` (private; never commit raw assets or keys)
+- **Data vault:** `/mnt/data/vault/vellum` on the hub (private; never commit raw assets or keys)
+
+## Environment roles (HARD — read before touching any path)
+
+Same studio/press model as Axiom (`ctrl-alt-axiom/docs/handbook/how-we-work.md`),
+plus a factory role. Do not collapse these into one path:
+
+| Role | Machine | Path | Job |
+| --- | --- | --- | --- |
+| **Studio** | Any dev machine (Borealis, Aurora, …) | GitHub clone, e.g. `E:\Dev\vellum` | Read, code, test, commit, **push** |
+| **Press** | `dev-ubuntu` (`192.168.68.93`) | `/mnt/temp/config/vellum` | Repo Ops deploy checkout; Docker runtime; hub API `:8770`; vault mount |
+| **Factory** | Aurora (`192.168.68.100`) | `F:\Games\AuroraVellum` + this repo checkout | Unreal Library, Perforce, reconcile, MRQ conversion |
+
+- `/mnt/temp/config/vellum` and `/mnt/data/vault/vellum` exist **only on the
+  press**. From studio or factory they are not filesystems you can reach —
+  no WSL/UNC/SSH file access, ever.
+- **Vault I/O is HTTP-only** off the press: `upload-run`, `publish`,
+  `unpublish`, and catalog queries against `http://192.168.68.93:8770`.
+  Never hand-edit catalog YAML from another machine.
+- Ship path: commit → push → Repo Ops `deploy.auto` (`#/axiom/repo-ops`).
+  Never run the Vellum compose stack from a studio checkout as "the runtime."
+- Aurora pulls this repo via git to run factory scripts; that checkout is a
+  studio clone plus factory scripts, not a deploy target.
 
 ## Art ownership vs Eidolon (HARD)
 
@@ -60,8 +81,9 @@ that does not exist yet.** Canonical table lives in Eidolon:
   exclusive, never part of the parallel pool.
 - Do not call a process launch success. Verify manifests, plausible exported
   counts, catalog rows, and reconcile exceptions.
-- `bake-vfx` currently emits plans, not playable clips. The next product slice
-  is MRQ/Niagara Baker execution + WebM/sprite-sheet validation in a game.
+- `factory-all` emits bake plans in the parallel phase; the exclusive VFX
+  render phase (reconcile 6c) turns plans into validated WebM/sprite-sheet
+  clips and publishes only validation-passing variants to game lanes.
 - A native Unreal title may consume the Library project — that is allowed under the product SoT; do not dump packs into product git repos.
 - Registry identity for fleet discovery lives in Axiom `config/apps.registry.yaml` (`id: vellum`).
 - Do not mutate Axiom/Praxis/Eidolon/LCARD runtime infra unless the operator explicitly asks.

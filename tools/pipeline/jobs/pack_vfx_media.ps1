@@ -9,7 +9,8 @@ param(
   [string]$OutDir = "",
   [int]$FrameRate = 30,
   [int]$MinFrames = 2,
-  [switch]$RequireArtifacts
+  [switch]$RequireArtifacts,
+  [switch]$AllowPartialArtifacts
 )
 
 $ErrorActionPreference = "Stop"
@@ -358,11 +359,17 @@ Get-ChildItem -LiteralPath $mrqRoot -Directory | ForEach-Object {
   $results += $entry
 }
 
-$packOk = ($results.Count -gt 0) -and (($results | Where-Object { -not $_.validation.ok }).Count -eq 0) -and ((-not $RequireArtifacts) -or (($results | Where-Object { $_.webm -or $_.sprite_sheet }).Count -gt 0))
+$validResults = @($results | Where-Object { $_.validation.ok })
+$invalidResults = @($results | Where-Object { -not $_.validation.ok })
+$artifactResults = @($validResults | Where-Object { $_.webm -or $_.sprite_sheet })
+$hasRequiredArtifacts = (-not $RequireArtifacts) -or ($artifactResults.Count -gt 0)
+$validationOk = ($invalidResults.Count -eq 0) -or ($AllowPartialArtifacts -and $artifactResults.Count -gt 0)
+$packOk = ($results.Count -gt 0) -and $validationOk -and $hasRequiredArtifacts
 @{
   schema_version = 1
   pack = $Pack
   ok = $packOk
+  partial = [bool]($AllowPartialArtifacts -and $invalidResults.Count -gt 0 -and $artifactResults.Count -gt 0)
   packed = $results
   ffmpeg = [bool]$ffmpeg
   ffprobe = [bool]$ffprobe
@@ -370,6 +377,10 @@ $packOk = ($results.Count -gt 0) -and (($results | Where-Object { -not $_.valida
     min_frames = $MinFrames
     frame_rate = $FrameRate
     require_artifacts = [bool]$RequireArtifacts
+    allow_partial_artifacts = [bool]$AllowPartialArtifacts
+    valid_systems = $validResults.Count
+    invalid_systems = $invalidResults.Count
+    artifact_systems = $artifactResults.Count
   }
 } | ConvertTo-Json -Depth 8 | Set-Content (Join-Path $OutDir "pack-manifest.json") -Encoding utf8
 Write-Host "Packed $($results.Count) systems -> $OutDir"

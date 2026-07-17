@@ -15,6 +15,8 @@
   6b. Conversion Factory: factory-all (one UE boot: models+media+bake) for
       packs missing game-ready evidence; up to FactoryWorkers packs in parallel
       with isolated work dirs; smart zip upload to the hub
+  6c. Exclusive VFX render: one pack/run by default, MRQ-render bake plans,
+      pack validated clips, upload, and publish contained/breakout to slots
   7. Corrupt-package health scan
   8. Detect stray Unreal projects (Fab installed into the wrong project)
   9. Write an exception report; operator only ever reads the exceptions
@@ -34,8 +36,11 @@ param(
   [int]$MaxStagePerRun = 5,
   [int]$MaxFactoryPerRun = 30,
   [int]$FactoryWorkers = 3,
+  [int]$MaxVfxPerRun = 1,
+  [int]$MaxVfxSystems = 0,
   [switch]$SkipInventory,
   [switch]$SkipFactory,
+  [switch]$SkipVfxRender,
   [switch]$InstallTask
 )
 
@@ -348,6 +353,81 @@ try {
           $fix = if ($r.keep_zip -and $r.zip) { "Zip kept at $($r.zip)" } else { "See $StateDir\factory-all-$($r.pack).log" }
           Add-Exception "factory" $r.pack $r.detail $fix
         }
+      }
+    }
+  }
+
+  # ---- 6c. Exclusive VFX render -----------------------------------------------
+  # MRQ/Sequencer authoring writes Unreal assets under /Game/Vellum, so it must
+  # not run inside the parallel read-only factory worker pool. This phase consumes
+  # bake-plan evidence one pack at a time, publishes only validated anchored clips,
+  # and leaves invalid Niagara systems cataloged but off game lanes.
+  Write-Host "== 6c/8 exclusive VFX render (max=$MaxVfxPerRun)"
+  if (-not $SkipVfxRender -and $MaxVfxPerRun -gt 0) {
+    $cov3 = Invoke-Api GET "/api/import/coverage"
+    $vfxCandidates = New-Object System.Collections.Generic.List[object]
+    foreach ($row in @($cov3.on_disk)) {
+      if ($vfxCandidates.Count -ge $MaxVfxPerRun) { break }
+      $aid = [string]$row.asset_id
+      $packName = [string]$row.folder
+      if (-not $aid -or -not $packName) { continue }
+      try {
+        $bake = Invoke-Api GET "/api/game-ready/elements?asset_id=$aid&kind=bake-plan&limit=1"
+        if ([int]$bake.count -eq 0) { continue }
+        $clips = Invoke-Api GET "/api/game-ready/elements?asset_id=$aid&kind=vfx-clip&limit=1"
+        if ([int]$clips.count -gt 0) { continue }
+      } catch {
+        Add-Exception "vfx_render" $aid "hub game-ready query failed: $($_.Exception.Message)"
+        continue
+      }
+      $vfxCandidates.Add([pscustomobject]@{ asset_id = $aid; pack = $packName })
+    }
+    Write-Host "   VFX render backlog: $($vfxCandidates.Count) packs"
+
+    $runJob = Join-Path $RepoRoot "tools\pipeline\run_job.ps1"
+    $packZip = Join-Path $RepoRoot "tools\pipeline\pack_factory_run.ps1"
+    $filterVfx = Join-Path $RepoRoot "tools\pipeline\filter_valid_vfx_run.ps1"
+    $publishVfx = Join-Path $RepoRoot "tools\pipeline\publish_vfx_slots.ps1"
+    $pipelineRoot = Join-Path $ProjectRoot "Saved\VellumPipeline"
+    foreach ($cand in @($vfxCandidates)) {
+      $aid = [string]$cand.asset_id
+      $packName = [string]$cand.pack
+      $work = $pipelineRoot
+      $out = Join-Path $pipelineRoot "game-ready-out"
+      $log = Join-Path $StateDir "vfx-render-$packName.log"
+      $zipPath = Join-Path $StateDir "factory-$packName-vfx.zip"
+      Write-Host "   vfx-render $packName ($aid)"
+      try {
+        & pwsh -NoProfile -File $runJob -Job bake-vfx -Pack $packName `
+          -WorkDir $work -VaultGameReady $out -RunVfxMrq -AllowGpu `
+          -AllowPartialVfx -MaxVfxSystems $MaxVfxSystems -TimeoutSec 14400 *> $log
+        if ($LASTEXITCODE -ne 0) {
+          Add-Exception "vfx_render" $packName "bake-vfx MRQ exit $LASTEXITCODE" "See $log"
+          continue
+        }
+        $packOut = Join-Path $out "vfx\$packName"
+        if (-not (Test-Path $packOut)) {
+          Add-Exception "vfx_render" $packName "no VFX output produced" "See $log"
+          continue
+        }
+        $filteredOut = Join-Path $pipelineRoot "game-ready-out-filtered\vfx\$packName"
+        & pwsh -NoProfile -File $filterVfx -SourceDir $packOut -DestinationDir $filteredOut *> (Join-Path $StateDir "vfx-filter-$packName.log")
+        if ($LASTEXITCODE -ne 0) {
+          Add-Exception "vfx_render" $packName "no validated VFX outputs to upload" "See $StateDir\vfx-filter-$packName.log"
+          continue
+        }
+        & $packZip -SourceDirs @($filteredOut) -DestinationZip $zipPath -MaxFiles 480
+        $resp = Invoke-RestMethod -Method Post `
+          -Uri "$VellumBase/api/assets/$aid/game-ready/upload-run" `
+          -Form @{ pack = $packName; archive = Get-Item $zipPath } -TimeoutSec 600
+        $pubOut = & pwsh -NoProfile -File $publishVfx -AssetId $aid -VellumBase $VellumBase 2>&1
+        if ($LASTEXITCODE -ne 0) {
+          Add-Exception "vfx_publish" $packName ($pubOut | Out-String).Trim() "See $publishVfx"
+        }
+        Remove-Item $zipPath -Force -ErrorAction SilentlyContinue
+        $actions.Add("vfx_rendered:$($packName):registered_$($resp.registered)")
+      } catch {
+        Add-Exception "vfx_render" $packName $_.Exception.Message "See $log; zip kept at $zipPath if created"
       }
     }
   }

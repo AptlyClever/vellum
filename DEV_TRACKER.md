@@ -3,9 +3,9 @@
 > **Current Active Issue:** Asset Pipeline Product — Library + Conversion Factory + game-ready delivery  
 > **Governing CFD:** `cfd-inspiration-20260713-015950-vellum-control-alt-games-asset-vault-register-in` (slices A–F met; post-CFD track)  
 > **Product SoT:** `docs/asset-pipeline-product.md`  
-> **Next Immediate Step:** Implement real Niagara MRQ/Baker output
-> (transparent WebM / sprite sheet), validate it, and prove it in one actual
-> Control Alt Games web runtime. Baseline intake/extraction is complete.
+> **Next Immediate Step:** Keep the exclusive VFX render phase healthy in
+> Aurora reconcile and extend equivalent quality gates to model, texture, and
+> audio outputs. Fireworks VFX now has validated `slots` lane clips.
 
 ---
 
@@ -56,9 +56,10 @@
   - [x] Game-ready catalog API + UI
   - [x] Acceptance harness doc (Slots win fireworks)
   - [x] Native Unreal title consumption doc
-  - [ ] Execute Niagara bake plans through MRQ/Niagara Baker
-  - [ ] Package and validate transparent WebM / sprite sheets
-  - [ ] Prove one VFX artifact in an actual Games web runtime
+  - [x] Execute Niagara bake plans through MRQ/Niagara Baker
+  - [x] Package and validate transparent WebM / sprite sheets
+  - [x] Prove one VFX artifact in an actual Games web runtime
+  - [x] Add bounded exclusive VFX-render phase to Aurora reconcile
   - [ ] Add durable factory run/progress records to the API/UI
   - [ ] Add equivalent quality gates for model, texture, and audio outputs
 
@@ -91,4 +92,9 @@
   pack, three isolated parallel workers, synchronous Asset Registry scan,
   UE 5.8 texture export, smart ZIP, and batched hub ingest. Final drain
   processed 23 packs with 0 exceptions; all on-disk packs have baseline
-  game-ready catalog evidence. Real MRQ/Baker VFX media remains the next slice.
+  game-ready catalog evidence.
+* **2026-07-16** — Proved Fireworks Niagara VFX end-to-end on Aurora:
+  MRQ rendered 31 systems, pack validation accepted 16 systems, hub ingest
+  replaced `FireworksV1`, and `slots` now has 32 validated clips (contained +
+  breakout) with zero invalid lane rows. Added a bounded exclusive reconcile
+  phase for future bake-plan -> MRQ -> pack -> upload -> publish runs.

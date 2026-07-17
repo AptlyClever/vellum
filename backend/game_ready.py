@@ -510,3 +510,42 @@ def publish_to_lane(
     row["lane_paths"][lane] = str(dest)
     save_catalog(doc)
     return row
+
+
+def unpublish_from_lane(element_id: str, lane: str) -> dict[str, Any]:
+    if lane not in lookdev_mod.KNOWN_LANES:
+        raise ValueError(f"unknown_lane:{lane}")
+    doc = load_catalog()
+    row = None
+    for r in doc.get("elements") or []:
+        if r.get("id") == element_id:
+            row = r
+            break
+    if row is None:
+        raise KeyError(element_id)
+
+    changed = False
+    lanes = list(row.get("lanes") or [])
+    if lane in lanes:
+        row["lanes"] = [p for p in lanes if p != lane]
+        changed = True
+    presentations = dict(row.get("presentation") or {})
+    if lane in presentations:
+        presentations.pop(lane, None)
+        row["presentation"] = presentations
+        changed = True
+    lane_paths = dict(row.get("lane_paths") or {})
+    if lane in lane_paths:
+        try:
+            lane_file = Path(str(lane_paths[lane]))
+            if lane_file.is_file():
+                lane_file.unlink()
+        except OSError:
+            pass
+        lane_paths.pop(lane, None)
+        row["lane_paths"] = lane_paths
+        changed = True
+    if changed:
+        row["updated_at"] = _now()
+        save_catalog(doc)
+    return row

@@ -107,20 +107,35 @@ Accepted, non-actionable debt:
 
 ## The product is not finished
 
-`bake-vfx` currently inventories Niagara systems and writes a bake plan. It
-does **not** yet execute Movie Render Queue or Niagara Baker to emit playable
-transparent WebM clips or sprite sheets. A bake plan is useful factory
-evidence, but it is not a game element.
+`factory-all` still inventories Niagara systems and writes a bake plan during
+the parallel read-only worker phase. The real MRQ step is now a separate
+exclusive reconcile phase because it authors transient `/Game/Vellum` assets
+and must never run inside the shared parallel worker pool.
 
-The next product slice is therefore:
+Verified baseline (2026-07-16):
 
-1. consume each Niagara bake plan;
-2. render alpha-capable frames through MRQ or Niagara Baker;
-3. package transparent WebM and/or sprite sheets;
-4. validate duration, dimensions, alpha, frame count, and non-empty motion;
-5. register `vfx-clip` / `sprite-sheet` rows;
-6. prove one output in an actual Control Alt Games web runtime;
-7. only then call the VFX conversion lane complete.
+- `FireworksV1` rendered 31 Niagara systems through MRQ on Aurora.
+- `pack_vfx_media.ps1` accepted 16 systems after alpha / visible-content /
+  motion / dimension / frame-count validation.
+- The hub catalog was replaced with the filtered valid run.
+- `slots` now has 32 validated `vfx-clip` lane rows:
+  16 `contained` + 16 `breakout`.
+- Invalid systems remain useful diagnostic evidence but are not published to
+  game lanes.
+
+**Vault access rule (binding):** Aurora talks to the Vellum hub over HTTP only
+(`upload-run`, `publish`, `unpublish`, catalog queries on `:8770`). Never mount,
+share, or hand-edit the vault filesystem (`/mnt/data/vault/vellum`) from the
+factory host — it exists only on the press (`192.168.68.93`).
+
+The current VFX operating slice is therefore:
+
+1. keep `reconcile_aurora.ps1` phase 6c bounded (`-MaxVfxPerRun 1` by default);
+2. render bake-plan packs exclusively through `run_job.ps1 -Job bake-vfx -RunVfxMrq`;
+3. accept partial valid VFX packs when at least one validated artifact exists;
+4. upload only filtered / validated game-ready outputs;
+5. publish only validation-passing `contained` / `breakout` clips to lanes;
+6. prove each consuming game reads catalog rows instead of scanning stale files.
 
 After VFX, finish equivalent acceptance gates for models, textures, and audio.
 Catalog presence alone must not become the final quality standard.
@@ -145,6 +160,7 @@ Primary files:
 ```text
 F:\Games\AuroraVellum\Saved\VellumReconcile\reconcile_report.json
 F:\Games\AuroraVellum\Saved\VellumReconcile\factory-all-<Pack>.log
+F:\Games\AuroraVellum\Saved\VellumReconcile\vfx-render-<Pack>.log
 F:\Games\AuroraVellum\Saved\VellumPipeline\workers\<Pack>\
 ```
 
@@ -171,6 +187,13 @@ Controlled factory drain:
 ```powershell
 pwsh -NoProfile -File tools\pipeline\reconcile_aurora.ps1 `
   -MaxFactoryPerRun 30 -FactoryWorkers 3
+```
+
+Controlled VFX render pass:
+
+```powershell
+pwsh -NoProfile -File tools\pipeline\reconcile_aurora.ps1 `
+  -SkipInventory -SkipFactory -MaxVfxPerRun 1
 ```
 
 Three workers is the validated default for Aurora's 8-core/16-thread CPU and

@@ -68,9 +68,15 @@ function Wait-MrqOutputFrames {
     [string]$Phase = "MRQ"
   )
   if ($ExpectFrames -lt 1) { $ExpectFrames = 1 }
+  $initialCount = @(Get-ImageFiles -Root $SeqOutDir).Count
+  if ($initialCount -ge $ExpectFrames) {
+    Write-Host "$Phase ready frames=$initialCount"
+    return $initialCount
+  }
   $deadline = (Get-Date).AddSeconds($TimeoutSec)
-  $lastCount = -1
-  $stableSince = $null
+  $lastCount = $initialCount
+  $stableSince = Get-Date
+  Write-Host "$Phase frames=$initialCount want>=$ExpectFrames"
   while ((Get-Date) -lt $deadline) {
     $n = @(Get-ImageFiles -Root $SeqOutDir).Count
     if ($n -ne $lastCount) {

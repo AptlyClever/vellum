@@ -1237,6 +1237,17 @@ def api_game_ready_publish(element_id: str, body: GameReadyPublishRequest) -> di
     return {"schema_version": 1, "element": row}
 
 
+@app.post("/api/game-ready/elements/{element_id}/unpublish")
+def api_game_ready_unpublish(element_id: str, body: GameReadyPublishRequest) -> dict[str, Any]:
+    try:
+        row = game_ready_mod.unpublish_from_lane(element_id, body.lane)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="game_ready_not_found") from None
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"schema_version": 1, "element": row}
+
+
 @app.get("/api/attach/targets")
 def api_attach_targets() -> dict[str, Any]:
     return attach_mod.targets_status()
