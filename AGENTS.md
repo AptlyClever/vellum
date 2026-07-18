@@ -69,6 +69,9 @@ that does not exist yet.** Canonical table lives in Eidolon:
 
 ## Working rules
 
+- Vellum stores **bytes, not prose**: research/source text belongs in Mneme
+  (Visual Research bundles pair the two), and authored doctrine belongs in git
+  (Axiom Handbook / `ctrl-alt-standards`). Do not grow a document store here.
 - Prefer vault register + filesystem staging over dumping packs into app repos.
 - Never store Humble/Epic/Unity keys in git or in Axiom registry files.
 - Keep derived / game-ready outputs project-lane-scoped under the vault; leave raw packs in `01-source-bundles/`.
