@@ -19,6 +19,7 @@ from . import import_flow as import_flow_mod
 from . import intake as intake_mod
 from . import jobs as jobs_mod
 from . import lookdev as lookdev_mod
+from . import mneme as mneme_mod
 from . import register as register_mod
 from . import research as research_mod
 from . import scratch as scratch_mod
@@ -1341,15 +1342,140 @@ def api_scratch_hint(engine: str = Query(default="unreal")) -> dict[str, Any]:
 @app.get("/api/visual-research")
 def api_visual_research_list(
     q: str | None = Query(default=None),
+    project_id: str | None = Query(default=None, max_length=128),
     tag: str | None = Query(default=None),
     format: str | None = Query(default=None),
     limit: int = Query(default=100, ge=1, le=1000),
     offset: int = Query(default=0, ge=0),
 ) -> dict[str, Any]:
-    """Browse/search Visual Research (Bandit-safe, read-only)."""
+    """Browse/search Visual Research (project-agent-safe, read-only)."""
     return research_mod.list_items(
-        q=q, tag=tag, format=format, limit=limit, offset=offset
+        q=q,
+        project_id=project_id,
+        tag=tag,
+        format=format,
+        limit=limit,
+        offset=offset,
     )
+
+
+@app.post("/api/visual-research/bundles")
+async def api_visual_research_bundle_create(
+    file: UploadFile = File(...),
+    source_url: str = Form(...),
+    body: str = Form(...),
+    project_id: str | None = Form(default=None),
+    title: str | None = Form(default=None),
+    caption: str | None = Form(default=None),
+    captured_at: str | None = Form(default=None),
+    tags: str | None = Form(default=None),
+    rights: str | None = Form(default=None),
+    attribution: str | None = Form(default=None),
+    author: str | None = Form(default=None),
+    publisher: str | None = Form(default=None),
+    authorization: str | None = Header(default=None),
+) -> dict[str, Any]:
+    """Store visual evidence in Vellum and its extracted source text in Mneme."""
+    _require_research_write(authorization)
+    source_body = body.strip()
+    if not source_body:
+        raise HTTPException(status_code=400, detail="source_text_required")
+    if len(source_body) > 2_000_000:
+        raise HTTPException(status_code=400, detail="source_text_too_large")
+    if not source_url.strip():
+        raise HTTPException(status_code=400, detail="source_url_required")
+    try:
+        resolved_project = mneme_mod.resolve_project_id(project_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    content = await file.read()
+    try:
+        item = research_mod.ingest_image(
+            data=content,
+            filename=file.filename,
+            title=title,
+            caption=caption,
+            project_id=resolved_project,
+            source_url=source_url,
+            captured_at=captured_at,
+            tags=tags,
+            rights=rights,
+            attribution=attribution,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    research_id = str(item["id"])
+    link_tag = f"vellum-{research_id}"
+    mneme_tags = list(
+        dict.fromkeys([*(item.get("tags") or []), "visual-research", link_tag])
+    )
+    image_url = (
+        f"{mneme_mod.vellum_public_base_url()}"
+        f"/api/visual-research/{research_id}/file"
+    )
+    mneme_body = (
+        f"{source_body}\n\n---\n\n"
+        "## Visual evidence\n\n"
+        f"- Vellum ID: `{research_id}`\n"
+        f"- [View stored image]({image_url})\n"
+        f"- Original source: {item['source_url']}\n"
+    )
+
+    document: dict[str, Any] | None = None
+    try:
+        document = mneme_mod.create_document(
+            title=str(item["title"]),
+            project_id=resolved_project,
+            source_url=str(item["source_url"]),
+            captured_at=str(item["captured_at"]),
+            tags=mneme_tags,
+            body=mneme_body,
+            author=author,
+            publisher=publisher,
+        )
+    except mneme_mod.MnemeAmbiguousError:
+        try:
+            document = mneme_mod.find_document_by_tag(
+                link_tag, project_id=resolved_project
+            )
+        except mneme_mod.MnemeError:
+            document = None
+    except mneme_mod.MnemeError:
+        document = None
+
+    if not document:
+        research_mod.delete_item(research_id)
+        raise HTTPException(status_code=502, detail="mneme_ingest_failed")
+
+    document_id = str(document.get("id") or "").strip()
+    if not document_id:
+        research_mod.delete_item(research_id)
+        raise HTTPException(status_code=502, detail="mneme_invalid_response")
+    try:
+        linked = research_mod.link_mneme(
+            research_id,
+            project_id=resolved_project,
+            document_id=document_id,
+            document_url=mneme_mod.document_url(document_id),
+        )
+    except Exception:
+        try:
+            mneme_mod.delete_document(document_id)
+        except mneme_mod.MnemeError:
+            pass
+        research_mod.delete_item(research_id)
+        raise HTTPException(status_code=500, detail="bundle_link_failed") from None
+    return {
+        "schema_version": 1,
+        "item": linked,
+        "mneme_document": {
+            "id": document_id,
+            "project_id": resolved_project,
+            "url": mneme_mod.document_url(document_id),
+        },
+    }
 
 
 @app.get("/api/visual-research/{research_id}")
@@ -1380,6 +1506,7 @@ async def api_visual_research_create(
     file: UploadFile = File(...),
     title: str | None = Form(default=None),
     caption: str | None = Form(default=None),
+    project_id: str | None = Form(default=None),
     source_url: str | None = Form(default=None),
     captured_at: str | None = Form(default=None),
     tags: str | None = Form(default=None),
@@ -1389,6 +1516,11 @@ async def api_visual_research_create(
 ) -> dict[str, Any]:
     """Upload a visual research image (manual UI or automated capture). Requires write token."""
     _require_research_write(authorization)
+    if project_id:
+        try:
+            project_id = mneme_mod.resolve_project_id(project_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
     content = await file.read()
     try:
         item = research_mod.ingest_image(
@@ -1396,6 +1528,7 @@ async def api_visual_research_create(
             filename=file.filename,
             title=title,
             caption=caption,
+            project_id=project_id,
             source_url=source_url,
             captured_at=captured_at,
             tags=tags,

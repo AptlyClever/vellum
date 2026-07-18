@@ -84,8 +84,8 @@
 
       <div id="view-research" hidden>
         <p class="research-lede">
-          Reference and inspiration images for Bandit agents — not game-ready assets.
-          Stored in the Vellum vault with source URL and capture metadata.
+          Cross-project reference and inspiration — not game-ready assets.
+          Images live in Vellum; extracted source text lives in Mneme.
         </p>
         <section class="toolbar" aria-label="Visual Research filters">
           <label class="field grow">
@@ -112,6 +112,10 @@
             <span>Tag</span>
             <input id="rtag" type="text" placeholder="e.g. ui" autocomplete="off" />
           </label>
+          <label class="field">
+            <span>Project</span>
+            <input id="rproject-filter" type="text" placeholder="e.g. bandit" autocomplete="off" />
+          </label>
         </section>
 
         <details class="research-upload" id="research-upload">
@@ -125,9 +129,13 @@
               <span>Title</span>
               <input id="rtitle" type="text" placeholder="Short label" maxlength="300" />
             </label>
+            <label class="field">
+              <span>Project</span>
+              <input id="rproject" type="text" placeholder="Server default: bandit" maxlength="128" pattern="[A-Za-z0-9][A-Za-z0-9._-]{0,127}" />
+            </label>
             <label class="field grow">
               <span>Source URL</span>
-              <input id="rsource" type="url" placeholder="https://…" maxlength="2000" />
+              <input id="rsource" type="url" placeholder="https://…" maxlength="2000" required />
             </label>
             <label class="field grow">
               <span>Caption / notes</span>
@@ -144,6 +152,15 @@
             <label class="field grow">
               <span>Attribution (optional)</span>
               <input id="rattribution" type="text" placeholder="Author / license note" maxlength="1000" />
+            </label>
+            <label class="field research-source-text">
+              <span>Extracted source text (Markdown)</span>
+              <textarea
+                id="rbody"
+                rows="12"
+                placeholder="# Source title&#10;&#10;Captured article or page text…"
+                required
+              ></textarea>
             </label>
             <label class="field">
               <span>Write token</span>

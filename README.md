@@ -58,9 +58,11 @@ pytest -q
 ## Visual Research
 
 Reference/inspiration images (PNG, JPG, GIF, SVG, WebP) live in a separate
-vault collection from game-ready assets. Operators upload via the **Visual
-Research** tab; capture tools `POST /api/visual-research` with
-`VELLUM_RESEARCH_WRITE_TOKEN`. Bandit browses with the read APIs only — see
+vault collection from game-ready assets. Operators upload image + source-text
+bundles via the **Visual Research** tab; capture tools
+`POST /api/visual-research/bundles` with `VELLUM_RESEARCH_WRITE_TOKEN`.
+Vellum stores the image while Mneme stores the linked Markdown source text.
+Control Alt project agents browse with the read APIs only — see
 [`docs/api-visual-research.md`](./docs/api-visual-research.md).
 
 ## Boundaries

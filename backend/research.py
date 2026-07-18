@@ -1,7 +1,7 @@
 """Visual Research catalog — reference/inspiration images (not game-ready assets).
 
 Persists metadata in data/visual-research.yaml (mirrored to vault 02-index)
-and image bytes under vault 07-visual-research/<id>/. Bandit and other
+and image bytes under vault 07-visual-research/<id>/. Project agents and other
 consumers get read APIs; mutations require VELLUM_RESEARCH_WRITE_TOKEN.
 """
 
@@ -267,7 +267,7 @@ def _parse_tags(raw: Any) -> list[str]:
 
 
 def _public_item(row: dict[str, Any]) -> dict[str, Any]:
-    """Return a catalog row with a stable public shape for Bandit/UI."""
+    """Return a catalog row with a stable public shape for project agents/UI."""
     rid = str(row.get("id") or "")
     fmt = str(row.get("format") or "")
     return {
@@ -277,6 +277,7 @@ def _public_item(row: dict[str, Any]) -> dict[str, Any]:
         "title": row.get("title") or rid,
         "caption": row.get("caption") or None,
         "tags": list(row.get("tags") or []),
+        "project_id": row.get("project_id") or None,
         "source_url": row.get("source_url") or None,
         "captured_at": row.get("captured_at") or row.get("created_at"),
         "created_at": row.get("created_at"),
@@ -290,6 +291,8 @@ def _public_item(row: dict[str, Any]) -> dict[str, Any]:
         "checksum_sha256": row.get("checksum_sha256"),
         "rights": row.get("rights") or None,
         "attribution": row.get("attribution") or None,
+        "mneme_document_id": row.get("mneme_document_id") or None,
+        "mneme_document_url": row.get("mneme_document_url") or None,
         "file_url": f"/api/visual-research/{rid}/file" if rid else None,
     }
 
@@ -297,6 +300,7 @@ def _public_item(row: dict[str, Any]) -> dict[str, Any]:
 def list_items(
     *,
     q: str | None = None,
+    project_id: str | None = None,
     tag: str | None = None,
     format: str | None = None,  # noqa: A002 — API filter name
     limit: int = 100,
@@ -312,6 +316,7 @@ def list_items(
                     [
                         str(row.get("title") or ""),
                         str(row.get("caption") or ""),
+                        str(row.get("project_id") or ""),
                         str(row.get("source_url") or ""),
                         str(row.get("attribution") or ""),
                         str(row.get("rights") or ""),
@@ -323,6 +328,13 @@ def list_items(
                 return needle in blob
 
             items = [i for i in items if matches(i)]
+    if project_id:
+        project = project_id.strip().lower()
+        items = [
+            i
+            for i in items
+            if str(i.get("project_id") or "").strip().lower() == project
+        ]
     if tag:
         t = tag.strip().lower()
         items = [
@@ -390,6 +402,7 @@ def ingest_image(
     filename: str | None = None,
     title: str | None = None,
     caption: str | None = None,
+    project_id: str | None = None,
     source_url: str | None = None,
     captured_at: str | None = None,
     tags: Any = None,
@@ -434,6 +447,7 @@ def ingest_image(
         "title": display_title[:300],
         "caption": (caption or "").strip()[:2000] or None,
         "tags": tag_list,
+        "project_id": (project_id or "").strip()[:128] or None,
         "source_url": source,
         "captured_at": captured,
         "created_at": created,
@@ -453,6 +467,37 @@ def ingest_image(
     catalog = load_catalog()
     items = list(catalog.get("items") or [])
     items.append(row)
+    catalog["items"] = items
+    save_catalog(catalog)
+    return _public_item(row)
+
+
+def link_mneme(
+    research_id: str,
+    *,
+    project_id: str,
+    document_id: str,
+    document_url: str,
+) -> dict[str, Any]:
+    """Persist a confirmed Mneme cross-link on a Visual Research item."""
+    catalog = load_catalog()
+    items = list(catalog.get("items") or [])
+    idx = next(
+        (
+            i
+            for i, row in enumerate(items)
+            if isinstance(row, dict) and row.get("id") == research_id.strip()
+        ),
+        None,
+    )
+    if idx is None:
+        raise KeyError("visual_research_not_found")
+    row = dict(items[idx])
+    row["project_id"] = project_id.strip()
+    row["mneme_document_id"] = document_id.strip()
+    row["mneme_document_url"] = document_url.strip()
+    row["updated_at"] = _now()
+    items[idx] = row
     catalog["items"] = items
     save_catalog(catalog)
     return _public_item(row)

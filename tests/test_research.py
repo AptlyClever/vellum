@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import json
 import struct
 import zlib
 from pathlib import Path
 
+import httpx
 from fastapi.testclient import TestClient
 
+from backend import mneme as mneme_mod
 from backend import research as research_mod
 
 WRITE_TOKEN = "test-research-write-token"
@@ -77,6 +80,10 @@ def _seed(tmp_path: Path, monkeypatch, *, token: str = WRITE_TOKEN) -> Path:
     monkeypatch.setenv("VELLUM_RESEARCH_PATH", str(catalog))
     monkeypatch.setenv("VELLUM_VAULT_RESEARCH_PATH", str(mirror))
     monkeypatch.setenv("VELLUM_RESEARCH_WRITE_TOKEN", token)
+    monkeypatch.setenv("VELLUM_PUBLIC_BASE_URL", "http://vellum.test")
+    monkeypatch.setenv("MNEME_BASE_URL", "http://mneme.test")
+    monkeypatch.setenv("MNEME_DEFAULT_PROJECT_ID", "bandit")
+    monkeypatch.setenv("MNEME_WRITE_TOKEN", "test-mneme-write-token")
     # Isolate unrelated paths used if main app imports touch them
     monkeypatch.setenv("VELLUM_REGISTER_PATH", str(tmp_path / "register.yaml"))
     monkeypatch.setenv("VELLUM_DERIVED_PATH", str(tmp_path / "derived.yaml"))
@@ -305,3 +312,201 @@ def test_missing_write_token_blocks_mutations(tmp_path: Path, monkeypatch) -> No
     )
     assert res.status_code == 403
     assert res.json()["detail"] == "visual_research_read_only"
+
+
+def test_bundle_ingest_links_vellum_and_mneme_by_project(
+    tmp_path: Path, monkeypatch
+) -> None:
+    _seed(tmp_path, monkeypatch)
+    captured: dict = {}
+
+    def fake_create_document(**kwargs):
+        captured.update(kwargs)
+        return {
+            "id": "doc-bandit-hud",
+            "project_id": kwargs["project_id"],
+            "title": kwargs["title"],
+            "tags": kwargs["tags"],
+        }
+
+    monkeypatch.setattr(mneme_mod, "create_document", fake_create_document)
+    from backend.main import app
+
+    client = TestClient(app)
+    response = client.post(
+        "/api/visual-research/bundles",
+        headers=_auth_headers(),
+        files={"file": ("hud.png", _png_bytes(), "image/png")},
+        data={
+            "project_id": "lcard",
+            "title": "HUD research",
+            "source_url": "https://example.com/hud",
+            "body": "# Captured page\n\nUseful source text.",
+            "tags": "ui,hud",
+            "author": "Example Author",
+        },
+    )
+    assert response.status_code == 200, response.text
+    item = response.json()["item"]
+    assert item["project_id"] == "lcard"
+    assert item["mneme_document_id"] == "doc-bandit-hud"
+    assert item["mneme_document_url"] == (
+        "http://mneme.test/api/documents/doc-bandit-hud"
+    )
+    assert captured["project_id"] == "lcard"
+    assert "Useful source text." in captured["body"]
+    assert f"vellum-{item['id']}" in captured["tags"]
+    assert (
+        f"http://vellum.test/api/visual-research/{item['id']}/file"
+        in captured["body"]
+    )
+
+    listed = client.get(
+        "/api/visual-research", params={"project_id": "LCARD"}
+    ).json()
+    assert listed["total"] == 1
+    assert listed["items"][0]["id"] == item["id"]
+    assert client.get(
+        "/api/visual-research", params={"project_id": "bandit"}
+    ).json()["total"] == 0
+
+
+def test_bundle_uses_default_project_and_reconciles_ambiguous_create(
+    tmp_path: Path, monkeypatch
+) -> None:
+    _seed(tmp_path, monkeypatch)
+    seen: dict = {}
+
+    def ambiguous(**kwargs):
+        seen.update(kwargs)
+        raise mneme_mod.MnemeAmbiguousError("timeout")
+
+    def reconcile(tag, *, project_id, timeout=10.0):
+        assert tag.startswith("vellum-vr-")
+        assert project_id == "bandit"
+        return {"id": "doc-reconciled", "tags": [tag], "project_id": project_id}
+
+    monkeypatch.setattr(mneme_mod, "create_document", ambiguous)
+    monkeypatch.setattr(mneme_mod, "find_document_by_tag", reconcile)
+    from backend.main import app
+
+    client = TestClient(app)
+    response = client.post(
+        "/api/visual-research/bundles",
+        headers=_auth_headers(),
+        files={"file": ("diagram.svg", _svg_bytes(), "image/svg+xml")},
+        data={
+            "source_url": "https://example.com/diagram",
+            "body": "Captured diagram explanation.",
+        },
+    )
+    assert response.status_code == 200, response.text
+    item = response.json()["item"]
+    assert item["project_id"] == "bandit"
+    assert item["mneme_document_id"] == "doc-reconciled"
+    assert seen["project_id"] == "bandit"
+
+
+def test_bundle_validation_and_mneme_failure_roll_back_vellum(
+    tmp_path: Path, monkeypatch
+) -> None:
+    vault = _seed(tmp_path, monkeypatch)
+    from backend.main import app
+
+    client = TestClient(app)
+    denied = client.post(
+        "/api/visual-research/bundles",
+        files={"file": ("a.png", _png_bytes(), "image/png")},
+        data={
+            "source_url": "https://example.com/a",
+            "body": "captured source",
+        },
+    )
+    assert denied.status_code == 403
+    assert denied.json()["detail"] == "visual_research_read_only"
+
+    invalid_project = client.post(
+        "/api/visual-research/bundles",
+        headers=_auth_headers(),
+        files={"file": ("a.png", _png_bytes(), "image/png")},
+        data={
+            "project_id": "not a project",
+            "source_url": "https://example.com/a",
+            "body": "text",
+        },
+    )
+    assert invalid_project.status_code == 400
+    assert invalid_project.json()["detail"] == "project_id_invalid"
+
+    missing_text = client.post(
+        "/api/visual-research/bundles",
+        headers=_auth_headers(),
+        files={"file": ("a.png", _png_bytes(), "image/png")},
+        data={"source_url": "https://example.com/a", "body": "   "},
+    )
+    assert missing_text.status_code == 400
+    assert missing_text.json()["detail"] == "source_text_required"
+
+    missing_source = client.post(
+        "/api/visual-research/bundles",
+        headers=_auth_headers(),
+        files={"file": ("a.png", _png_bytes(), "image/png")},
+        data={"source_url": "   ", "body": "captured source"},
+    )
+    assert missing_source.status_code == 400
+    assert missing_source.json()["detail"] == "source_url_required"
+
+    def rejected(**_kwargs):
+        raise mneme_mod.MnemeError("mneme_http_403")
+
+    monkeypatch.setattr(mneme_mod, "create_document", rejected)
+    failed = client.post(
+        "/api/visual-research/bundles",
+        headers=_auth_headers(),
+        files={"file": ("a.png", _png_bytes(), "image/png")},
+        data={
+            "source_url": "https://example.com/a",
+            "body": "captured source",
+        },
+    )
+    assert failed.status_code == 502
+    assert failed.json()["detail"] == "mneme_ingest_failed"
+    assert research_mod.list_items()["total"] == 0
+    research_root = vault / "07-visual-research"
+    assert not research_root.exists() or not any(research_root.iterdir())
+
+
+def test_mneme_client_sends_supported_multipart_contract(
+    tmp_path: Path, monkeypatch
+) -> None:
+    _seed(tmp_path, monkeypatch)
+    captured: dict = {}
+
+    def fake_post(url, *, headers, files, timeout):
+        captured.update(
+            {"url": url, "headers": headers, "files": files, "timeout": timeout}
+        )
+        return httpx.Response(
+            201,
+            json={"id": "doc-client-test"},
+            request=httpx.Request("POST", url),
+        )
+
+    monkeypatch.setattr(httpx, "post", fake_post)
+    result = mneme_mod.create_document(
+        title="Research title",
+        project_id="proscenium",
+        source_url="https://example.com/source",
+        captured_at="2026-07-18T20:00:00+00:00",
+        tags=["visual-research", "vellum-vr-test"],
+        body="# Extracted text",
+        author="Author",
+        publisher="Publisher",
+    )
+    assert result["id"] == "doc-client-test"
+    assert captured["url"] == "http://mneme.test/api/documents"
+    assert captured["headers"]["Authorization"] == "Bearer test-mneme-write-token"
+    metadata = json.loads(captured["files"]["metadata"][1])
+    assert metadata["project_id"] == "proscenium"
+    assert metadata["source_url"] == "https://example.com/source"
+    assert captured["files"]["body"][1] == "# Extracted text"

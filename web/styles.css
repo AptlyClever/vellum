@@ -206,7 +206,8 @@ h1 {
 }
 
 .field input,
-.field select {
+.field select,
+.field textarea {
   font: 500 0.95rem/1.2 var(--sans);
   color: var(--ink);
   background: var(--panel);
@@ -215,8 +216,17 @@ h1 {
   min-height: 2.4rem;
 }
 
+.field textarea {
+  resize: vertical;
+  min-height: 10rem;
+  line-height: 1.45;
+  text-transform: none;
+  letter-spacing: normal;
+}
+
 .field input:focus,
-.field select:focus {
+.field select:focus,
+.field textarea:focus {
   outline: 2px solid color-mix(in srgb, var(--accent) 45%, transparent);
   outline-offset: 1px;
 }
@@ -950,6 +960,10 @@ table.assets tbody tr:last-child td {
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 0.75rem 1rem;
   margin-top: 0.85rem;
+}
+
+.research-source-text {
+  grid-column: 1 / -1;
 }
 
 .research-upload-actions {

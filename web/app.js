@@ -1716,6 +1716,7 @@ function openResearchLightbox(item) {
   img.alt = item.title || "Visual research";
   const bits = [
     `Type: Visual Research`,
+    item.project_id ? `Project: ${item.project_id}` : null,
     `Format: ${(item.format || "").toUpperCase()}`,
     item.source_url ? `Source: ${item.source_url}` : null,
     `Captured: ${formatCaptureDate(item.captured_at)}`,
@@ -1726,6 +1727,15 @@ function openResearchLightbox(item) {
     item.width && item.height ? `${item.width}×${item.height}` : null,
   ].filter(Boolean);
   meta.textContent = bits.join(" · ");
+  if (item.mneme_document_url) {
+    meta.appendChild(document.createTextNode(" · "));
+    const mnemeLink = document.createElement("a");
+    mnemeLink.href = item.mneme_document_url;
+    mnemeLink.target = "_blank";
+    mnemeLink.rel = "noopener";
+    mnemeLink.textContent = "Read source text in Mneme";
+    meta.appendChild(mnemeLink);
+  }
   if (typeof dlg.showModal === "function") dlg.showModal();
 }
 
@@ -1738,7 +1748,7 @@ function renderResearchGrid(items) {
     const empty = document.createElement("p");
     empty.className = "fit";
     empty.textContent =
-      "No visual research yet. Upload a reference image above, or POST /api/visual-research.";
+      "No visual research yet. Upload a source bundle above, or POST /api/visual-research/bundles.";
     host.appendChild(empty);
     return;
   }
@@ -1768,6 +1778,7 @@ function renderResearchGrid(items) {
     const meta = document.createElement("span");
     meta.className = "research-meta";
     meta.textContent = [
+      item.project_id || null,
       (item.format || "?").toUpperCase(),
       item.tags && item.tags.length ? item.tags.slice(0, 3).join(", ") : null,
     ]
@@ -1793,9 +1804,11 @@ async function refreshResearch() {
   const q = ($("rq") && $("rq").value.trim()) || "";
   const format = ($("rformat") && $("rformat").value) || "";
   const tag = ($("rtag") && $("rtag").value.trim()) || "";
+  const project = ($("rproject-filter") && $("rproject-filter").value.trim()) || "";
   if (q) params.set("q", q);
   if (format) params.set("format", format);
   if (tag) params.set("tag", tag);
+  if (project) params.set("project_id", project);
   params.set("limit", "200");
   const qs = params.toString();
   try {
@@ -1824,6 +1837,9 @@ if ($("tab-research")) {
 if ($("rq")) $("rq").addEventListener("input", debounce(refreshResearch, 180));
 if ($("rformat")) $("rformat").addEventListener("change", refreshResearch);
 if ($("rtag")) $("rtag").addEventListener("input", debounce(refreshResearch, 180));
+if ($("rproject-filter")) {
+  $("rproject-filter").addEventListener("input", debounce(refreshResearch, 180));
+}
 
 if ($("rtoken") && researchWriteToken) {
   $("rtoken").value = researchWriteToken;
@@ -1851,21 +1867,25 @@ if ($("research-upload-form")) {
     fd.append("file", fileInput.files[0]);
     const title = $("rtitle").value.trim();
     const source = $("rsource").value.trim();
+    const project = $("rproject").value.trim();
+    const sourceBody = $("rbody").value.trim();
     const caption = $("rcaption").value.trim();
     const tags = $("rtags").value.trim();
     const rights = $("rrights").value.trim();
     const attribution = $("rattribution").value.trim();
     if (title) fd.append("title", title);
-    if (source) fd.append("source_url", source);
+    fd.append("source_url", source);
+    fd.append("body", sourceBody);
+    if (project) fd.append("project_id", project);
     if (caption) fd.append("caption", caption);
     if (tags) fd.append("tags", tags);
     if (rights) fd.append("rights", rights);
     if (attribution) fd.append("attribution", attribution);
 
     btn.disabled = true;
-    status.textContent = "Uploading…";
+    status.textContent = "Storing in Vellum and Mneme…";
     try {
-      const res = await fetch("/api/visual-research", {
+      const res = await fetch("/api/visual-research/bundles", {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
         body: fd,
@@ -1880,10 +1900,12 @@ if ($("research-upload-form")) {
         const detail = body.detail || res.statusText || "upload_failed";
         throw new Error(detail);
       }
-      status.textContent = "Uploaded.";
+      status.textContent = "Stored in Vellum and Mneme.";
       fileInput.value = "";
       $("rtitle").value = "";
       $("rcaption").value = "";
+      $("rsource").value = "";
+      $("rbody").value = "";
       await refreshResearch();
     } catch (err) {
       status.textContent = `Failed: ${err.message || err}`;
