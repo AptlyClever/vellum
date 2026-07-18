@@ -25,6 +25,8 @@ data/jobs.sqlite3
 data/derived-outputs.yaml
 data/*.sqlite3
 data/game-ready.yaml
+data/visual-research.yaml
+data/attachments.yaml
 
 # Local dev vault artifacts (real vault lives on the hub)
 02-index/

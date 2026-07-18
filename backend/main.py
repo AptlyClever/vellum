@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
+from fastapi import FastAPI, File, Form, Header, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -20,6 +20,7 @@ from . import intake as intake_mod
 from . import jobs as jobs_mod
 from . import lookdev as lookdev_mod
 from . import register as register_mod
+from . import research as research_mod
 from . import scratch as scratch_mod
 from . import ue_hosts as ue_hosts_mod
 
@@ -191,6 +192,25 @@ class ScratchRecordRequest(BaseModel):
     engine_version: str | None = Field(default=None, max_length=64)
     notes: str | None = Field(default=None, max_length=4000)
     intake_run_id: str | None = Field(default=None, max_length=200)
+
+
+class VisualResearchPatchRequest(BaseModel):
+    title: str | None = Field(default=None, max_length=300)
+    caption: str | None = Field(default=None, max_length=2000)
+    tags: list[str] | None = None
+    source_url: str | None = Field(default=None, max_length=2000)
+    captured_at: str | None = Field(default=None, max_length=64)
+    rights: str | None = Field(default=None, max_length=500)
+    attribution: str | None = Field(default=None, max_length=1000)
+
+
+def _require_research_write(authorization: str | None) -> None:
+    try:
+        research_mod.require_write_token(authorization)
+    except PermissionError:
+        raise HTTPException(
+            status_code=403, detail="visual_research_read_only"
+        ) from None
 
 
 @app.get("/api/health")
@@ -1316,6 +1336,105 @@ def api_scratch_hint(engine: str = Query(default="unreal")) -> dict[str, Any]:
             encoding="utf-8",
         )
     return {"schema_version": 1, "engine": engine, "vault_hint": str(path)}
+
+
+@app.get("/api/visual-research")
+def api_visual_research_list(
+    q: str | None = Query(default=None),
+    tag: str | None = Query(default=None),
+    format: str | None = Query(default=None),
+    limit: int = Query(default=100, ge=1, le=1000),
+    offset: int = Query(default=0, ge=0),
+) -> dict[str, Any]:
+    """Browse/search Visual Research (Bandit-safe, read-only)."""
+    return research_mod.list_items(
+        q=q, tag=tag, format=format, limit=limit, offset=offset
+    )
+
+
+@app.get("/api/visual-research/{research_id}")
+def api_visual_research_get(research_id: str) -> dict[str, Any]:
+    item = research_mod.get_item(research_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="visual_research_not_found")
+    return item
+
+
+@app.get("/api/visual-research/{research_id}/file")
+def api_visual_research_file(research_id: str) -> FileResponse:
+    raw = research_mod.get_raw_item(research_id)
+    if not raw:
+        raise HTTPException(status_code=404, detail="visual_research_not_found")
+    try:
+        path = research_mod.resolve_safe_file(raw)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="file_missing") from None
+    except PermissionError:
+        raise HTTPException(status_code=403, detail="path_outside_vault") from None
+    media = str(raw.get("mime_type") or "application/octet-stream")
+    return FileResponse(path, media_type=media, filename=path.name)
+
+
+@app.post("/api/visual-research")
+async def api_visual_research_create(
+    file: UploadFile = File(...),
+    title: str | None = Form(default=None),
+    caption: str | None = Form(default=None),
+    source_url: str | None = Form(default=None),
+    captured_at: str | None = Form(default=None),
+    tags: str | None = Form(default=None),
+    rights: str | None = Form(default=None),
+    attribution: str | None = Form(default=None),
+    authorization: str | None = Header(default=None),
+) -> dict[str, Any]:
+    """Upload a visual research image (manual UI or automated capture). Requires write token."""
+    _require_research_write(authorization)
+    content = await file.read()
+    try:
+        item = research_mod.ingest_image(
+            data=content,
+            filename=file.filename,
+            title=title,
+            caption=caption,
+            source_url=source_url,
+            captured_at=captured_at,
+            tags=tags,
+            rights=rights,
+            attribution=attribution,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"schema_version": 1, "item": item}
+
+
+@app.patch("/api/visual-research/{research_id}")
+def api_visual_research_patch(
+    research_id: str,
+    body: VisualResearchPatchRequest,
+    authorization: str | None = Header(default=None),
+) -> dict[str, Any]:
+    _require_research_write(authorization)
+    fields = body.model_dump(exclude_unset=True)
+    try:
+        item = research_mod.update_item(research_id, **fields)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="visual_research_not_found") from None
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"schema_version": 1, "item": item}
+
+
+@app.delete("/api/visual-research/{research_id}")
+def api_visual_research_delete(
+    research_id: str,
+    authorization: str | None = Header(default=None),
+) -> dict[str, Any]:
+    _require_research_write(authorization)
+    try:
+        result = research_mod.delete_item(research_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="visual_research_not_found") from None
+    return {"schema_version": 1, **result}
 
 
 @app.get("/")

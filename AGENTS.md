@@ -59,6 +59,7 @@ that does not exist yet.** Canonical table lives in Eidolon:
 10. `docs/library-project.md` — curated Unreal Library layout.
 11. `docs/api-intake.md` — IntakeRun + jobs + asset patch API for agents.
 12. `docs/api-lookdev.md` / `docs/api-game-ready.md` — derived + game-ready catalog APIs.
+12b. `docs/api-visual-research.md` — Visual Research collection (Bandit read-only + write-token ingest).
 13. `docs/slice-e-epic-staging.md` — Epic/Fab Add-to-Project notes.
 14. `docs/brand-canon.md` — core vs Games classification rules.
 15. Frozen archaeology: `docs/ue-lookdev-worker.md`, `docs/ue-mrq-capture.md`, `archive/prototype-v0/`.

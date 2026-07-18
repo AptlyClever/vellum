@@ -27,54 +27,157 @@
         <div class="stats" id="stats" aria-live="polite"></div>
       </header>
 
-      <section class="toolbar" aria-label="Filters">
-        <label class="field grow">
-          <span>Search</span>
-          <input id="q" type="search" placeholder="Name, fit, type…" autocomplete="off" />
-        </label>
-        <label class="field">
-          <span>Engine</span>
-          <select id="engine">
-            <option value="">All</option>
-            <option value="unreal">Unreal</option>
-            <option value="unity">Unity</option>
-          </select>
-        </label>
-        <label class="field">
-          <span>Scope</span>
-          <select id="available">
-            <option value="on_machine" selected>On Aurora (F:)</option>
-            <option value="">All owned packs</option>
-            <option value="ready">Ready</option>
-            <option value="on_disk">On disk</option>
-            <option value="vault">Vault only</option>
-            <option value="installable">Installable</option>
-            <option value="need_download">Need download (unfinished)</option>
-          </select>
-        </label>
-      </section>
+      <nav class="view-tabs" aria-label="Vellum views">
+        <button type="button" class="view-tab active" data-view="register" id="tab-register">
+          Asset Register
+        </button>
+        <button type="button" class="view-tab" data-view="research" id="tab-research">
+          Visual Research
+        </button>
+      </nav>
 
-      <p class="count" id="count"></p>
-      <div class="table-wrap">
-        <table class="assets">
-          <thead>
-            <tr>
-              <th>#</th>
-              <th>Asset</th>
-              <th>Engine</th>
-              <th>Type</th>
-              <th>Available</th>
-              <th>Fit</th>
-            </tr>
-          </thead>
-          <tbody id="rows"></tbody>
-        </table>
+      <div id="view-register">
+        <section class="toolbar" aria-label="Filters">
+          <label class="field grow">
+            <span>Search</span>
+            <input id="q" type="search" placeholder="Name, fit, type…" autocomplete="off" />
+          </label>
+          <label class="field">
+            <span>Engine</span>
+            <select id="engine">
+              <option value="">All</option>
+              <option value="unreal">Unreal</option>
+              <option value="unity">Unity</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Scope</span>
+            <select id="available">
+              <option value="on_machine" selected>On Aurora (F:)</option>
+              <option value="">All owned packs</option>
+              <option value="ready">Ready</option>
+              <option value="on_disk">On disk</option>
+              <option value="vault">Vault only</option>
+              <option value="installable">Installable</option>
+              <option value="need_download">Need download (unfinished)</option>
+            </select>
+          </label>
+        </section>
+
+        <p class="count" id="count"></p>
+        <div class="table-wrap">
+          <table class="assets">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Asset</th>
+                <th>Engine</th>
+                <th>Type</th>
+                <th>Available</th>
+                <th>Fit</th>
+              </tr>
+            </thead>
+            <tbody id="rows"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div id="view-research" hidden>
+        <p class="research-lede">
+          Reference and inspiration images for Bandit agents — not game-ready assets.
+          Stored in the Vellum vault with source URL and capture metadata.
+        </p>
+        <section class="toolbar" aria-label="Visual Research filters">
+          <label class="field grow">
+            <span>Search</span>
+            <input
+              id="rq"
+              type="search"
+              placeholder="Title, caption, tag, source…"
+              autocomplete="off"
+            />
+          </label>
+          <label class="field">
+            <span>Format</span>
+            <select id="rformat">
+              <option value="">All</option>
+              <option value="png">PNG</option>
+              <option value="jpg">JPG</option>
+              <option value="gif">GIF</option>
+              <option value="webp">WebP</option>
+              <option value="svg">SVG</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Tag</span>
+            <input id="rtag" type="text" placeholder="e.g. ui" autocomplete="off" />
+          </label>
+        </section>
+
+        <details class="research-upload" id="research-upload">
+          <summary>Upload visual research</summary>
+          <form id="research-upload-form" class="research-upload-form">
+            <label class="field grow">
+              <span>Image file</span>
+              <input id="rfile" type="file" accept=".png,.jpg,.jpeg,.gif,.webp,.svg,image/*" required />
+            </label>
+            <label class="field grow">
+              <span>Title</span>
+              <input id="rtitle" type="text" placeholder="Short label" maxlength="300" />
+            </label>
+            <label class="field grow">
+              <span>Source URL</span>
+              <input id="rsource" type="url" placeholder="https://…" maxlength="2000" />
+            </label>
+            <label class="field grow">
+              <span>Caption / notes</span>
+              <input id="rcaption" type="text" placeholder="Optional caption" maxlength="2000" />
+            </label>
+            <label class="field">
+              <span>Tags</span>
+              <input id="rtags" type="text" placeholder="comma,separated" />
+            </label>
+            <label class="field">
+              <span>Rights (optional)</span>
+              <input id="rrights" type="text" placeholder="e.g. fair-use research" maxlength="500" />
+            </label>
+            <label class="field grow">
+              <span>Attribution (optional)</span>
+              <input id="rattribution" type="text" placeholder="Author / license note" maxlength="1000" />
+            </label>
+            <label class="field">
+              <span>Write token</span>
+              <input
+                id="rtoken"
+                type="password"
+                placeholder="VELLUM_RESEARCH_WRITE_TOKEN"
+                autocomplete="off"
+              />
+            </label>
+            <div class="research-upload-actions">
+              <button type="submit" class="btn" id="rupload-btn">Upload</button>
+              <span class="fit" id="rupload-status" aria-live="polite"></span>
+            </div>
+          </form>
+        </details>
+
+        <p class="count" id="rcount"></p>
+        <div id="research-grid" class="research-grid" aria-label="Visual research gallery"></div>
       </div>
 
       <aside class="detail" id="detail" hidden>
         <button type="button" class="close" id="detail-close" aria-label="Close detail">×</button>
         <div id="detail-body"></div>
       </aside>
+
+      <dialog id="research-lightbox" class="research-lightbox">
+        <form method="dialog" class="research-lightbox-bar">
+          <button type="submit" class="btn btn-secondary btn-tiny" value="close">Close</button>
+          <span id="research-lightbox-title" class="research-lightbox-title"></span>
+        </form>
+        <img id="research-lightbox-img" alt="" />
+        <p id="research-lightbox-meta" class="research-lightbox-meta"></p>
+      </dialog>
     </div>
     <script src="/static/app.js"></script>
   </body>

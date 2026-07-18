@@ -33,6 +33,7 @@ pytest -q
 | **[docs/factory-operations.md](./docs/factory-operations.md)** | Binding factory runtime, evidence, recovery, and continuation point |
 | **[docs/machine-roles.md](./docs/machine-roles.md)** | Borealis dev-primary / Aurora factory-primary split |
 | **[docs/intake-runbook.md](./docs/intake-runbook.md)** | Redeem → Fab → P4 → register |
+| **[docs/api-visual-research.md](./docs/api-visual-research.md)** | **Visual Research** collection — Bandit read contract + upload API |
 | **[docs/cfd/](./docs/cfd/)** | CFD mirrors + architecture research |
 | **[docs/humble-asset-vault-inventory.md](./docs/humble-asset-vault-inventory.md)** | Authoritative **37-item** inventory (keys excluded) |
 | **[config/humble-seed.yaml](./config/humble-seed.yaml)** | Seed register (no keys) |
@@ -54,9 +55,19 @@ pytest -q
   `prototype-v0`; Unity reconcile remains parked.
 
 
+## Visual Research
+
+Reference/inspiration images (PNG, JPG, GIF, SVG, WebP) live in a separate
+vault collection from game-ready assets. Operators upload via the **Visual
+Research** tab; capture tools `POST /api/visual-research` with
+`VELLUM_RESEARCH_WRITE_TOKEN`. Bandit browses with the read APIs only — see
+[`docs/api-visual-research.md`](./docs/api-visual-research.md).
+
 ## Boundaries
 
 - Raw assets and keys stay under `/mnt/data/vault/vellum` (private data), never in this repo.
 - Product repos consume validated game-ready artifacts, never raw marketplace
   packs. A bake plan is evidence, not a playable artifact.
 - Redeem-by expiry is an indicator only — it does not invalidate staged assets.
+- Visual Research write token stays on the press / operator tools — never give
+  it to Bandit agents.

@@ -1653,6 +1653,218 @@ $("q").addEventListener("input", debounce(refresh, 180));
 $("engine").addEventListener("change", refresh);
 $("available").addEventListener("change", refresh);
 
+/* —— Visual Research view —— */
+let researchWriteToken = "";
+
+function setView(view) {
+  const register = $("view-register");
+  const research = $("view-research");
+  const tabReg = $("tab-register");
+  const tabRes = $("tab-research");
+  if (!register || !research) return;
+  const isResearch = view === "research";
+  register.hidden = isResearch;
+  research.hidden = !isResearch;
+  if (tabReg) tabReg.classList.toggle("active", !isResearch);
+  if (tabRes) tabRes.classList.toggle("active", isResearch);
+  if (isResearch) {
+    $("detail").hidden = true;
+    stopCaptureWatch();
+    refreshResearch().catch(console.error);
+  }
+}
+
+function formatCaptureDate(iso) {
+  if (!iso) return "—";
+  try {
+    return new Date(iso).toLocaleString(undefined, {
+      dateStyle: "medium",
+      timeStyle: "short",
+    });
+  } catch {
+    return String(iso);
+  }
+}
+
+function openResearchLightbox(item) {
+  const dlg = $("research-lightbox");
+  const img = $("research-lightbox-img");
+  const title = $("research-lightbox-title");
+  const meta = $("research-lightbox-meta");
+  if (!dlg || !img) return;
+  title.textContent = item.title || item.id;
+  img.src = item.file_url || `/api/visual-research/${encodeURIComponent(item.id)}/file`;
+  img.alt = item.title || "Visual research";
+  const bits = [
+    `Type: Visual Research`,
+    `Format: ${(item.format || "").toUpperCase()}`,
+    item.source_url ? `Source: ${item.source_url}` : null,
+    `Captured: ${formatCaptureDate(item.captured_at)}`,
+    item.caption ? `Caption: ${item.caption}` : null,
+    item.tags && item.tags.length ? `Tags: ${item.tags.join(", ")}` : null,
+    item.attribution ? `Attribution: ${item.attribution}` : null,
+    item.rights ? `Rights: ${item.rights}` : null,
+    item.width && item.height ? `${item.width}×${item.height}` : null,
+  ].filter(Boolean);
+  meta.textContent = bits.join(" · ");
+  if (typeof dlg.showModal === "function") dlg.showModal();
+}
+
+function renderResearchGrid(items) {
+  const host = $("research-grid");
+  if (!host) return;
+  clear(host);
+  const list = Array.isArray(items) ? items : [];
+  if (!list.length) {
+    const empty = document.createElement("p");
+    empty.className = "fit";
+    empty.textContent =
+      "No visual research yet. Upload a reference image above, or POST /api/visual-research.";
+    host.appendChild(empty);
+    return;
+  }
+  for (const item of list) {
+    const card = document.createElement("figure");
+    card.className = "research-card";
+    card.tabIndex = 0;
+    card.setAttribute("role", "button");
+    card.setAttribute("aria-label", `Open ${item.title || item.id}`);
+
+    const img = document.createElement("img");
+    img.src = item.file_url || `/api/visual-research/${encodeURIComponent(item.id)}/file`;
+    img.alt = item.title || "Visual research";
+    img.loading = "lazy";
+    if (item.format === "svg") img.className = "research-svg-thumb";
+    card.appendChild(img);
+
+    const cap = document.createElement("figcaption");
+    const typePill = document.createElement("span");
+    typePill.className = "pill-research";
+    typePill.textContent = "Visual Research";
+    cap.appendChild(typePill);
+    const titleEl = document.createElement("span");
+    titleEl.className = "research-title";
+    titleEl.textContent = item.title || item.id;
+    cap.appendChild(titleEl);
+    const meta = document.createElement("span");
+    meta.className = "research-meta";
+    meta.textContent = [
+      (item.format || "?").toUpperCase(),
+      item.tags && item.tags.length ? item.tags.slice(0, 3).join(", ") : null,
+    ]
+      .filter(Boolean)
+      .join(" · ");
+    cap.appendChild(meta);
+    card.appendChild(cap);
+
+    const open = () => openResearchLightbox(item);
+    card.addEventListener("click", open);
+    card.addEventListener("keydown", (ev) => {
+      if (ev.key === "Enter" || ev.key === " ") {
+        ev.preventDefault();
+        open();
+      }
+    });
+    host.appendChild(card);
+  }
+}
+
+async function refreshResearch() {
+  const params = new URLSearchParams();
+  const q = ($("rq") && $("rq").value.trim()) || "";
+  const format = ($("rformat") && $("rformat").value) || "";
+  const tag = ($("rtag") && $("rtag").value.trim()) || "";
+  if (q) params.set("q", q);
+  if (format) params.set("format", format);
+  if (tag) params.set("tag", tag);
+  params.set("limit", "200");
+  const qs = params.toString();
+  try {
+    const data = await fetchJson(`/api/visual-research${qs ? `?${qs}` : ""}`);
+    renderResearchGrid(data.items || []);
+    const total = data.total != null ? data.total : (data.items || []).length;
+    $("rcount").textContent = `${total} visual research image${total === 1 ? "" : "s"}`;
+  } catch (err) {
+    console.error(err);
+    const host = $("research-grid");
+    clear(host);
+    const empty = document.createElement("p");
+    empty.className = "empty";
+    empty.textContent = "Failed to load visual research — check /api/visual-research.";
+    host.appendChild(empty);
+    $("rcount").textContent = "load error";
+  }
+}
+
+if ($("tab-register")) {
+  $("tab-register").addEventListener("click", () => setView("register"));
+}
+if ($("tab-research")) {
+  $("tab-research").addEventListener("click", () => setView("research"));
+}
+if ($("rq")) $("rq").addEventListener("input", debounce(refreshResearch, 180));
+if ($("rformat")) $("rformat").addEventListener("change", refreshResearch);
+if ($("rtag")) $("rtag").addEventListener("input", debounce(refreshResearch, 180));
+
+if ($("research-upload-form")) {
+  $("research-upload-form").addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    const status = $("rupload-status");
+    const btn = $("rupload-btn");
+    const fileInput = $("rfile");
+    const tokenInput = $("rtoken");
+    if (!fileInput.files || !fileInput.files[0]) {
+      status.textContent = "Choose a file.";
+      return;
+    }
+    const token = (tokenInput.value || researchWriteToken || "").trim();
+    if (!token) {
+      status.textContent = "Write token required.";
+      return;
+    }
+    researchWriteToken = token;
+    const fd = new FormData();
+    fd.append("file", fileInput.files[0]);
+    const title = $("rtitle").value.trim();
+    const source = $("rsource").value.trim();
+    const caption = $("rcaption").value.trim();
+    const tags = $("rtags").value.trim();
+    const rights = $("rrights").value.trim();
+    const attribution = $("rattribution").value.trim();
+    if (title) fd.append("title", title);
+    if (source) fd.append("source_url", source);
+    if (caption) fd.append("caption", caption);
+    if (tags) fd.append("tags", tags);
+    if (rights) fd.append("rights", rights);
+    if (attribution) fd.append("attribution", attribution);
+
+    btn.disabled = true;
+    status.textContent = "Uploading…";
+    try {
+      const res = await fetch("/api/visual-research", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: fd,
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const detail = body.detail || res.statusText || "upload_failed";
+        throw new Error(detail);
+      }
+      status.textContent = "Uploaded.";
+      fileInput.value = "";
+      $("rtitle").value = "";
+      $("rcaption").value = "";
+      await refreshResearch();
+    } catch (err) {
+      status.textContent = `Failed: ${err.message || err}`;
+      console.error(err);
+    } finally {
+      btn.disabled = false;
+    }
+  });
+}
+
 loadStats().catch(console.error);
 refresh().catch(console.error);
 startLiveOps();

@@ -16,11 +16,16 @@ services:
       VELLUM_JOBS_DB_PATH: /app/data/jobs.sqlite3
       VELLUM_DERIVED_PATH: /app/data/derived-outputs.yaml
       VELLUM_ATTACHMENTS_PATH: /app/data/attachments.yaml
+      VELLUM_RESEARCH_PATH: /app/data/visual-research.yaml
       VELLUM_VAULT_ROOT: /mnt/data/vault/vellum
       VELLUM_VAULT_REGISTER_PATH: /mnt/data/vault/vellum/02-index/asset-register.yaml
       VELLUM_VAULT_INTAKE_RUNS_PATH: /mnt/data/vault/vellum/02-index/intake-runs.yaml
       VELLUM_VAULT_DERIVED_PATH: /mnt/data/vault/vellum/02-index/derived-outputs.yaml
       VELLUM_VAULT_ATTACHMENTS_PATH: /mnt/data/vault/vellum/02-index/attachments.yaml
+      VELLUM_VAULT_RESEARCH_PATH: /mnt/data/vault/vellum/02-index/visual-research.yaml
+      # Write token for Visual Research upload/patch/delete (Bandit must NOT receive this).
+      # Set via host env / secrets — never commit the real value.
+      VELLUM_RESEARCH_WRITE_TOKEN: ${VELLUM_RESEARCH_WRITE_TOKEN:-}
       AXIOM_BASE_URL: http://192.168.68.93:7895
       AXIOM_PUBLIC_BASE_URL: http://192.168.68.93:7895
       AXIOM_GLYPH_HERO_IMAGES: /mnt/temp/config/ctrl-alt-axiom/config/hails/glyph-hero-images
@@ -75,11 +80,14 @@ services:
       VELLUM_JOBS_DB_PATH: /app/data/jobs.sqlite3
       VELLUM_DERIVED_PATH: /app/data/derived-outputs.yaml
       VELLUM_ATTACHMENTS_PATH: /app/data/attachments.yaml
+      VELLUM_RESEARCH_PATH: /app/data/visual-research.yaml
       VELLUM_VAULT_ROOT: /mnt/data/vault/vellum
       VELLUM_VAULT_REGISTER_PATH: /mnt/data/vault/vellum/02-index/asset-register.yaml
       VELLUM_VAULT_INTAKE_RUNS_PATH: /mnt/data/vault/vellum/02-index/intake-runs.yaml
       VELLUM_VAULT_DERIVED_PATH: /mnt/data/vault/vellum/02-index/derived-outputs.yaml
       VELLUM_VAULT_ATTACHMENTS_PATH: /mnt/data/vault/vellum/02-index/attachments.yaml
+      VELLUM_VAULT_RESEARCH_PATH: /mnt/data/vault/vellum/02-index/visual-research.yaml
+      VELLUM_RESEARCH_WRITE_TOKEN: ${VELLUM_RESEARCH_WRITE_TOKEN:-}
       AXIOM_BASE_URL: http://192.168.68.93:7895
       AXIOM_PUBLIC_BASE_URL: http://192.168.68.93:7895
       AXIOM_GLYPH_HERO_IMAGES: /mnt/temp/config/ctrl-alt-axiom/config/hails/glyph-hero-images
@@ -111,7 +119,9 @@ services:
       VELLUM_JOBS_DB_PATH: /tmp/vellum-test-jobs.sqlite3
       VELLUM_DERIVED_PATH: /tmp/vellum-test-derived.yaml
       VELLUM_ATTACHMENTS_PATH: /tmp/vellum-test-attachments.yaml
+      VELLUM_RESEARCH_PATH: /tmp/vellum-test-research.yaml
       VELLUM_VAULT_ROOT: /tmp/vellum-test-vault
+      VELLUM_RESEARCH_WRITE_TOKEN: test-research-write-token
       AXIOM_GLYPH_HERO_IMAGES: /tmp/vellum-test-glyph-images
       LCARD_VELLUM_MEDIA_DIR: /tmp/vellum-test-lcard-media
       BANDIT_VELLUM_STATIC_DIR: /tmp/vellum-test-bandit-web/vellum
