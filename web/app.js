@@ -1654,7 +1654,26 @@ $("engine").addEventListener("change", refresh);
 $("available").addEventListener("change", refresh);
 
 /* —— Visual Research view —— */
-let researchWriteToken = "";
+const RESEARCH_TOKEN_KEY = "vellum.researchWriteToken";
+
+function loadResearchToken() {
+  try {
+    return localStorage.getItem(RESEARCH_TOKEN_KEY) || "";
+  } catch {
+    return "";
+  }
+}
+
+function saveResearchToken(token) {
+  try {
+    if (token) localStorage.setItem(RESEARCH_TOKEN_KEY, token);
+    else localStorage.removeItem(RESEARCH_TOKEN_KEY);
+  } catch {
+    /* storage unavailable (private mode) — token stays page-local */
+  }
+}
+
+let researchWriteToken = loadResearchToken();
 
 function setView(view) {
   const register = $("view-register");
@@ -1806,6 +1825,10 @@ if ($("rq")) $("rq").addEventListener("input", debounce(refreshResearch, 180));
 if ($("rformat")) $("rformat").addEventListener("change", refreshResearch);
 if ($("rtag")) $("rtag").addEventListener("input", debounce(refreshResearch, 180));
 
+if ($("rtoken") && researchWriteToken) {
+  $("rtoken").value = researchWriteToken;
+}
+
 if ($("research-upload-form")) {
   $("research-upload-form").addEventListener("submit", async (ev) => {
     ev.preventDefault();
@@ -1823,6 +1846,7 @@ if ($("research-upload-form")) {
       return;
     }
     researchWriteToken = token;
+    saveResearchToken(token);
     const fd = new FormData();
     fd.append("file", fileInput.files[0]);
     const title = $("rtitle").value.trim();
@@ -1848,6 +1872,11 @@ if ($("research-upload-form")) {
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) {
+        if (res.status === 403) {
+          // Stored token was rejected — forget it so the next attempt re-prompts.
+          researchWriteToken = "";
+          saveResearchToken("");
+        }
         const detail = body.detail || res.statusText || "upload_failed";
         throw new Error(detail);
       }

@@ -173,11 +173,30 @@ curl -sS -X POST "http://192.168.68.93:8770/api/visual-research" \
 
 ## Compose / secrets
 
-Set on the press host (never commit):
+The write token is a shared secret. Its canonical home is the press host:
+
+```
+/mnt/temp/config/vellum/.env   →   VELLUM_RESEARCH_WRITE_TOKEN=…
+```
+
+That file is gitignored (never commit it) and survives Repo Ops deploys —
+`git.sync.origin` uses `git clean -fd`, which preserves gitignored files.
+Docker Compose reads it automatically for the
+`${VELLUM_RESEARCH_WRITE_TOKEN:-}` substitution in `docker-compose.yml`.
+
+**Agents that need to WRITE visual research** (ingest/capture tools) fetch it
+from the press:
 
 ```bash
-export VELLUM_RESEARCH_WRITE_TOKEN='…long random…'
+ssh dev-ubuntu "grep VELLUM_RESEARCH_WRITE_TOKEN /mnt/temp/config/vellum/.env | cut -d= -f2-"
 ```
+
+Then send it as `Authorization: Bearer <token>` on each request. Do not bake
+it into any repo, doc, handoff, or Cue. Bandit and other read-only consumers
+must never receive it.
+
+The Vellum web UI remembers the token in browser `localStorage` after the
+first successful upload; that copy is for the human operator only.
 
 Compose wires:
 
