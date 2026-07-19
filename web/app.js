@@ -1678,18 +1678,137 @@ let researchWriteToken = loadResearchToken();
 function setView(view) {
   const register = $("view-register");
   const research = $("view-research");
+  const eidolon = $("view-eidolon");
   const tabReg = $("tab-register");
   const tabRes = $("tab-research");
+  const tabEid = $("tab-eidolon");
   if (!register || !research) return;
+
   const isResearch = view === "research";
-  register.hidden = isResearch;
+  const isEidolon = view === "eidolon";
+  const isRegister = !isResearch && !isEidolon;
+
+  register.hidden = !isRegister;
   research.hidden = !isResearch;
-  if (tabReg) tabReg.classList.toggle("active", !isResearch);
+  if (eidolon) eidolon.hidden = !isEidolon;
+
+  if (tabReg) tabReg.classList.toggle("active", isRegister);
   if (tabRes) tabRes.classList.toggle("active", isResearch);
-  if (isResearch) {
+  if (tabEid) tabEid.classList.toggle("active", isEidolon);
+
+  if (!isRegister) {
     $("detail").hidden = true;
     stopCaptureWatch();
+  }
+  if (isResearch) {
     refreshResearch().catch(console.error);
+  }
+  if (isEidolon) {
+    refreshEidolon().catch(console.error);
+  }
+}
+
+function openEidolonLightbox(item) {
+  const dlg = $("eidolon-lightbox");
+  const img = $("eidolon-lightbox-img");
+  const title = $("eidolon-lightbox-title");
+  const meta = $("eidolon-lightbox-meta");
+  if (!dlg || !img) return;
+  const name = item.asset_name || item.label || item.id;
+  title.textContent = item.label && item.asset_name ? `${item.asset_name} · ${item.label}` : name;
+  img.src = item.file_url || "";
+  img.alt = title.textContent;
+  meta.textContent = [
+    item.rendered_at ? `Rendered ${formatCaptureDate(item.rendered_at)}` : null,
+    item.resolution || null,
+    item.lane ? `Lane ${item.lane}` : null,
+    item.provider || null,
+  ]
+    .filter(Boolean)
+    .join("  ·  ");
+  if (typeof dlg.showModal === "function") dlg.showModal();
+}
+
+function renderEidolonGrid(items) {
+  const host = $("eidolon-grid");
+  if (!host) return;
+  clear(host);
+  const list = Array.isArray(items) ? items : [];
+  if (!list.length) {
+    const empty = document.createElement("p");
+    empty.className = "fit";
+    empty.textContent =
+      "No Eidolon renders yet. When Eidolon finishes a batch, thumbnails appear here.";
+    host.appendChild(empty);
+    return;
+  }
+  for (const item of list) {
+    const card = document.createElement("figure");
+    card.className = "eidolon-card";
+    card.tabIndex = 0;
+    card.setAttribute("role", "button");
+    const heading =
+      item.label && item.asset_name
+        ? `${item.asset_name} · ${item.label}`
+        : item.asset_name || item.label || item.id;
+    card.setAttribute("aria-label", `Open ${heading}`);
+
+    const img = document.createElement("img");
+    img.src = item.file_url || "";
+    img.alt = heading;
+    img.loading = "lazy";
+    card.appendChild(img);
+
+    const cap = document.createElement("figcaption");
+    const titleEl = document.createElement("span");
+    titleEl.className = "eidolon-title";
+    titleEl.textContent = heading;
+    cap.appendChild(titleEl);
+
+    const meta = document.createElement("span");
+    meta.className = "eidolon-meta";
+    meta.textContent = [
+      item.rendered_at ? formatCaptureDate(item.rendered_at) : null,
+      item.resolution || null,
+    ]
+      .filter(Boolean)
+      .join("  ·  ");
+    cap.appendChild(meta);
+    card.appendChild(cap);
+
+    const open = () => openEidolonLightbox(item);
+    card.addEventListener("click", open);
+    card.addEventListener("keydown", (ev) => {
+      if (ev.key === "Enter" || ev.key === " ") {
+        ev.preventDefault();
+        open();
+      }
+    });
+    host.appendChild(card);
+  }
+}
+
+async function refreshEidolon() {
+  const countEl = $("ecount");
+  try {
+    const data = await fetchJson("/api/eidolon/renders?limit=200");
+    renderEidolonGrid(data.items || []);
+    const total = data.total != null ? data.total : (data.items || []).length;
+    if (countEl) {
+      countEl.textContent = `${total} Eidolon render${total === 1 ? "" : "s"}`;
+    }
+  } catch (err) {
+    console.error(err);
+    const host = $("eidolon-grid");
+    if (host) {
+      clear(host);
+      const empty = document.createElement("p");
+      empty.className = "empty";
+      empty.textContent =
+        "Failed to load Eidolon renders — is Eidolon up at EIDOLON_BASE_URL?";
+      host.appendChild(empty);
+    }
+    if (countEl) countEl.textContent = "load error";
   }
 }
 
@@ -1830,6 +1949,9 @@ async function refreshResearch() {
 
 if ($("tab-register")) {
   $("tab-register").addEventListener("click", () => setView("register"));
+}
+if ($("tab-eidolon")) {
+  $("tab-eidolon").addEventListener("click", () => setView("eidolon"));
 }
 if ($("tab-research")) {
   $("tab-research").addEventListener("click", () => setView("research"));

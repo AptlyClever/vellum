@@ -27,6 +27,7 @@ services:
       # Set via host env / secrets — never commit the real value.
       VELLUM_RESEARCH_WRITE_TOKEN: ${VELLUM_RESEARCH_WRITE_TOKEN:-}
       VELLUM_PUBLIC_BASE_URL: http://192.168.68.93:8770
+      EIDOLON_BASE_URL: ${EIDOLON_BASE_URL:-http://192.168.68.93:7860}
       MNEME_BASE_URL: http://192.168.68.93:8790
       MNEME_DEFAULT_PROJECT_ID: ${MNEME_DEFAULT_PROJECT_ID:-bandit}
       MNEME_WRITE_TOKEN: ${MNEME_WRITE_TOKEN:-}
@@ -127,6 +128,7 @@ services:
       VELLUM_VAULT_ROOT: /tmp/vellum-test-vault
       VELLUM_RESEARCH_WRITE_TOKEN: test-research-write-token
       VELLUM_PUBLIC_BASE_URL: http://vellum.test
+      EIDOLON_BASE_URL: http://eidolon.test
       MNEME_BASE_URL: http://mneme.test
       MNEME_DEFAULT_PROJECT_ID: bandit
       MNEME_WRITE_TOKEN: test-mneme-write-token

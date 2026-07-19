@@ -63,6 +63,8 @@ that does not exist yet.** Canonical table lives in Eidolon:
     (images in Vellum, extracted text in Mneme, agent reads open, bundle ingest
     token-gated). Write tokens live in `/mnt/temp/config/vellum/.env` on the
     press; never expose them to read-only project agents.
+12c. `docs/api-eidolon-renders.md` — read-only Eidolon render gallery proxy
+    (Vellum UI tab; does not author images).
 13. `docs/slice-e-epic-staging.md` — Epic/Fab Add-to-Project notes.
 14. `docs/brand-canon.md` — core vs Games classification rules.
 15. Frozen archaeology: `docs/ue-lookdev-worker.md`, `docs/ue-mrq-capture.md`, `archive/prototype-v0/`.

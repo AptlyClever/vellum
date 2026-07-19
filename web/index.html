@@ -31,6 +31,9 @@
         <button type="button" class="view-tab active" data-view="register" id="tab-register">
           Asset Register
         </button>
+        <button type="button" class="view-tab" data-view="eidolon" id="tab-eidolon">
+          Eidolon Renders
+        </button>
         <button type="button" class="view-tab" data-view="research" id="tab-research">
           Visual Research
         </button>
@@ -80,6 +83,15 @@
             <tbody id="rows"></tbody>
           </table>
         </div>
+      </div>
+
+      <div id="view-eidolon" hidden>
+        <p class="eidolon-lede">
+          Rendered outputs from Eidolon (authored art) — browse thumbnails and open a full-size preview.
+          Metadata comes from Eidolon batches; Vellum only proxies the gallery.
+        </p>
+        <p class="count" id="ecount"></p>
+        <div id="eidolon-grid" class="eidolon-grid" aria-label="Eidolon renders gallery"></div>
       </div>
 
       <div id="view-research" hidden>
@@ -195,6 +207,15 @@
         </form>
         <img id="research-lightbox-img" alt="" />
         <p id="research-lightbox-meta" class="research-lightbox-meta"></p>
+      </dialog>
+
+      <dialog id="eidolon-lightbox" class="research-lightbox eidolon-lightbox">
+        <form method="dialog" class="research-lightbox-bar">
+          <button type="submit" class="btn btn-secondary btn-tiny" value="close">Close</button>
+          <span id="eidolon-lightbox-title" class="research-lightbox-title"></span>
+        </form>
+        <img id="eidolon-lightbox-img" alt="" />
+        <p id="eidolon-lightbox-meta" class="research-lightbox-meta"></p>
       </dialog>
     </div>
     <script src="/static/app.js"></script>

@@ -7,12 +7,13 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, File, Form, Header, HTTPException, Query, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 import zipfile
 
 from . import attach as attach_mod
+from . import eidolon as eidolon_mod
 from . import fab_library as fab_library_mod
 from . import game_ready as game_ready_mod
 from . import import_flow as import_flow_mod
@@ -1337,6 +1338,35 @@ def api_scratch_hint(engine: str = Query(default="unreal")) -> dict[str, Any]:
             encoding="utf-8",
         )
     return {"schema_version": 1, "engine": engine, "vault_hint": str(path)}
+
+
+@app.get("/api/eidolon/renders")
+def api_eidolon_renders(
+    limit: int = Query(default=200, ge=1, le=1000),
+) -> dict[str, Any]:
+    """Browse Eidolon batch renders (symbols / plates / sprite sheets)."""
+    try:
+        return eidolon_mod.list_renders(limit=limit)
+    except eidolon_mod.EidolonError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.get("/api/eidolon/renders/{batch_id}/{filename}/file")
+def api_eidolon_render_file(batch_id: str, filename: str) -> Response:
+    """Proxy one Eidolon artifact image through Vellum (same-origin for the UI)."""
+    try:
+        body, media = eidolon_mod.fetch_artifact(batch_id, filename)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="render_not_found") from exc
+    except eidolon_mod.EidolonError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return Response(
+        content=body,
+        media_type=media,
+        headers={"Cache-Control": "public, max-age=300"},
+    )
 
 
 @app.get("/api/visual-research")
