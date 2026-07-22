@@ -67,6 +67,14 @@
 
 * **2026-07-12** — Canonized as **Vellum** under Control Alt Games. Project root `/mnt/temp/config/vellum`; vault `/mnt/data/vault/vellum`. Registered in Axiom `apps.registry.yaml`.
 * **2026-07-12** — Public GitHub repo [`AptlyClever/vellum`](https://github.com/AptlyClever/vellum); initial canon pushed to `main`.
+* **2026-07-22** — **Godot 4.3 end-to-end import verification.** Installed Godot
+  4.3 stable (`77dcf97d8`) on dev-ubuntu. Created Godot 4.3 project skeletons at
+  `/mnt/temp/config/godot-field-ops` and `/mnt/temp/config/godot-threshold-affairs`
+  with Vellum addon pre-installed. `godot --headless --import --quit` ran clean
+  (exit 0) on both projects. `vellum pull --lane godot-field-ops` fetched 1
+  published texture into `assets/vellum/texture/`; post-pull headless re-import
+  confirmed Godot processed it to `.ctex` in `.godot/imported/`. Addon
+  (`vellum_plugin.gd` + dock) in-tree for both projects.
 * **2026-07-12…13** — Architecture research + Governing CFD; slices A–F shipped (register → intake → worker → Axiom Read → Epic stage Fireworks → texture lookdev).
 * **2026-07-13** — Capture science project: HighResShot → SceneCapture → MRQ+Sequencer → Lookdev Worker → Epic batch Cmd firefighting (87 commits in ~48h).
 * **2026-07-14** — **Product pivot:** freeze Capture prototype as `prototype-v0`; Asset Pipeline Product SoT (`docs/asset-pipeline-product.md`) — Library + P4 + Conversion Factory + game-ready catalog; keep path open for native Unreal titles.
