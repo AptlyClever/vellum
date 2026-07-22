@@ -241,11 +241,19 @@ def api_register_summary() -> dict[str, Any]:
 def api_list_assets(
     q: str | None = Query(default=None),
     engine: str | None = Query(default=None),
+    lane: str | None = Query(default=None),
     redeem_window: str | None = Query(default=None, alias="redeem"),
     available: str | None = Query(default=None),
     lite: bool = Query(default=False),
 ) -> dict[str, Any]:
     assets = register_mod.list_assets(q=q, engine=engine, redeem_window_filter=redeem_window)
+    if lane:
+        l_low = lane.lower()
+        assets = [
+            a for a in assets
+            if l_low in lookdev_mod.infer_lanes(a.get("project_fit"))
+            or l_low in [str(x).lower() for x in (a.get("lanes") or [])]
+        ]
     assets = import_flow_mod.attach_availability(
         assets, engine=engine, available=available
     )
@@ -1151,10 +1159,12 @@ def api_game_ready_list(
     asset_id: str | None = Query(default=None),
     kind: str | None = Query(default=None),
     lane: str | None = Query(default=None),
+    q: str | None = Query(default=None),
+    tag: str | None = Query(default=None),
     limit: int = Query(default=100, ge=1, le=1000),
 ) -> dict[str, Any]:
     rows = game_ready_mod.list_elements(
-        asset_id=asset_id, kind=kind, lane=lane, limit=limit
+        asset_id=asset_id, kind=kind, lane=lane, q=q, tag=tag, limit=limit
     )
     return {
         "schema_version": 1,

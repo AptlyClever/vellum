@@ -1,11 +1,9 @@
 # Development Tracker: Vellum
 
-> **Current Active Issue:** Asset Pipeline Product — Library + Conversion Factory + game-ready delivery  
-> **Governing CFD:** `cfd-inspiration-20260713-015950-vellum-control-alt-games-asset-vault-register-in` (slices A–F met; post-CFD track)  
+> **Current Active Issue:** Godot 4.x & Independent Dobsonian Games Expansion (Field Ops & Threshold Affairs)  
+> **Governing CFD:** `cfd-inspiration-20260722-164500-vellum-godot-dobsonian-expansion`  
 > **Product SoT:** `docs/asset-pipeline-product.md`  
-> **Next Immediate Step:** Keep the exclusive VFX render phase healthy in
-> Aurora reconcile and extend equivalent quality gates to model, texture, and
-> audio outputs. Fireworks VFX now has validated `slots` lane clips.
+> **Next Immediate Step:** Uncouple Field Ops and Threshold Affairs into distinct game lanes (`godot-field-ops` and `godot-threshold-affairs`) in catalog schema and UI.
 
 ---
 
@@ -29,7 +27,7 @@
 
 ## 2. The Active Issue (Do Not Add Steps Here!)
 
-* **What success looks like:** New packs enter via redeem → Fab Add-to-Project → P4 submit → Vellum register. Factory jobs emit manifested glTF / VFX clips / textures into the vault. Games pull game-ready bundles. A future Unreal title can Migrate from the Library.
+* **What success looks like:** Field Ops and Threshold Affairs are independently cataloged and targetable. Vellum outputs Godot 4.x compliant GLB models, ORM PBR textures, and Ogg audio. Developers can fetch assets using `vellum pull` or the Godot Editor Plugin.
 * **Stopped (do not resume without operator unpark):**
   - Warm Lookdev Worker (`Unpark: Lookdev Worker`)
   - Custom `VellumUeAgent` polling Capture control plane (`Unpark: Capture Agent`)
@@ -42,26 +40,16 @@
 * **Sub-Tasks:**
   - [x] Freeze Capture prototype (`prototype-v0`); archive scratch; retire agent tasks
   - [x] Product decision SoT (`docs/asset-pipeline-product.md`)
-  - [x] Library project layout + health tooling
-  - [x] P4 setup runbook + depot bootstrap scripts
-  - [x] Intake runbook (human Fab → P4 → register)
-  - [x] CI runner docs + workflow stubs
-  - [x] export-models / bake-vfx / export-media factory jobs
-  - [x] Reconcile controller: automatic register/stage/P4/inventory/factory loop
-  - [x] Combined `factory-all` (one UE boot per pack)
-  - [x] Three isolated parallel pack workers + bounded smart uploads
-  - [x] Batched game-ready run ingest (no per-element YAML rewrite)
-  - [x] Active Fab intake closed: 0 blocked / 0 orphan / 3 deferred Complete Projects
-  - [x] Baseline factory evidence for every on-disk pack (parallel drain, 0 exceptions)
-  - [x] Game-ready catalog API + UI
-  - [x] Acceptance harness doc (Slots win fireworks)
-  - [x] Native Unreal title consumption doc
-  - [x] Execute Niagara bake plans through MRQ/Niagara Baker
-  - [x] Package and validate transparent WebM / sprite sheets
-  - [x] Prove one VFX artifact in an actual Games web runtime
-  - [x] Add bounded exclusive VFX-render phase to Aurora reconcile
-  - [ ] Add durable factory run/progress records to the API/UI
-  - [ ] Add equivalent quality gates for model, texture, and audio outputs
+  - [x] Baseline factory evidence for every on-disk pack
+  - [x] Execute Niagara bake plans through MRQ / Niagara Baker
+  - [x] Prove VFX artifact in Games web runtime (`slots`)
+  - [x] Shape internal/external discovery & architecture plan for Godot + Dobsonian Expansion
+  - [x] Bind new Governing CFD (`cfd-inspiration-20260722-164500-vellum-godot-dobsonian-expansion`)
+  - [x] **Phase 1: Uncouple Dobsonian Games** — Separate `godot-field-ops` and `godot-threshold-affairs` into distinct game lanes in backend schema and UI
+  - [x] **Phase 2: Godot 4.x Pipeline Foundations** — Add ORM PBR texture packing (AO, Roughness, Metallic) and Ogg Vorbis audio bakes
+  - [x] **Phase 3: Element-Level Search & Taxonomy** — Expose prop-level search across all 37 packs with `#field-ops` and `#threshold-affairs` tags
+  - [x] **Phase 4: Expanded Import & Blender Engine** — Unpark Unity tier `.unitypackage` extraction & headless Blender mesh/collision bakes
+  - [x] **Phase 5: Godot Developer Tooling** — Build `vellum pull` CLI utility and Godot Editor Plugin
 
 ---
 

@@ -109,6 +109,8 @@ def list_elements(
     asset_id: str | None = None,
     kind: str | None = None,
     lane: str | None = None,
+    q: str | None = None,
+    tag: str | None = None,
     limit: int = 100,
 ) -> list[dict[str, Any]]:
     rows = list(load_catalog().get("elements") or [])
@@ -118,6 +120,22 @@ def list_elements(
         rows = [r for r in rows if r.get("kind") == kind]
     if lane:
         rows = [r for r in rows if lane in (r.get("lanes") or [])]
+    if tag:
+        t_low = tag.lower()
+        rows = [
+            r for r in rows
+            if t_low in [str(x).lower() for x in (r.get("tags") or r.get("meta", {}).get("tags") or [])]
+        ]
+    if q:
+        q_low = q.lower()
+        rows = [
+            r for r in rows
+            if q_low in str(r.get("path") or "").lower()
+            or q_low in str(r.get("asset_id") or "").lower()
+            or q_low in str(r.get("pack") or "").lower()
+            or q_low in str(r.get("note") or "").lower()
+            or any(q_low in str(x).lower() for x in (r.get("tags") or r.get("meta", {}).get("tags") or []))
+        ]
     rows.sort(key=lambda r: str(r.get("created_at") or ""), reverse=True)
     return rows[:limit]
 

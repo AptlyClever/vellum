@@ -5,12 +5,15 @@ WORKDIR /app
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -rf /var/lib/apt/lists/*
+
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY backend/ ./backend/
 COPY web/ ./web/
 COPY config/ ./config/
+COPY tools/ ./tools/
 COPY tests/ ./tests/
 COPY pyproject.toml .
 COPY README.md .

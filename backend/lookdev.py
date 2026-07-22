@@ -24,8 +24,11 @@ DEFAULT_CATALOG = ROOT / "data" / "derived-outputs.yaml"
 KNOWN_LANES = (
     "slots",
     "hail-overlay",
+    "field-ops",
     "field-command",
     "threshold-affairs",
+    "godot-field-ops",
+    "godot-threshold-affairs",
     "lcard",
 )
 
@@ -139,8 +142,11 @@ def infer_lanes(project_fit: str | None) -> list[str]:
     mapping = (
         ("slots", "slots"),
         ("hail", "hail-overlay"),
+        ("field ops", "godot-field-ops"),
+        ("field-ops", "godot-field-ops"),
         ("field command", "field-command"),
-        ("threshold", "threshold-affairs"),
+        ("threshold affairs", "godot-threshold-affairs"),
+        ("threshold", "godot-threshold-affairs"),
         ("lcard", "lcard"),
         ("arcade", "slots"),
     )

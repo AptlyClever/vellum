@@ -1601,9 +1601,11 @@ async function refresh() {
   const params = new URLSearchParams();
   const q = $("q").value.trim();
   const engine = $("engine").value;
+  const targetLane = $("target-lane") ? $("target-lane").value : "";
   const available = $("available").value;
   if (q) params.set("q", q);
   if (engine) params.set("engine", engine);
+  if (targetLane) params.set("lane", targetLane);
   if (available) params.set("available", available);
   params.set("lite", "1");
   const qs = params.toString();
@@ -1651,6 +1653,7 @@ $("detail-close").addEventListener("click", () => {
 
 $("q").addEventListener("input", debounce(refresh, 180));
 $("engine").addEventListener("change", refresh);
+if ($("target-lane")) $("target-lane").addEventListener("change", refresh);
 $("available").addEventListener("change", refresh);
 
 /* —— Visual Research view —— */

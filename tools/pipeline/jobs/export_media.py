@@ -111,6 +111,23 @@ def run() -> dict[str, Any]:
         except Exception as exc:  # noqa: BLE001
             errors.append(f"aud_exc:{name}:{exc}")
 
+    # Post-processing: ORM channel packing and Ogg audio bakes for Godot 4.x
+    try:
+        from pack_orm_textures import process_texture_dir_for_orm
+        orm_res = process_texture_dir_for_orm(out_tex, out_tex)
+        if orm_res.get("packed_count", 0) > 0:
+            unreal.log(f"[VellumPipeline] ORM texture packing generated {orm_res['packed_count']} ORM maps.")
+    except Exception as exc:  # noqa: BLE001
+        unreal.log_warning(f"[VellumPipeline] ORM texture packing skipped: {exc}")
+
+    try:
+        from export_audio_ogg import process_audio_dir_for_ogg
+        ogg_res = process_audio_dir_for_ogg(out_aud, out_aud)
+        if ogg_res.get("converted_count", 0) > 0:
+            unreal.log(f"[VellumPipeline] Audio Ogg conversion generated {ogg_res['converted_count']} .ogg files.")
+    except Exception as exc:  # noqa: BLE001
+        unreal.log_warning(f"[VellumPipeline] Audio Ogg conversion skipped: {exc}")
+
     manifest = {
         "job": "export-media",
         "pack": pack,

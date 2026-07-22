@@ -45,6 +45,10 @@ def _seed_stage(tmp_path: Path, monkeypatch) -> Path:
 def test_infer_lanes_from_fit() -> None:
     assert "slots" in infer_lanes("Slots wins, Hail stingers")
     assert "hail-overlay" in infer_lanes("Slots wins, Hail stingers")
+    assert "godot-field-ops" in infer_lanes("Field Ops lookdev; industrial environment")
+    assert "godot-threshold-affairs" in infer_lanes("Threshold Affairs interiors; motel anomaly")
+    assert "godot-field-ops" not in infer_lanes("Threshold Affairs interiors")
+    assert "godot-threshold-affairs" not in infer_lanes("Field Ops lookdev")
 
 
 def test_derive_stills_copies_images_not_uassets(tmp_path: Path, monkeypatch) -> None:
