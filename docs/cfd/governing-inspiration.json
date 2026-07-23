@@ -14,7 +14,8 @@
   "constraints": [
     "Priority sequence: Bandit first, Threshold Affairs second, Field Ops pipeline-ready.",
     "Field Ops (godot-field-ops) and Threshold Affairs (godot-threshold-affairs) are separate, independent game targets.",
-    "Proscenium (:8788) is the authoritative presentation stage, Hails engine, and display target router (overlay-apk / Android TV) using delivery.py and config/presentation/delivery-targets.json.",
+    "Proscenium (:8788) presentation display targets are configurable per game and toggleable via LCARD controls (Bandit defaults to arcade/overlay-apk; Threshold Affairs to operator-screen/living-room-tv).",
+    "Headless Godot import errors on dev-ubuntu trigger Soft Quarantine (moving bad files to .quarantine/, keeping healthy assets online, and surfacing alerts on /api/ops/pulse).",
     "Vellum (:8770) stores bytes, not prose, and executes lane_sync / headless_verify jobs via backend/jobs.py SQLite queue.",
     "Vault I/O off the press host is strictly HTTP-only.",
     "Pack intake, lane sync, and headless engine validation must be 100% machine-owned without operator bookkeeping.",
@@ -23,8 +24,8 @@
   ],
   "acceptance_signals": [
     "Governing CFD inspiration and plan are canonized in git with empirical discovery findings.",
-    "Proscenium presentation delivery target registry (delivery-targets.json) includes godot-field-ops and godot-threshold-affairs capabilities.",
-    "Vellum SQLite job engine (jobs.py) executes lane_sync and headless_verify job kinds.",
+    "Proscenium presentation delivery target registry (delivery-targets.json) includes godot-field-ops and godot-threshold-affairs capabilities with per-game target defaults and LCARD control overrides.",
+    "Vellum SQLite job engine (jobs.py) executes lane_sync and headless_verify job kinds with Soft Quarantine error handling.",
     "Machine-owned background sync delivers published Vellum assets directly to Field Ops and Threshold Affairs repos on dev-ubuntu.",
     "Automated headless Godot import scanning (godot --headless) verifies 0 import errors and updates /api/ops/pulse.",
     "Axiom Studio Leaf presents unified production briefs prioritized for Bandit and Threshold Affairs."
@@ -32,6 +33,8 @@
   "operator_brief": {
     "non_negotiables": [
       "Priority order: Bandit -> Threshold Affairs -> Field Ops (ready)",
+      "Proscenium display targets are configurable per game and toggleable via LCARD",
+      "Soft Quarantine policy for bad asset imports (.quarantine/ directory + /api/ops/pulse alerts)",
       "Keep Field Ops and Threshold Affairs completely independent",
       "Reuse Proscenium delivery.py for presentation, Hails, and display target routing",
       "Reuse Vellum jobs.py SQLite queue for machine-owned lane_sync and headless_verify jobs",
