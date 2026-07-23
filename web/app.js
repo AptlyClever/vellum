@@ -1827,15 +1827,36 @@ function formatCaptureDate(iso) {
   }
 }
 
+function isResearchVideo(item) {
+  const fmt = String(item?.format || "").toLowerCase();
+  return fmt === "webm" || fmt === "mp4";
+}
+
 function openResearchLightbox(item) {
   const dlg = $("research-lightbox");
   const img = $("research-lightbox-img");
+  const video = $("research-lightbox-video");
   const title = $("research-lightbox-title");
   const meta = $("research-lightbox-meta");
   if (!dlg || !img) return;
   title.textContent = item.title || item.id;
-  img.src = item.file_url || `/api/visual-research/${encodeURIComponent(item.id)}/file`;
-  img.alt = item.title || "Visual research";
+  const fileUrl =
+    item.file_url || `/api/visual-research/${encodeURIComponent(item.id)}/file`;
+  const videoItem = isResearchVideo(item);
+  if (videoItem && video) {
+    img.hidden = true;
+    img.removeAttribute("src");
+    video.hidden = false;
+    video.src = fileUrl;
+  } else {
+    if (video) {
+      video.hidden = true;
+      video.removeAttribute("src");
+    }
+    img.hidden = false;
+    img.src = fileUrl;
+    img.alt = item.title || "Visual research";
+  }
   const bits = [
     `Type: Visual Research`,
     item.project_id ? `Project: ${item.project_id}` : null,
@@ -1881,17 +1902,29 @@ function renderResearchGrid(items) {
     card.setAttribute("role", "button");
     card.setAttribute("aria-label", `Open ${item.title || item.id}`);
 
-    const img = document.createElement("img");
-    img.src = item.file_url || `/api/visual-research/${encodeURIComponent(item.id)}/file`;
-    img.alt = item.title || "Visual research";
-    img.loading = "lazy";
-    if (item.format === "svg") img.className = "research-svg-thumb";
-    card.appendChild(img);
+    const fileUrl =
+      item.file_url || `/api/visual-research/${encodeURIComponent(item.id)}/file`;
+    if (isResearchVideo(item)) {
+      const vid = document.createElement("video");
+      vid.src = fileUrl;
+      vid.muted = true;
+      vid.playsInline = true;
+      vid.preload = "metadata";
+      vid.className = "research-video-thumb";
+      card.appendChild(vid);
+    } else {
+      const img = document.createElement("img");
+      img.src = fileUrl;
+      img.alt = item.title || "Visual research";
+      img.loading = "lazy";
+      if (item.format === "svg") img.className = "research-svg-thumb";
+      card.appendChild(img);
+    }
 
     const cap = document.createElement("figcaption");
     const typePill = document.createElement("span");
     typePill.className = "pill-research";
-    typePill.textContent = "Visual Research";
+    typePill.textContent = isResearchVideo(item) ? "Visual Research · Video" : "Visual Research";
     cap.appendChild(typePill);
     const titleEl = document.createElement("span");
     titleEl.className = "research-title";

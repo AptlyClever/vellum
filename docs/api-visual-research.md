@@ -23,7 +23,12 @@ Persistence:
 | Vault mirror | `/mnt/data/vault/vellum/02-index/visual-research.yaml` |
 | Image bytes | `/mnt/data/vault/vellum/07-visual-research/<id>/` |
 
-Supported formats (content-validated): **PNG, JPG, GIF, SVG, WebP**.
+Supported formats (content-validated): **PNG, JPG, GIF, SVG, WebP, WebM, MP4**.
+
+Video (WebM/MP4) is first-class for Theia look-continuity motion companions;
+stills remain required for side-by-side review. Bytes live under the same
+`07-visual-research/<id>/` vault path; `mime_type` is `video/webm` or
+`video/mp4`.
 
 ## Read (Bandit-safe)
 
@@ -36,7 +41,7 @@ Supported formats (content-validated): **PNG, JPG, GIF, SVG, WebP**.
 | `q` | Substring match on title, caption, tags, source URL, attribution, filename |
 | `project_id` | Exact project match (case-insensitive), e.g. `bandit` |
 | `tag` | Exact tag match (case-insensitive) |
-| `format` | `png` \| `jpg` \| `gif` \| `webp` \| `svg` (`jpeg` accepted as `jpg`) |
+| `format` | `png` \| `jpg` \| `gif` \| `webp` \| `svg` \| `webm` \| `mp4` (`jpeg` accepted as `jpg`) |
 | `limit` | 1–1000 (default 100) |
 | `offset` | Pagination offset |
 

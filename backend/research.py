@@ -26,7 +26,7 @@ DEFAULT_CATALOG = ROOT / "data" / "visual-research.yaml"
 ASSET_TYPE = "visual-research"
 COLLECTION = "Visual Research"
 
-# Suffix → canonical format label
+# Suffix → canonical format label (stills + optional motion for Theia / research)
 SUPPORTED_FORMATS = {
     ".png": "png",
     ".jpg": "jpg",
@@ -34,6 +34,8 @@ SUPPORTED_FORMATS = {
     ".gif": "gif",
     ".webp": "webp",
     ".svg": "svg",
+    ".webm": "webm",
+    ".mp4": "mp4",
 }
 
 MIME_BY_FORMAT = {
@@ -42,7 +44,11 @@ MIME_BY_FORMAT = {
     "gif": "image/gif",
     "webp": "image/webp",
     "svg": "image/svg+xml",
+    "webm": "video/webm",
+    "mp4": "video/mp4",
 }
+
+VIDEO_FORMATS = frozenset({"webm", "mp4"})
 
 # Dangerous SVG patterns (scripts, handlers, external refs).
 _SVG_SCRIPT_RE = re.compile(
@@ -162,7 +168,7 @@ def _slugify(name: str) -> str:
 
 
 def _detect_format(data: bytes, filename: str | None = None) -> str:
-    """Detect image format from magic bytes (and SVG content). Raise ValueError."""
+    """Detect image/video format from magic bytes (and SVG content). Raise ValueError."""
     if not data:
         raise ValueError("empty_file")
 
@@ -174,6 +180,12 @@ def _detect_format(data: bytes, filename: str | None = None) -> str:
         return "gif"
     if len(data) >= 12 and data[:4] == b"RIFF" and data[8:12] == b"WEBP":
         return "webp"
+    # WebM / Matroska EBML header
+    if data.startswith(b"\x1a\x45\xdf\xa3"):
+        return "webm"
+    # MP4 / ISO BMFF — ftyp box typically at offset 4
+    if len(data) >= 12 and data[4:8] == b"ftyp":
+        return "mp4"
 
     # SVG: text starting with optional BOM/whitespace/XML decl, then <svg
     head = data[:4096]
@@ -216,7 +228,7 @@ def _sanitize_svg(data: bytes) -> bytes:
 
 
 def _image_dimensions(data: bytes, fmt: str) -> tuple[int | None, int | None]:
-    if fmt == "svg":
+    if fmt == "svg" or fmt in VIDEO_FORMATS:
         return None, None
     try:
         from PIL import Image

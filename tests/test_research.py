@@ -65,6 +65,22 @@ def _webp_bytes() -> bytes:
     )
 
 
+def _webm_bytes() -> bytes:
+    # Minimal EBML/WebM magic — content-validated by header only.
+    return b"\x1a\x45\xdf\xa3" + b"\x00" * 32
+
+
+def _mp4_bytes() -> bytes:
+    # Minimal ISO BMFF with ftyp at offset 4.
+    return (
+        b"\x00\x00\x00\x18"
+        b"ftyp"
+        b"isom"
+        b"\x00\x00\x02\x00"
+        b"isomiso2"
+    )
+
+
 def _svg_bytes(extra: str = "") -> bytes:
     return (
         f'<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40">'
@@ -110,6 +126,8 @@ def test_ingest_all_supported_formats(tmp_path: Path, monkeypatch) -> None:
         ("shot.gif", _gif_bytes(), "gif"),
         ("shot.webp", _webp_bytes(), "webp"),
         ("shot.svg", _svg_bytes(), "svg"),
+        ("motion.webm", _webm_bytes(), "webm"),
+        ("motion.mp4", _mp4_bytes(), "mp4"),
     ]
     for name, data, fmt in samples:
         item = research_mod.ingest_image(
@@ -127,10 +145,41 @@ def test_ingest_all_supported_formats(tmp_path: Path, monkeypatch) -> None:
         assert item["format"] == fmt
         assert item["source_url"] == "https://example.com/ref"
         assert item["captured_at"]
+        if fmt in ("webm", "mp4"):
+            assert item["mime_type"] == f"video/{fmt}"
+            assert item["width"] is None and item["height"] is None
         assert Path(vault / "07-visual-research" / item["id"]).is_dir()
         raw = research_mod.get_raw_item(item["id"])
         assert raw is not None
         assert Path(raw["path"]).is_file()
+
+
+def test_ingest_video_via_api_and_list(tmp_path: Path, monkeypatch) -> None:
+    """WebM upload through POST /api/visual-research appears in list."""
+    _seed(tmp_path, monkeypatch)
+    from backend.main import app
+
+    client = TestClient(app)
+    files = {"file": ("clip.webm", _webm_bytes(), "video/webm")}
+    data = {
+        "title": "Theia motion companion",
+        "project_id": "bandit",
+        "tags": "theia,motion",
+    }
+    resp = client.post(
+        "/api/visual-research",
+        files=files,
+        data=data,
+        headers=_auth_headers(),
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json().get("item") or resp.json()
+    assert body["format"] == "webm"
+    assert body["mime_type"] == "video/webm"
+    listed = client.get("/api/visual-research?format=webm&project_id=bandit")
+    assert listed.status_code == 200
+    items = listed.json()["items"]
+    assert any(i["id"] == body["id"] for i in items)
 
 
 def test_search_and_distinguish_from_game_assets(tmp_path: Path, monkeypatch) -> None:
