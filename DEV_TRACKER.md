@@ -48,11 +48,11 @@
   - [x] Add ORM texture bakes, Ogg audio conversion, prop search, Unity pack extractor, `vellum pull` CLI, and Godot addon
   - [x] Conduct empirical workspace discovery across Proscenium, Axiom, Eidolon, Mneme, LCARD, and Vellum repos
   - [x] Bind & supplement Governing CFD (`cfd-inspiration-20260722-215000-control-alt-games-platform-expansion`)
-  - [ ] **Phase 1: Inter-System Architecture & Proscenium Presentation Contracts** — Register `godot-field-ops` and `godot-threshold-affairs` in Proscenium's `delivery-targets.json` using `delivery.py`
-  - [ ] **Phase 2: Machine-Owned Lane Delivery Engine** — Implement `lane_sync` job kind in Vellum's `backend/jobs.py` SQLite queue to deliver assets to Godot repos on `dev-ubuntu`
-  - [ ] **Phase 3: Headless Engine Import & Quality Verification** — Implement `headless_verify` job kind for `godot --headless` scanning for 0 import errors on `dev-ubuntu`
-  - [ ] **Phase 4: Proscenium Stage & Presentation Integration for Dobsonian Games** — Wire game event stings from Field Ops and Threshold Affairs into Proscenium display targets (`overlay-apk` & room screens)
-  - [ ] **Phase 5: Axiom Studio Leaf & Unified Production Briefs** — Deliver Axiom Studio Leaf (`praxis-games`) presenting Eidolon art + Mneme lore + Vellum assets + Proscenium stage preview
+  - [x] **Phase 1: Inter-System Architecture & Proscenium Presentation Contracts** — Registered `godot-field-ops` and `godot-threshold-affairs` in Proscenium's `delivery-targets.json` using `delivery.py` (Commit `dc70c6b`)
+  - [x] **Phase 2: Machine-Owned Lane Delivery Engine** — Implemented `lane_sync` job kind in Vellum's `backend/jobs.py` SQLite queue to deliver assets to Godot repos on `dev-ubuntu` (Commit `844d928`)
+  - [x] **Phase 3: Headless Engine Import & Quality Verification** — Implemented `headless_verify` job kind for `godot --headless` scanning for 0 import errors on `dev-ubuntu` (Commit `844d928`)
+  - [x] **Phase 4: Proscenium Stage & Presentation Integration for Dobsonian Games** — Created `tools/proscenium_hails_client.py` and contracts for Field Ops & Threshold Affairs Hails (Commit `834a300`)
+  - [x] **Phase 5: Axiom Studio Leaf UI & Unified Production Briefs** — Delivered Axiom Studio Leaf UI (`praxis-games`) with visual Production Brief cards, live Proscenium WebGL stage preview, and Game Fleet Command desk (Commit `5588f10`)
 
 ---
 
