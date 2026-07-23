@@ -1,16 +1,17 @@
 # Development Tracker: Vellum
 
-> **Current Active Issue:** Godot 4.x & Independent Dobsonian Games Expansion (Field Ops & Threshold Affairs)  
-> **Governing CFD:** `cfd-inspiration-20260722-164500-vellum-godot-dobsonian-expansion`  
+> **Current Active Issue:** Control Alt Games Platform & Solo-Operator Workflow Expansion  
+> **Governing CFD:** `cfd-inspiration-20260722-215000-control-alt-games-platform-expansion`  
 > **Product SoT:** `docs/asset-pipeline-product.md`  
-> **Next Immediate Step:** Uncouple Field Ops and Threshold Affairs into distinct game lanes (`godot-field-ops` and `godot-threshold-affairs`) in catalog schema and UI.
+> **Next Immediate Step:** Phase 1: Establish Inter-System Architecture & Proscenium Presentation Contracts.
 
 ---
 
 ## 1. Quick Runbook
 
 * **UI:** http://192.168.68.93:8770/
-* **Axiom Read:** http://192.168.68.93:7895/#/axiom/vellum
+* **Proscenium UI:** http://192.168.68.93:8788/
+* **Axiom Hub:** http://192.168.68.93:7895/
 * **Product SoT:** `docs/asset-pipeline-product.md`
 * **Intake runbook:** `docs/intake-runbook.md`
 * **Library layout:** `docs/library-project.md`
@@ -27,7 +28,7 @@
 
 ## 2. The Active Issue (Do Not Add Steps Here!)
 
-* **What success looks like:** Field Ops and Threshold Affairs are independently cataloged and targetable. Vellum outputs Godot 4.x compliant GLB models, ORM PBR textures, and Ogg audio. Developers can fetch assets using `vellum pull` or the Godot Editor Plugin.
+* **What success looks like:** A unified, machine-owned Control Alt Games platform and workflow where Vellum converts and vaults 3D/audio assets; Proscenium acts as the home presentation authority and live stage viewport; Eidolon and Mneme supply concept art and lore briefs; automated background sync delivers manifested assets directly into Field Ops and Threshold Affairs Godot repos on dev-ubuntu; and headless engine validation guarantees 0 import errors.
 * **Stopped (do not resume without operator unpark):**
   - Warm Lookdev Worker (`Unpark: Lookdev Worker`)
   - Custom `VellumUeAgent` polling Capture control plane (`Unpark: Capture Agent`)
@@ -43,11 +44,14 @@
   - [x] Baseline factory evidence for every on-disk pack
   - [x] Execute Niagara bake plans through MRQ / Niagara Baker
   - [x] Prove VFX artifact in Games web runtime (`slots`)
-  - [x] Shape internal/external discovery & architecture plan for Godot + Dobsonian Expansion
-  - [x] Bind new Governing CFD (`cfd-inspiration-20260722-164500-vellum-godot-dobsonian-expansion`)
-  - [x] **Phase 1: Uncouple Dobsonian Games** — Separate `godot-field-ops` and `godot-threshold-affairs` into distinct game lanes in backend schema and UI
-  - [x] **Phase 2: Godot 4.x Pipeline Foundations** — Add ORM PBR texture packing (AO, Roughness, Metallic) and Ogg Vorbis audio bakes
-  - [x] **Phase 3: Element-Level Search & Taxonomy** — Expose prop-level search across all 37 packs with `#field-ops` and `#threshold-affairs` tags
+  - [x] Uncouple Dobsonian games into `godot-field-ops` and `godot-threshold-affairs` lanes
+  - [x] Add ORM texture bakes, Ogg audio conversion, prop search, Unity pack extractor, `vellum pull` CLI, and Godot addon
+  - [x] Bind new Governing CFD (`cfd-inspiration-20260722-215000-control-alt-games-platform-expansion`)
+  - [ ] **Phase 1: Inter-System Architecture & Proscenium Presentation Contracts** — Define payload contracts between Proscenium (:8788), Vellum (:8770), Eidolon (:7860), Mneme (:8790), and LCARD (:8184)
+  - [ ] **Phase 2: Machine-Owned Lane Delivery Engine** — Build `vellum-lane-sync` background worker on `dev-ubuntu` to deliver assets to Godot repos
+  - [ ] **Phase 3: Headless Engine Import & Quality Verification** — Automated `godot --headless` scanning for 0 import errors on `dev-ubuntu`
+  - [ ] **Phase 4: Proscenium Stage & Presentation Integration for Dobsonian Games** — Wire game event stings from Field Ops and Threshold Affairs into Proscenium display targets
+  - [ ] **Phase 5: Axiom Studio Leaf & Unified Production Briefs** — Deliver Axiom Studio Leaf (`praxis-games`) presenting Eidolon art + Mneme lore + Vellum assets + Proscenium stage preview
   - [x] **Phase 4: Expanded Import & Blender Engine** — Unpark Unity tier `.unitypackage` extraction & headless Blender mesh/collision bakes
   - [x] **Phase 5: Godot Developer Tooling** — Build `vellum pull` CLI utility and Godot Editor Plugin
 

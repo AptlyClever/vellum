@@ -1,153 +1,167 @@
 {
   "schema_version": 2,
-  "id": "cfd-inspiration-20260722-164500-vellum-godot-dobsonian-expansion",
+  "id": "cfd-inspiration-20260722-215000-control-alt-games-platform-expansion",
   "app": "vellum",
   "project": "vellum",
   "kind": "cfd_inspiration",
-  "title": "Vellum: Godot 4.x & Independent Dobsonian Games Expansion (Field Ops & Threshold Affairs)",
-  "created_at": "2026-07-22T16:45:00.000000+00:00",
-  "updated_at": "2026-07-22T16:45:00.000000+00:00",
+  "title": "Control Alt Games Platform & Solo-Operator Workflow (Proscenium Stage, Vellum Vault, Eidolon Art, Mneme Lore, and Godot Runtimes)",
+  "created_at": "2026-07-22T21:50:00.000000+00:00",
+  "updated_at": "2026-07-22T21:50:00.000000+00:00",
   "status": "in_progress",
   "priority": "now",
-  "problem": "Field Ops and Threshold Affairs are two distinct Dobsonian games that were previously awkwardly linked together. To support their active development in Godot 4.x, Vellum requires explicit uncoupling of these titles into separate game lanes (godot-field-ops and godot-threshold-affairs), separate thematic taxonomies, ORM PBR texture bakes, element-level indexing, unparked Unity intake, and direct Godot developer tooling.",
-  "desired_outcome": "Vellum explicitly treats Field Ops and Threshold Affairs as separate, independent Godot 4.x game targets. Godot-ready GLB models, ORM PBR textures, Ogg/WAV audio, and individual prop search are available via Vellum's HTTP API, CLI (vellum pull), and Godot Editor Plugin without coupling game identities.",
+  "problem": "Solo game development across Control Alt Games requires operating as a creative director without manual developer bookkeeping or technical 3D pipeline friction. Today's systems (Vellum asset vault, Proscenium presentation stage, Eidolon concept art, Mneme lore library, LCARD operator controls, and Godot game repos) operate as isolated silos, requiring manual hand-offs, manual CLI commands, and lacking a unified solo-operator workflow across stage presentation, concept art, lore briefs, asset conversion, and automated engine delivery.",
+  "desired_outcome": "A unified, machine-owned Control Alt Games platform and workflow where Vellum converts and vaults 3D/audio assets; Proscenium acts as the home presentation authority and live stage viewport; Eidolon and Mneme supply concept art and lore briefs; automated background sync delivers manifested assets directly into Field Ops and Threshold Affairs Godot repos on dev-ubuntu; and headless engine validation guarantees 0 import errors.",
   "constraints": [
-    "Field Ops and Threshold Affairs are separate independent game targets — never merge them into a generic Dobsonian bucket.",
-    "Never store raw marketplace packs or keys in git repositories.",
+    "Field Ops (godot-field-ops) and Threshold Affairs (godot-threshold-affairs) are separate, independent game targets.",
+    "Proscenium (:8788) is the authoritative presentation stage, Hails engine, and display target router (overlay-apk / Android TV).",
+    "Vellum (:8770) stores bytes, not prose, and handles machine-owned 3D/ORM/Ogg/WebM conversion.",
     "Vault I/O off the press host is strictly HTTP-only.",
-    "Godot targets must output clean glTF 2.0/GLB, ORM packed textures (Red=AO, Green=Roughness, Blue=Metallic), and Ogg/WAV audio.",
-    "Record all work in CFD and mirror in-repo so agents retain context."
+    "Pack intake, lane sync, and headless engine validation must be 100% machine-owned without operator bookkeeping.",
+    "Record all scope, context, and work in durable CFD records mirrored in git."
   ],
   "acceptance_signals": [
-    "Field Ops (godot-field-ops) and Threshold Affairs (godot-threshold-affairs) exist as separate, uncoupled game lanes in Vellum catalog schema, API, and UI.",
-    "ORMMaterial3D texture channel packing and Ogg audio conversion are integrated into the Conversion Factory.",
-    "Element-level asset search enables finding individual props across all 37 vault packs.",
-    "Unity tier extraction is unparked to supply 3D environments and props.",
-    "vellum pull CLI command delivers manifested assets directly into Godot project roots."
+    "Governing CFD inspiration and plan are canonized in git.",
+    "Proscenium presentation actions and display adapters integrate with Control Alt Games lanes.",
+    "Machine-owned background sync delivers published Vellum assets directly to Field Ops and Threshold Affairs repos on dev-ubuntu.",
+    "Automated headless Godot import scanning (godot --headless) verifies 0 import errors and updates /api/ops/pulse.",
+    "Axiom Studio Leaf presents unified production briefs (Eidolon concept art + Mneme lore + Vellum assets + Proscenium stage preview)."
   ],
   "operator_brief": {
     "non_negotiables": [
-      "Separate Field Ops and Threshold Affairs completely",
-      "Keep vault I/O HTTP-only off press",
-      "Produce clean Godot 4.x GLB + ORM bakes"
+      "Keep Field Ops and Threshold Affairs completely independent",
+      "Proscenium owns presentation, Hails, and display target routing",
+      "Vellum owns 3D/ORM/Ogg asset conversion and vault storage",
+      "All pipeline delivery and engine verification must be machine-owned"
     ],
     "rejected_approaches": [
-      "Merging Field Ops and Threshold Affairs into a single Dobsonian bucket",
-      "Dumping raw marketplace packs into Godot git repos",
+      "Asking human operators to manually copy files or run CLI commands",
+      "Collapsing Proscenium, Vellum, Eidolon, or Mneme boundaries into a monolith",
       "Relying on chat memory instead of durable CFD records"
     ],
     "requests": [
-      "Uncouple Dobsonian games in catalog and UI",
-      "Build Godot 4.x intake and delivery pipeline",
-      "Support CLI and Godot plugin ingestion"
+      "Shape and scope the complete solo-operator platform via Axiom CFD",
+      "Integrate Proscenium, Vellum, Eidolon, Mneme, and LCARD",
+      "Automate lane delivery and headless Godot verification on dev-ubuntu"
     ]
   },
   "operator_facing": true,
   "plan": {
     "schema_version": 1,
     "kind": "cfd_inspiration_plan",
-    "plan_id": "plan-20260722-164500-vellum-godot-dobsonian",
-    "inspiration_id": "cfd-inspiration-20260722-164500-vellum-godot-dobsonian-expansion",
+    "plan_id": "plan-20260722-215000-control-alt-games-platform",
+    "inspiration_id": "cfd-inspiration-20260722-215000-control-alt-games-platform-expansion",
     "version": 1,
     "status": "approved",
-    "title": "Godot 4.x & Independent Dobsonian Expansion Plan",
-    "summary": "Uncouple Field Ops & Threshold Affairs into independent Godot 4.x game lanes; build ORM PBR texture bakes; index element-level props; unpark Unity tier; ship CLI + Godot plugin delivery.",
+    "title": "Control Alt Games Platform & Solo-Operator Workflow Plan",
+    "summary": "Unified platform plan orchestrating Proscenium (:8788), Vellum (:8770), Eidolon (:7860), Mneme (:8790), LCARD (:8184), and Godot 4.x game runtimes (Field Ops & Threshold Affairs) under Axiom governance.",
     "phases": [
       {
-        "phase_id": "phase-uncouple-dobsonian",
-        "title": "Phase 1: Uncouple Dobsonian Games & Independent Lanes",
+        "phase_id": "phase-platform-contracts",
+        "title": "Phase 1: Inter-System Architecture & Proscenium Presentation Contracts",
         "order": 1,
         "status": "in_progress",
-        "summary": "Define separate godot-field-ops and godot-threshold-affairs game lanes in backend schema, catalog APIs, and UI filters.",
+        "summary": "Establish formal API contracts between Proscenium (:8788), Vellum (:8770), Eidolon (:7860), Mneme (:8790), and LCARD (:8184).",
         "tasks": [
           {
-            "task_id": "task-uncouple-schema-lanes",
-            "title": "Update catalog schema for independent godot-field-ops and godot-threshold-affairs lanes",
+            "task_id": "task-canonize-platform-cfd",
+            "title": "Canonize Governing CFD record and Dev Tracker in git",
             "order": 1,
-            "status": "pending",
-            "description": "Add godot-field-ops and godot-threshold-affairs to backend/game_ready.py, backend/register.py, and UI dropdowns.",
+            "status": "in_progress",
+            "description": "Store governing-inspiration.json and DEV_TRACKER.md in git to preserve context across agent sessions.",
             "acceptance": [
-              "godot-field-ops and godot-threshold-affairs are recognized as separate valid lanes",
-              "Catalog API filters by lane: godot-field-ops vs godot-threshold-affairs independently"
+              "CFD record registered with ID cfd-inspiration-20260722-215000-control-alt-games-platform-expansion",
+              "DEV_TRACKER.md updated and bound"
+            ]
+          },
+          {
+            "task_id": "task-proscenium-lane-contract",
+            "title": "Define Proscenium presentation & Hails event payload contract for Field Ops & Threshold Affairs",
+            "order": 2,
+            "status": "pending",
+            "description": "Establish event trigger contracts for tactical objective Hails (Field Ops) and investigation discovery stingers (Threshold Affairs) sent to POST /api/presentation/products/{product_id}/show.",
+            "acceptance": [
+              "Proscenium event payload documented for Field Ops & Threshold Affairs",
+              "Overlay APK display routing contract established"
             ]
           }
         ]
       },
       {
-        "phase_id": "phase-godot-foundations",
-        "title": "Phase 2: Godot 4.x Pipeline Foundations",
+        "phase_id": "phase-machine-lane-sync",
+        "title": "Phase 2: Machine-Owned Lane Delivery Engine (vellum-lane-sync)",
         "order": 2,
         "status": "pending",
-        "summary": "Implement ORM PBR texture packing (AO, Roughness, Metallic) and Ogg Vorbis audio bakes in export jobs.",
+        "summary": "Build automated background sync worker on dev-ubuntu to deliver published Vellum elements directly to Field Ops and Threshold Affairs project roots.",
         "tasks": [
           {
-            "task_id": "task-orm-texture-packer",
-            "title": "Implement ORM texture channel packing job in tools/pipeline/jobs/",
+            "task_id": "task-build-lane-sync-worker",
+            "title": "Build vellum-lane-sync background worker on dev-ubuntu",
             "order": 1,
             "status": "pending",
-            "description": "Pack Ambient Occlusion (R), Roughness (G), and Metallic (B) into single ORM textures for Godot ORMMaterial3D.",
+            "description": "Create automated daemon/job polling Vellum catalog changes and delivering assets to res://assets/vellum/ in game project checkouts.",
             "acceptance": [
-              "ORM textures generated during export-media job",
-              "ORMMaterial3D compliant"
+              "Assets automatically sync to dev-ubuntu game repos on publish",
+              "Zero operator manual pull required"
             ]
           }
         ]
       },
       {
-        "phase_id": "phase-element-indexing",
-        "title": "Phase 3: Element-Level Search & Dobsonian Taxonomy",
+        "phase_id": "phase-headless-verification",
+        "title": "Phase 3: Headless Engine Import & Quality Verification",
         "order": 3,
         "status": "pending",
-        "summary": "Index individual mesh assets within packs and add #field-ops and #threshold-affairs thematic tags.",
+        "summary": "Automate headless Godot import scanning (godot --headless -e --quit) on dev-ubuntu and report clean imports / errors to /api/ops/pulse.",
         "tasks": [
           {
-            "task_id": "task-element-indexing-taxonomy",
-            "title": "Index individual pack assets and apply game-specific thematic tags",
+            "task_id": "task-godot-headless-scanner",
+            "title": "Build automated headless import scanner for Godot projects",
             "order": 1,
             "status": "pending",
-            "description": "Expose prop-level search across all 37 vault packs for Field Ops and Threshold Affairs.",
+            "description": "Execute godot --headless on synced game project checkouts, parse import stdout/stderr, and report status to Vellum /api/ops/pulse.",
             "acceptance": [
-              "Individual prop search works via /api/game-ready/elements",
-              "Field Ops and Threshold Affairs have separate thematic tags"
+              "0 import error verification automated",
+              "Import exceptions surfaced in Vellum and Axiom ops dashboard"
             ]
           }
         ]
       },
       {
-        "phase_id": "phase-expanded-import",
-        "title": "Phase 4: Expanded Import & Blender Engine",
+        "phase_id": "phase-proscenium-dobsonian-stage",
+        "title": "Phase 4: Proscenium Stage & Presentation Integration for Dobsonian Games",
         "order": 4,
         "status": "pending",
-        "summary": "Unpark Unity tier extraction and integrate headless Blender assembly pipeline.",
+        "summary": "Wire game event stings from Field Ops and Threshold Affairs into Proscenium display targets (overlay-apk / Android TV & room displays).",
         "tasks": [
           {
-            "task_id": "task-unpark-unity-tier",
-            "title": "Unpark Unity tier .unitypackage extraction pipeline",
+            "task_id": "task-wire-dobsonian-hails",
+            "title": "Wire game event notifications into Proscenium Hails renderer",
             "order": 1,
             "status": "pending",
-            "description": "Extract .unitypackage assets to GLB for Godot intake.",
+            "description": "Connect in-game objective and clue triggers to Proscenium POST /api/presentation/products/hails/show.",
             "acceptance": [
-              "Unity 3D environment assets extracted to GLB"
+              "Field Ops objective triggers render tactical Hails on Proscenium stage",
+              "Threshold Affairs discovery triggers render mystery stingers on Proscenium stage"
             ]
           }
         ]
       },
       {
-        "phase_id": "phase-godot-tooling",
-        "title": "Phase 5: Godot Developer Tools (vellum pull & Godot Plugin)",
+        "phase_id": "phase-axiom-studio-leaf",
+        "title": "Phase 5: Axiom Studio Leaf & Unified Production Briefs",
         "order": 5,
         "status": "pending",
-        "summary": "Ship vellum pull CLI utility and Godot Editor Plugin for direct project ingestion.",
+        "summary": "Deliver Axiom Studio Leaf (praxis-games) combining Eidolon concept art, Mneme lore notes, Vellum 3D assets, and Proscenium stage previews.",
         "tasks": [
           {
-            "task_id": "task-vellum-pull-cli",
-            "title": "Build vellum pull CLI utility and Godot Editor Plugin",
+            "task_id": "task-axiom-studio-leaf-ui",
+            "title": "Deliver Axiom Studio Leaf UI for solo game production",
             "order": 1,
             "status": "pending",
-            "description": "Allow one-command or one-click asset ingestion into Godot project roots.",
+            "description": "Create Axiom embedded leaf app presenting unified production briefs, Proscenium stage previews, and live game pipeline health.",
             "acceptance": [
-              "vellum pull fetches manifested elements into res://assets/vellum/",
-              "Godot plugin displays catalog and imports assets"
+              "Axiom Studio Leaf registered in config/apps.registry.yaml",
+              "Unified production brief view presents Eidolon art + Mneme lore + Vellum assets + Proscenium stage"
             ]
           }
         ]
