@@ -46,18 +46,26 @@
   - [x] Prove VFX artifact in Games web runtime (`slots`)
   - [x] Uncouple Dobsonian games into `godot-field-ops` and `godot-threshold-affairs` lanes
   - [x] Add ORM texture bakes, Ogg audio conversion, prop search, Unity pack extractor, `vellum pull` CLI, and Godot addon
-  - [x] Bind new Governing CFD (`cfd-inspiration-20260722-215000-control-alt-games-platform-expansion`)
-  - [ ] **Phase 1: Inter-System Architecture & Proscenium Presentation Contracts** — Define payload contracts between Proscenium (:8788), Vellum (:8770), Eidolon (:7860), Mneme (:8790), and LCARD (:8184)
-  - [ ] **Phase 2: Machine-Owned Lane Delivery Engine** — Build `vellum-lane-sync` background worker on `dev-ubuntu` to deliver assets to Godot repos
-  - [ ] **Phase 3: Headless Engine Import & Quality Verification** — Automated `godot --headless` scanning for 0 import errors on `dev-ubuntu`
-  - [ ] **Phase 4: Proscenium Stage & Presentation Integration for Dobsonian Games** — Wire game event stings from Field Ops and Threshold Affairs into Proscenium display targets
+  - [x] Conduct empirical workspace discovery across Proscenium, Axiom, Eidolon, Mneme, LCARD, and Vellum repos
+  - [x] Bind & supplement Governing CFD (`cfd-inspiration-20260722-215000-control-alt-games-platform-expansion`)
+  - [ ] **Phase 1: Inter-System Architecture & Proscenium Presentation Contracts** — Register `godot-field-ops` and `godot-threshold-affairs` in Proscenium's `delivery-targets.json` using `delivery.py`
+  - [ ] **Phase 2: Machine-Owned Lane Delivery Engine** — Implement `lane_sync` job kind in Vellum's `backend/jobs.py` SQLite queue to deliver assets to Godot repos on `dev-ubuntu`
+  - [ ] **Phase 3: Headless Engine Import & Quality Verification** — Implement `headless_verify` job kind for `godot --headless` scanning for 0 import errors on `dev-ubuntu`
+  - [ ] **Phase 4: Proscenium Stage & Presentation Integration for Dobsonian Games** — Wire game event stings from Field Ops and Threshold Affairs into Proscenium display targets (`overlay-apk` & room screens)
   - [ ] **Phase 5: Axiom Studio Leaf & Unified Production Briefs** — Deliver Axiom Studio Leaf (`praxis-games`) presenting Eidolon art + Mneme lore + Vellum assets + Proscenium stage preview
-  - [x] **Phase 4: Expanded Import & Blender Engine** — Unpark Unity tier `.unitypackage` extraction & headless Blender mesh/collision bakes
-  - [x] **Phase 5: Godot Developer Tooling** — Build `vellum pull` CLI utility and Godot Editor Plugin
 
 ---
 
-## 3. The Parking Lot
+## 3. Discovered Reuse Infrastructure
+
+* **Proscenium Presentation Delivery (`proscenium/backend/presentation/delivery.py`):** `deliver_product_action()` is 100% reused to deliver Hails and overlays to Android TV (`overlay-apk/`) targets.
+* **Vellum SQLite Job Engine (`vellum/backend/jobs.py`):** `data/jobs.sqlite3` queue is 100% reused to execute `lane_sync` and `headless_verify` background jobs.
+* **Axiom App Registry (`ctrl-alt-axiom/config/apps.registry.yaml`):** Leaf contract and Theme SoT (`GET /api/effective/{app_id}`) are 100% reused for Studio Leaf registration.
+* **Eidolon & Mneme Read APIs (`ctrl-alt-eidolon` & `mneme`):** `GET /api/batches` and `GET /api/documents` are 100% reused for Production Briefs.
+
+---
+
+## 4. The Parking Lot
 
 * Unity tier reconcile (explicitly deferred).
 * Optional deeper AI fit-tagging.

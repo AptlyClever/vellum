@@ -6,22 +6,24 @@
   "kind": "cfd_inspiration",
   "title": "Control Alt Games Platform & Solo-Operator Workflow (Proscenium Stage, Vellum Vault, Eidolon Art, Mneme Lore, and Godot Runtimes)",
   "created_at": "2026-07-22T21:50:00.000000+00:00",
-  "updated_at": "2026-07-22T21:50:00.000000+00:00",
+  "updated_at": "2026-07-22T21:56:00.000000+00:00",
   "status": "in_progress",
   "priority": "now",
   "problem": "Solo game development across Control Alt Games requires operating as a creative director without manual developer bookkeeping or technical 3D pipeline friction. Today's systems (Vellum asset vault, Proscenium presentation stage, Eidolon concept art, Mneme lore library, LCARD operator controls, and Godot game repos) operate as isolated silos, requiring manual hand-offs, manual CLI commands, and lacking a unified solo-operator workflow across stage presentation, concept art, lore briefs, asset conversion, and automated engine delivery.",
-  "desired_outcome": "A unified, machine-owned Control Alt Games platform and workflow where Vellum converts and vaults 3D/audio assets; Proscenium acts as the home presentation authority and live stage viewport; Eidolon and Mneme supply concept art and lore briefs; automated background sync delivers manifested assets directly into Field Ops and Threshold Affairs Godot repos on dev-ubuntu; and headless engine validation guarantees 0 import errors.",
+  "desired_outcome": "A unified, machine-owned Control Alt Games platform and workflow reusing 90% of existing infrastructure: Vellum (:8770) converts and vaults 3D/audio assets via its SQLite job queue; Proscenium (:8788) acts as the home presentation authority and live stage viewport via delivery.py and overlay-apk; Eidolon (:7860) and Mneme (:8790) supply concept art and lore briefs; automated background sync delivers manifested assets directly into Field Ops and Threshold Affairs Godot repos on dev-ubuntu; and headless engine validation guarantees 0 import errors.",
   "constraints": [
     "Field Ops (godot-field-ops) and Threshold Affairs (godot-threshold-affairs) are separate, independent game targets.",
-    "Proscenium (:8788) is the authoritative presentation stage, Hails engine, and display target router (overlay-apk / Android TV).",
-    "Vellum (:8770) stores bytes, not prose, and handles machine-owned 3D/ORM/Ogg/WebM conversion.",
+    "Proscenium (:8788) is the authoritative presentation stage, Hails engine, and display target router (overlay-apk / Android TV) using delivery.py and config/presentation/delivery-targets.json.",
+    "Vellum (:8770) stores bytes, not prose, and executes lane_sync / headless_verify jobs via backend/jobs.py SQLite queue.",
     "Vault I/O off the press host is strictly HTTP-only.",
     "Pack intake, lane sync, and headless engine validation must be 100% machine-owned without operator bookkeeping.",
+    "Reuse existing platform utilities (Proscenium delivery.py, Vellum jobs.py, Axiom apps.registry.yaml, Mneme documents API, Eidolon batches API) before creating new code.",
     "Record all scope, context, and work in durable CFD records mirrored in git."
   ],
   "acceptance_signals": [
-    "Governing CFD inspiration and plan are canonized in git.",
-    "Proscenium presentation actions and display adapters integrate with Control Alt Games lanes.",
+    "Governing CFD inspiration and plan are canonized in git with empirical discovery findings.",
+    "Proscenium presentation delivery target registry (delivery-targets.json) includes godot-field-ops and godot-threshold-affairs capabilities.",
+    "Vellum SQLite job engine (jobs.py) executes lane_sync and headless_verify job kinds.",
     "Machine-owned background sync delivers published Vellum assets directly to Field Ops and Threshold Affairs repos on dev-ubuntu.",
     "Automated headless Godot import scanning (godot --headless) verifies 0 import errors and updates /api/ops/pulse.",
     "Axiom Studio Leaf presents unified production briefs (Eidolon concept art + Mneme lore + Vellum assets + Proscenium stage preview)."
@@ -29,17 +31,18 @@
   "operator_brief": {
     "non_negotiables": [
       "Keep Field Ops and Threshold Affairs completely independent",
-      "Proscenium owns presentation, Hails, and display target routing",
-      "Vellum owns 3D/ORM/Ogg asset conversion and vault storage",
+      "Reuse Proscenium delivery.py for presentation, Hails, and display target routing",
+      "Reuse Vellum jobs.py SQLite queue for machine-owned lane_sync and headless_verify jobs",
       "All pipeline delivery and engine verification must be machine-owned"
     ],
     "rejected_approaches": [
       "Asking human operators to manually copy files or run CLI commands",
+      "Re-inventing presentation routers or job queues already built in Proscenium and Vellum",
       "Collapsing Proscenium, Vellum, Eidolon, or Mneme boundaries into a monolith",
       "Relying on chat memory instead of durable CFD records"
     ],
     "requests": [
-      "Shape and scope the complete solo-operator platform via Axiom CFD",
+      "Supplement Governing CFD with empirical discovery findings",
       "Integrate Proscenium, Vellum, Eidolon, Mneme, and LCARD",
       "Automate lane delivery and headless Godot verification on dev-ubuntu"
     ]
@@ -50,56 +53,57 @@
     "kind": "cfd_inspiration_plan",
     "plan_id": "plan-20260722-215000-control-alt-games-platform",
     "inspiration_id": "cfd-inspiration-20260722-215000-control-alt-games-platform-expansion",
-    "version": 1,
+    "version": 2,
     "status": "approved",
     "title": "Control Alt Games Platform & Solo-Operator Workflow Plan",
-    "summary": "Unified platform plan orchestrating Proscenium (:8788), Vellum (:8770), Eidolon (:7860), Mneme (:8790), LCARD (:8184), and Godot 4.x game runtimes (Field Ops & Threshold Affairs) under Axiom governance.",
+    "summary": "Unified platform plan orchestrating Proscenium (:8788), Vellum (:8770), Eidolon (:7860), Mneme (:8790), LCARD (:8184), and Godot 4.x game runtimes (Field Ops & Threshold Affairs) under Axiom governance, reusing existing Proscenium delivery.py and Vellum jobs.py infrastructure.",
     "phases": [
       {
         "phase_id": "phase-platform-contracts",
         "title": "Phase 1: Inter-System Architecture & Proscenium Presentation Contracts",
         "order": 1,
         "status": "in_progress",
-        "summary": "Establish formal API contracts between Proscenium (:8788), Vellum (:8770), Eidolon (:7860), Mneme (:8790), and LCARD (:8184).",
+        "summary": "Establish formal API contracts between Proscenium (:8788), Vellum (:8770), Eidolon (:7860), Mneme (:8790), and LCARD (:8184), leveraging Proscenium's existing delivery.py router.",
         "tasks": [
           {
             "task_id": "task-canonize-platform-cfd",
-            "title": "Canonize Governing CFD record and Dev Tracker in git",
+            "title": "Canonize Governing CFD record and Dev Tracker in git with discovery evidence",
             "order": 1,
             "status": "in_progress",
             "description": "Store governing-inspiration.json and DEV_TRACKER.md in git to preserve context across agent sessions.",
             "acceptance": [
               "CFD record registered with ID cfd-inspiration-20260722-215000-control-alt-games-platform-expansion",
-              "DEV_TRACKER.md updated and bound"
+              "DEV_TRACKER.md updated with empirical discovery findings"
             ]
           },
           {
             "task_id": "task-proscenium-lane-contract",
-            "title": "Define Proscenium presentation & Hails event payload contract for Field Ops & Threshold Affairs",
+            "title": "Update Proscenium delivery-targets.json for Field Ops & Threshold Affairs",
             "order": 2,
             "status": "pending",
-            "description": "Establish event trigger contracts for tactical objective Hails (Field Ops) and investigation discovery stingers (Threshold Affairs) sent to POST /api/presentation/products/{product_id}/show.",
+            "description": "Register godot-field-ops and godot-threshold-affairs product capabilities in Proscenium's delivery-targets.json and define event payloads for POST /api/presentation/products/{product_id}/show.",
             "acceptance": [
-              "Proscenium event payload documented for Field Ops & Threshold Affairs",
-              "Overlay APK display routing contract established"
+              "godot-field-ops and godot-threshold-affairs registered in Proscenium delivery-targets.json",
+              "Tactical and investigative Hails payload schema documented"
             ]
           }
         ]
       },
       {
         "phase_id": "phase-machine-lane-sync",
-        "title": "Phase 2: Machine-Owned Lane Delivery Engine (vellum-lane-sync)",
+        "title": "Phase 2: Machine-Owned Lane Delivery Engine (Vellum Jobs Integration)",
         "order": 2,
         "status": "pending",
-        "summary": "Build automated background sync worker on dev-ubuntu to deliver published Vellum elements directly to Field Ops and Threshold Affairs project roots.",
+        "summary": "Extend Vellum's SQLite job queue (backend/jobs.py) with lane_sync job kind to deliver published Vellum elements directly to Field Ops and Threshold Affairs project roots on dev-ubuntu.",
         "tasks": [
           {
             "task_id": "task-build-lane-sync-worker",
-            "title": "Build vellum-lane-sync background worker on dev-ubuntu",
+            "title": "Implement lane_sync job kind in Vellum backend/jobs.py",
             "order": 1,
             "status": "pending",
-            "description": "Create automated daemon/job polling Vellum catalog changes and delivering assets to res://assets/vellum/ in game project checkouts.",
+            "description": "Add lane_sync automatable job kind to Vellum's job queue, executing automated asset sync to res://assets/vellum/ in game project checkouts on dev-ubuntu.",
             "acceptance": [
+              "lane_sync job kind registered in Vellum backend/jobs.py",
               "Assets automatically sync to dev-ubuntu game repos on publish",
               "Zero operator manual pull required"
             ]
@@ -111,15 +115,16 @@
         "title": "Phase 3: Headless Engine Import & Quality Verification",
         "order": 3,
         "status": "pending",
-        "summary": "Automate headless Godot import scanning (godot --headless -e --quit) on dev-ubuntu and report clean imports / errors to /api/ops/pulse.",
+        "summary": "Implement headless_verify job kind in Vellum's job queue executing godot --headless -e --quit on dev-ubuntu and reporting clean imports / errors to /api/ops/pulse.",
         "tasks": [
           {
             "task_id": "task-godot-headless-scanner",
-            "title": "Build automated headless import scanner for Godot projects",
+            "title": "Implement headless_verify job kind for Godot projects",
             "order": 1,
             "status": "pending",
             "description": "Execute godot --headless on synced game project checkouts, parse import stdout/stderr, and report status to Vellum /api/ops/pulse.",
             "acceptance": [
+              "headless_verify job kind registered in Vellum backend/jobs.py",
               "0 import error verification automated",
               "Import exceptions surfaced in Vellum and Axiom ops dashboard"
             ]
@@ -138,7 +143,7 @@
             "title": "Wire game event notifications into Proscenium Hails renderer",
             "order": 1,
             "status": "pending",
-            "description": "Connect in-game objective and clue triggers to Proscenium POST /api/presentation/products/hails/show.",
+            "description": "Connect in-game objective and clue triggers to Proscenium POST /api/presentation/products/{product_id}/show via Proscenium's delivery.py.",
             "acceptance": [
               "Field Ops objective triggers render tactical Hails on Proscenium stage",
               "Threshold Affairs discovery triggers render mystery stingers on Proscenium stage"
