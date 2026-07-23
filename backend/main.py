@@ -1610,6 +1610,38 @@ def api_visual_research_delete(
     return {"schema_version": 1, **result}
 
 
+@app.get("/api/studio/briefs")
+def api_studio_briefs(
+    lane: str | None = Query(default="bandit"),
+) -> dict[str, Any]:
+    """Unified Studio Production Brief aggregator (Eidolon art + Mneme lore + Vellum assets)."""
+    elements = game_ready_mod.list_elements(lane=lane)
+
+    stills = []
+    try:
+        stills = eidolon_mod.list_stills(limit=10)
+    except Exception:
+        pass
+
+    docs = []
+    try:
+        docs = mneme_mod.list_documents(limit=10)
+    except Exception:
+        pass
+
+    return {
+        "schema_version": 1,
+        "lane": lane,
+        "priority": "1st (Bandit)" if lane == "bandit" else ("2nd (Threshold Affairs)" if lane == "godot-threshold-affairs" else "ready"),
+        "elements_count": len(elements),
+        "elements": elements[:20],
+        "eidolon_stills_count": len(stills),
+        "eidolon_stills": stills[:5],
+        "mneme_docs_count": len(docs),
+        "mneme_docs": docs[:5],
+    }
+
+
 @app.get("/")
 def index() -> FileResponse:
     return FileResponse(WEB_ROOT / "index.html")
