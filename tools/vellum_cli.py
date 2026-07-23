@@ -4,8 +4,8 @@ Allows game developers working in Godot or other engines to fetch published game
 directly from Vellum into project directories.
 
 Usage:
-  python tools/vellum_cli.py pull --lane godot-field-ops --target ./res/assets/vellum/
-  python tools/vellum_cli.py pull --lane godot-threshold-affairs --target ./res/assets/vellum/
+  python tools/vellum_cli.py pull --lane field-ops --target ./res/assets/vellum/
+  python tools/vellum_cli.py pull --lane threshold-affairs --target ./res/assets/vellum/
 """
 
 from __future__ import annotations
@@ -76,7 +76,7 @@ def main() -> None:
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     pull_parser = subparsers.add_parser("pull", help="Pull published assets for a target game lane")
-    pull_parser.add_argument("--lane", required=True, help="Target game lane (e.g. godot-field-ops, godot-threshold-affairs)")
+    pull_parser.add_argument("--lane", required=True, help="Target game lane (e.g. field-ops, threshold-affairs)")
     pull_parser.add_argument("--target", type=Path, required=True, help="Target directory (e.g. ./res/assets/vellum/)")
     pull_parser.add_argument("--kind", help="Optional asset kind filter (model-gltf, texture, audio, vfx-clip)")
     pull_parser.add_argument("--base-url", default=DEFAULT_VELLUM_API, help="Vellum server API base URL")

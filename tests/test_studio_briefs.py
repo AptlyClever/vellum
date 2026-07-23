@@ -18,8 +18,8 @@ def test_api_studio_briefs_bandit() -> None:
 
 def test_api_studio_briefs_threshold_affairs() -> None:
     client = TestClient(app)
-    res = client.get("/api/studio/briefs", params={"lane": "godot-threshold-affairs"})
+    res = client.get("/api/studio/briefs", params={"lane": "threshold-affairs"})
     assert res.status_code == 200
     data = res.json()
-    assert data["lane"] == "godot-threshold-affairs"
+    assert data["lane"] == "threshold-affairs"
     assert "2nd" in data["priority"]

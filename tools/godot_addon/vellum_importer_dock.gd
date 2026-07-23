@@ -5,7 +5,7 @@ extends Control
 ## Queries Vellum HTTP API for published game-ready assets and downloads GLB/textures/audio into res://assets/vellum/
 
 @export var vellum_api_url: String = "http://192.168.68.93:8770"
-@export var default_lane: String = "godot-field-ops"
+@export var default_lane: String = "field-ops"
 
 var _http_request: HTTPRequest
 

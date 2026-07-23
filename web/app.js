@@ -2011,7 +2011,7 @@ async function refreshStudioDesk(lane) {
   });
 
   if (laneIndicator) {
-    const priorityLabel = currentStudioLane === "bandit" ? "Bandit (1st Priority)" : (currentStudioLane === "godot-threshold-affairs" ? "Threshold Affairs (2nd Priority)" : "Field Ops (Pipeline Ready)");
+    const priorityLabel = currentStudioLane === "bandit" ? "Bandit (1st Priority)" : (currentStudioLane === "threshold-affairs" ? "Threshold Affairs (2nd Priority)" : "Field Ops (Pipeline Ready)");
     laneIndicator.textContent = priorityLabel;
   }
 

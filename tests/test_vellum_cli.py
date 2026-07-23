@@ -17,7 +17,7 @@ def test_vellum_cli_pull(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("VELLUM_GAME_READY_PATH", str(gr))
     monkeypatch.setenv("VELLUM_VAULT_ROOT", str(vault))
 
-    # Seed an asset & registered game-ready element for godot-field-ops lane
+    # Seed an asset & registered game-ready element for field-ops lane
     from backend.register import ensure_register, patch_asset
     ensure_register(force_reseed=True)
     patch_asset("japanese-old-shopping-mall-interior-environment", redemption_status="redeemed")
@@ -29,7 +29,7 @@ def test_vellum_cli_pull(tmp_path: Path, monkeypatch) -> None:
         asset_id="japanese-old-shopping-mall-interior-environment",
         kind="model-gltf",
         path=dummy_model,
-        lanes=["godot-field-ops"],
+        lanes=["field-ops"],
     )
     assert row["id"]
 
@@ -54,6 +54,6 @@ def test_vellum_cli_pull(tmp_path: Path, monkeypatch) -> None:
 
     monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
 
-    res = cmd_pull("godot-field-ops", target_dir, "http://testserver")
+    res = cmd_pull("field-ops", target_dir, "http://testserver")
     assert res == 0
     assert (target_dir / "model-gltf" / "crate.glb").is_file()

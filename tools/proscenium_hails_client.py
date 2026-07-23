@@ -19,8 +19,8 @@ DEFAULT_PROSCENIUM_URL = os.environ.get(
 
 DEFAULT_TARGETS = {
     "bandit": "arcade",
-    "godot-threshold-affairs": "operator_desk",
-    "godot-field-ops": "operator_desk",
+    "threshold-affairs": "operator_desk",
+    "field-ops": "operator_desk",
 }
 
 

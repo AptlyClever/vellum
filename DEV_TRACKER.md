@@ -44,11 +44,11 @@
   - [x] Baseline factory evidence for every on-disk pack
   - [x] Execute Niagara bake plans through MRQ / Niagara Baker
   - [x] Prove VFX artifact in Games web runtime (`slots`)
-  - [x] Uncouple Dobsonian games into `godot-field-ops` and `godot-threshold-affairs` lanes
+  - [x] Uncouple Dobsonian games into `field-ops` and `threshold-affairs` lanes
   - [x] Add ORM texture bakes, Ogg audio conversion, prop search, Unity pack extractor, `vellum pull` CLI, and Godot addon
   - [x] Conduct empirical workspace discovery across Proscenium, Axiom, Eidolon, Mneme, LCARD, and Vellum repos
   - [x] Bind & supplement Governing CFD (`cfd-inspiration-20260722-215000-control-alt-games-platform-expansion`)
-  - [x] **Phase 1: Inter-System Architecture & Proscenium Presentation Contracts** — Registered `godot-field-ops` and `godot-threshold-affairs` in Proscenium's `delivery-targets.json` using `delivery.py` (Commit `dc70c6b`)
+  - [x] **Phase 1: Inter-System Architecture & Proscenium Presentation Contracts** — Registered `field-ops` and `threshold-affairs` in Proscenium's `delivery-targets.json` using `delivery.py` (Commit `dc70c6b`)
   - [x] **Phase 2: Machine-Owned Lane Delivery Engine** — Implemented `lane_sync` job kind in Vellum's `backend/jobs.py` SQLite queue to deliver assets to Godot repos on `dev-ubuntu` (Commit `844d928`)
   - [x] **Phase 3: Headless Engine Import & Quality Verification** — Implemented `headless_verify` job kind for `godot --headless` scanning for 0 import errors on `dev-ubuntu` (Commit `844d928`)
   - [x] **Phase 4: Proscenium Stage & Presentation Integration for Dobsonian Games** — Created `tools/proscenium_hails_client.py` and contracts for Field Ops & Threshold Affairs Hails (Commit `834a300`)
@@ -83,7 +83,7 @@
   4.3 stable (`77dcf97d8`) on dev-ubuntu. Created Godot 4.3 project skeletons at
   `/mnt/temp/config/godot-field-ops` and `/mnt/temp/config/godot-threshold-affairs`
   with Vellum addon pre-installed. `godot --headless --import --quit` ran clean
-  (exit 0) on both projects. `vellum pull --lane godot-field-ops` fetched 1
+  (exit 0) on both projects. `vellum pull --lane field-ops` fetched 1
   published texture into `assets/vellum/texture/`; post-pull headless re-import
   confirmed Godot processed it to `.ctex` in `.godot/imported/`. Addon
   (`vellum_plugin.gd` + dock) in-tree for both projects.

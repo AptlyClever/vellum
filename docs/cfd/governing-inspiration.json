@@ -13,7 +13,7 @@
   "desired_outcome": "A unified, machine-owned Control Alt Games platform and workflow reusing 90% of existing infrastructure: Vellum (:8770) converts and vaults 3D/audio assets via its SQLite job queue; Proscenium (:8788) acts as the home presentation authority and live stage viewport via delivery.py and overlay-apk; Eidolon (:7860) and Mneme (:8790) supply concept art and lore briefs for Bandit (1st priority) and Threshold Affairs (2nd priority), with Field Ops pipeline-ready; automated background sync delivers manifested assets directly into Godot repos on dev-ubuntu; and headless engine validation guarantees 0 import errors.",
   "constraints": [
     "Priority sequence: Bandit first, Threshold Affairs second, Field Ops pipeline-ready.",
-    "Field Ops (godot-field-ops) and Threshold Affairs (godot-threshold-affairs) are separate, independent game targets.",
+    "Field Ops (field-ops) and Threshold Affairs (threshold-affairs) are separate, independent game targets.",
     "Proscenium (:8788) presentation display targets are configurable per game and toggleable via LCARD controls (Bandit defaults to arcade/overlay-apk; Threshold Affairs to operator-screen/living-room-tv).",
     "Headless Godot import errors on dev-ubuntu trigger Soft Quarantine (moving bad files to .quarantine/, keeping healthy assets online, and surfacing alerts on /api/ops/pulse).",
     "Vellum (:8770) stores bytes, not prose, and executes lane_sync / headless_verify jobs via backend/jobs.py SQLite queue.",
@@ -24,7 +24,7 @@
   ],
   "acceptance_signals": [
     "Governing CFD inspiration and plan are canonized in git with empirical discovery findings.",
-    "Proscenium presentation delivery target registry (delivery-targets.json) includes godot-field-ops and godot-threshold-affairs capabilities with per-game target defaults and LCARD control overrides.",
+    "Proscenium presentation delivery target registry (delivery-targets.json) includes field-ops and threshold-affairs capabilities with per-game target defaults and LCARD control overrides.",
     "Vellum SQLite job engine (jobs.py) executes lane_sync and headless_verify job kinds with Soft Quarantine error handling.",
     "Machine-owned background sync delivers published Vellum assets directly to Field Ops and Threshold Affairs repos on dev-ubuntu.",
     "Automated headless Godot import scanning (godot --headless) verifies 0 import errors and updates /api/ops/pulse.",
@@ -86,9 +86,9 @@
             "title": "Update Proscenium delivery-targets.json for Field Ops & Threshold Affairs",
             "order": 2,
             "status": "pending",
-            "description": "Register godot-field-ops and godot-threshold-affairs product capabilities in Proscenium's delivery-targets.json and define event payloads for POST /api/presentation/products/{product_id}/show.",
+            "description": "Register field-ops and threshold-affairs product capabilities in Proscenium's delivery-targets.json and define event payloads for POST /api/presentation/products/{product_id}/show.",
             "acceptance": [
-              "godot-field-ops and godot-threshold-affairs registered in Proscenium delivery-targets.json",
+              "field-ops and threshold-affairs registered in Proscenium delivery-targets.json",
               "Tactical and investigative Hails payload schema documented"
             ]
           }

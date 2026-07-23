@@ -113,19 +113,19 @@ To run and test the complete loop manually:
    From Python or Vellum CLI:
    ```python
    from tools.proscenium_hails_client import trigger_game_hail
-   trigger_game_hail("godot-threshold-affairs", "EVIDENCE_COLLECTED", "FOUND KEYCARD", "Room 204")
+   trigger_game_hail("threshold-affairs", "EVIDENCE_COLLECTED", "FOUND KEYCARD", "Room 204")
    ```
 2. **Enqueue Delivery Job:**
    ```bash
    # Enqueue sync to local checkout
    curl -X POST http://192.168.68.93:8770/api/jobs \
      -H "Content-Type: application/json" \
-     -d '{"kind": "lane_sync", "asset_id": "godot-threshold-affairs", "payload": {"lane": "godot-threshold-affairs", "target_dir": "C:/dev/threshold_affairs"}}'
+     -d '{"kind": "lane_sync", "asset_id": "threshold-affairs", "payload": {"lane": "threshold-affairs", "target_dir": "C:/dev/threshold_affairs"}}'
    ```
 3. **Verify Local Imports:**
    ```bash
    # Run headless verification check
    curl -X POST http://192.168.68.93:8770/api/jobs \
      -H "Content-Type: application/json" \
-     -d '{"kind": "headless_verify", "asset_id": "godot-threshold-affairs", "payload": {"target_dir": "C:/dev/threshold_affairs"}}'
+     -d '{"kind": "headless_verify", "asset_id": "threshold-affairs", "payload": {"target_dir": "C:/dev/threshold_affairs"}}'
    ```

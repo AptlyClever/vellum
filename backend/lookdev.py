@@ -142,11 +142,11 @@ def infer_lanes(project_fit: str | None) -> list[str]:
     mapping = (
         ("slots", "slots"),
         ("hail", "hail-overlay"),
-        ("field ops", "godot-field-ops"),
-        ("field-ops", "godot-field-ops"),
+        ("field ops", "field-ops"),
+        ("field-ops", "field-ops"),
         ("field command", "field-command"),
-        ("threshold affairs", "godot-threshold-affairs"),
-        ("threshold", "godot-threshold-affairs"),
+        ("threshold affairs", "threshold-affairs"),
+        ("threshold", "threshold-affairs"),
         ("lcard", "lcard"),
         ("arcade", "slots"),
     )

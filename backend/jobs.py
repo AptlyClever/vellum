@@ -558,7 +558,7 @@ def _execute_derive_lookdev(job: dict[str, Any]) -> dict[str, Any]:
 def _execute_lane_sync(job: dict[str, Any]) -> dict[str, Any]:
     import shutil
     payload = job.get("payload") or {}
-    lane = str(payload.get("lane") or job.get("asset_id") or "godot-field-ops")
+    lane = str(payload.get("lane") or job.get("asset_id") or "field-ops")
     target_dir_str = str(payload.get("target_dir") or "").strip()
     if not target_dir_str:
         raise ValueError("target_dir_required_for_lane_sync")

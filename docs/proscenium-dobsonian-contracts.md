@@ -9,7 +9,7 @@
 
 ## 1. Overview
 
-This contract defines how **Field Ops** (`godot-field-ops`) and **Threshold Affairs** (`godot-threshold-affairs`) send visual Hails, celebration stingers, and audio cues to **Proscenium** (`http://192.168.68.93:8788`).
+This contract defines how **Field Ops** (`field-ops`) and **Threshold Affairs** (`threshold-affairs`) send visual Hails, celebration stingers, and audio cues to **Proscenium** (`http://192.168.68.93:8788`).
 
 Proscenium acts as the home presentation authority. Games do not hold device URLs; instead, they send product events to Proscenium's delivery API, which routes them to physical display targets (`arcade`, `master_bedroom`, `away_team`, `operator_desk`) or the Android TV `overlay-apk/` compositor.
 
@@ -25,12 +25,12 @@ Proscenium acts as the home presentation authority. Games do not hold device URL
 
 ## 3. Product Event Schemas
 
-### A. Field Ops (`godot-field-ops`) — Tactical Events
+### A. Field Ops (`field-ops`) — Tactical Events
 
 Default Target: `operator_desk` (configurable via `delivery_target_id` or LCARD control override).
 
 ```json
-POST /api/presentation/products/godot-field-ops/show
+POST /api/presentation/products/field-ops/show
 {
   "delivery_target_id": "arcade",
   "payload": {
@@ -53,12 +53,12 @@ Supported `event_type` categories:
 
 ---
 
-### B. Threshold Affairs (`godot-threshold-affairs`) — Investigative Events
+### B. Threshold Affairs (`threshold-affairs`) — Investigative Events
 
 Default Target: `operator_desk` / `living_room_tv` (configurable via LCARD control override).
 
 ```json
-POST /api/presentation/products/godot-threshold-affairs/show
+POST /api/presentation/products/threshold-affairs/show
 {
   "delivery_target_id": "operator_desk",
   "payload": {

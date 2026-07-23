@@ -180,8 +180,8 @@ def test_lane_sync_and_headless_verify_jobs(tmp_path: Path, monkeypatch) -> None
     target.mkdir(parents=True, exist_ok=True)
     job_sync = jobs_mod.enqueue_job(
         kind="lane_sync",
-        asset_id="godot-field-ops",
-        payload={"lane": "godot-field-ops", "target_dir": str(target)},
+        asset_id="field-ops",
+        payload={"lane": "field-ops", "target_dir": str(target)},
     )
     assert job_sync["status"] == "queued"
 
@@ -194,7 +194,7 @@ def test_lane_sync_and_headless_verify_jobs(tmp_path: Path, monkeypatch) -> None
     # Enqueue headless_verify job
     job_verify = jobs_mod.enqueue_job(
         kind="headless_verify",
-        asset_id="godot-field-ops",
+        asset_id="field-ops",
         payload={"target_dir": str(target)},
     )
     assert job_verify["status"] == "queued"

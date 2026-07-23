@@ -48,7 +48,7 @@ def test_trigger_game_hail_threshold_affairs(monkeypatch) -> None:
     monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
 
     res = trigger_game_hail(
-        "godot-threshold-affairs",
+        "threshold-affairs",
         "EVIDENCE_COLLECTED",
         "EVIDENCE UNLOCKED",
         "Motel Keycard #204",

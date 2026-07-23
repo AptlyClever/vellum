@@ -1632,7 +1632,7 @@ def api_studio_briefs(
     return {
         "schema_version": 1,
         "lane": lane,
-        "priority": "1st (Bandit)" if lane == "bandit" else ("2nd (Threshold Affairs)" if lane == "godot-threshold-affairs" else "ready"),
+        "priority": "1st (Bandit)" if lane == "bandit" else ("2nd (Threshold Affairs)" if lane == "threshold-affairs" else "ready"),
         "elements_count": len(elements),
         "elements": elements[:20],
         "eidolon_stills_count": len(stills),
