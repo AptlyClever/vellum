@@ -559,14 +559,9 @@ def _execute_lane_sync(job: dict[str, Any]) -> dict[str, Any]:
     import shutil
     payload = job.get("payload") or {}
     lane = str(payload.get("lane") or job.get("asset_id") or "godot-field-ops")
-    target_dir_str = str(payload.get("target_dir") or "")
+    target_dir_str = str(payload.get("target_dir") or "").strip()
     if not target_dir_str:
-        if lane == "godot-field-ops":
-            target_dir_str = "/mnt/temp/projects/field_ops"
-        elif lane == "godot-threshold-affairs":
-            target_dir_str = "/mnt/temp/projects/threshold_affairs"
-        else:
-            target_dir_str = f"/mnt/temp/projects/{lane}"
+        raise ValueError("target_dir_required_for_lane_sync")
 
     dest_base = Path(target_dir_str) / "res" / "assets" / "vellum"
     quarantine_base = dest_base / ".quarantine"
@@ -618,9 +613,9 @@ def _execute_headless_verify(job: dict[str, Any]) -> dict[str, Any]:
     import shutil
     import subprocess
     payload = job.get("payload") or {}
-    target_dir_str = str(payload.get("target_dir") or job.get("asset_id") or "")
+    target_dir_str = str(payload.get("target_dir") or "").strip()
     if not target_dir_str:
-        target_dir_str = "/mnt/temp/projects/field_ops"
+        raise ValueError("target_dir_required_for_headless_verify")
 
     project_dir = Path(target_dir_str)
     if not (project_dir / "project.godot").is_file() and not project_dir.is_dir():
