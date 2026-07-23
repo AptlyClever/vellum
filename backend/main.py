@@ -728,6 +728,8 @@ def api_jobs_enqueue(body: JobEnqueueRequest) -> dict[str, Any]:
         "confirm_project_fit",
         "derive_lookdev",
         "ue_capture",
+        "lane_sync",
+        "headless_verify",
     }
     if body.kind not in allowed:
         raise HTTPException(status_code=400, detail=f"kind must be one of {sorted(allowed)}")
