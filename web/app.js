@@ -1682,33 +1682,35 @@ function setView(view) {
   const register = $("view-register");
   const research = $("view-research");
   const eidolon = $("view-eidolon");
+  const studio = $("view-studio");
   const tabReg = $("tab-register");
   const tabRes = $("tab-research");
   const tabEid = $("tab-eidolon");
+  const tabStu = $("tab-studio");
   if (!register || !research) return;
 
   const isResearch = view === "research";
   const isEidolon = view === "eidolon";
-  const isRegister = !isResearch && !isEidolon;
+  const isStudio = view === "studio";
+  const isRegister = !isResearch && !isEidolon && !isStudio;
 
   register.hidden = !isRegister;
   research.hidden = !isResearch;
   if (eidolon) eidolon.hidden = !isEidolon;
+  if (studio) studio.hidden = !isStudio;
 
   if (tabReg) tabReg.classList.toggle("active", isRegister);
   if (tabRes) tabRes.classList.toggle("active", isResearch);
   if (tabEid) tabEid.classList.toggle("active", isEidolon);
+  if (tabStu) tabStu.classList.toggle("active", isStudio);
 
   if (!isRegister) {
     $("detail").hidden = true;
     stopCaptureWatch();
   }
-  if (isResearch) {
-    refreshResearch().catch(console.error);
-  }
-  if (isEidolon) {
-    refreshEidolon().catch(console.error);
-  }
+  if (isResearch) refreshResearch().catch(console.error);
+  if (isEidolon) refreshEidolon().catch(console.error);
+  if (isStudio) refreshStudioDesk().catch(console.error);
 }
 
 function openEidolonLightbox(item) {
@@ -1986,12 +1988,137 @@ async function refreshResearch() {
 if ($("tab-register")) {
   $("tab-register").addEventListener("click", () => setView("register"));
 }
+if ($("tab-studio")) {
+  $("tab-studio").addEventListener("click", () => setView("studio"));
+}
 if ($("tab-eidolon")) {
   $("tab-eidolon").addEventListener("click", () => setView("eidolon"));
 }
 if ($("tab-research")) {
   $("tab-research").addEventListener("click", () => setView("research"));
 }
+
+let currentStudioLane = "bandit";
+
+async function refreshStudioDesk(lane) {
+  if (lane) currentStudioLane = lane;
+  const container = $("briefs-container");
+  const laneIndicator = $("brief-lane-indicator");
+  if (!container) return;
+
+  document.querySelectorAll(".fleet-card").forEach((card) => {
+    card.classList.toggle("active", card.dataset.lane === currentStudioLane);
+  });
+
+  if (laneIndicator) {
+    const priorityLabel = currentStudioLane === "bandit" ? "Bandit (1st Priority)" : (currentStudioLane === "godot-threshold-affairs" ? "Threshold Affairs (2nd Priority)" : "Field Ops (Pipeline Ready)");
+    laneIndicator.textContent = priorityLabel;
+  }
+
+  try {
+    const data = await fetchJson(`/api/studio/briefs?lane=${encodeURIComponent(currentStudioLane)}`);
+    renderStudioBriefs(data);
+  } catch (err) {
+    console.error("Failed to load studio briefs:", err);
+    clear(container);
+    const errEl = document.createElement("p");
+    errEl.className = "empty";
+    errEl.textContent = "Failed to load studio production briefs.";
+    container.appendChild(errEl);
+  }
+}
+
+function renderStudioBriefs(data) {
+  const container = $("briefs-container");
+  if (!container) return;
+  clear(container);
+
+  const elements = data.elements || [];
+  const stills = data.eidolon_stills || [];
+
+  if (elements.length === 0 && stills.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "empty";
+    empty.textContent = `No production briefs cataloged yet for ${data.lane}. Add elements or concept art in Vellum/Eidolon.`;
+    container.appendChild(empty);
+    return;
+  }
+
+  const card = document.createElement("div");
+  card.className = "brief-card";
+
+  const title = document.createElement("h3");
+  title.className = "brief-card-title";
+  title.textContent = `${data.lane.toUpperCase()} — Active Production Brief`;
+  card.appendChild(title);
+
+  const meta = document.createElement("div");
+  meta.className = "brief-card-meta";
+  meta.textContent = `Priority: ${data.priority} | ${elements.length} Game-Ready Assets | ${stills.length} Concept Art Stills`;
+  card.appendChild(meta);
+
+  if (stills.length > 0) {
+    const artBox = document.createElement("div");
+    artBox.className = "brief-card-art-preview";
+    for (const s of stills) {
+      const img = document.createElement("img");
+      img.className = "brief-art-thumb";
+      img.src = `/api/eidolon/renders/${encodeURIComponent(s.id)}/file`;
+      img.alt = s.label || s.id;
+      artBox.appendChild(img);
+    }
+    card.appendChild(artBox);
+  }
+
+  const actions = document.createElement("div");
+  actions.className = "brief-card-actions";
+
+  const stageBtn = document.createElement("button");
+  stageBtn.type = "button";
+  stageBtn.className = "btn btn-tiny btn-action";
+  stageBtn.textContent = "Preview on Stage";
+  stageBtn.onclick = () => {
+    const activeTitle = $("stage-active-title");
+    const activeDesc = $("stage-active-desc");
+    if (activeTitle) activeTitle.textContent = `${data.lane.toUpperCase()} — Stage Viewport`;
+    if (activeDesc) activeDesc.textContent = `Loaded ${elements.length} game-ready 3D elements & ORM textures. Ready for Proscenium presentation.`;
+  };
+  actions.appendChild(stageBtn);
+
+  const hailBtn = document.createElement("button");
+  hailBtn.type = "button";
+  hailBtn.className = "btn btn-tiny btn-secondary";
+  hailBtn.textContent = "Fire Proscenium Hail";
+  hailBtn.onclick = async () => {
+    hailBtn.disabled = true;
+    hailBtn.textContent = "Firing…";
+    try {
+      const banner = $("stage-hail-banner");
+      const hailTitle = $("stage-hail-title");
+      const hailMsg = $("stage-hail-msg");
+      if (hailTitle) hailTitle.textContent = currentStudioLane === "bandit" ? "BIG WIN CELEBRATION" : "ANOMALY DISCOVERED";
+      if (hailMsg) hailMsg.textContent = `Proscenium overlay stinger triggered for ${currentStudioLane}`;
+      if (banner) banner.hidden = false;
+      setTimeout(() => { if (banner) banner.hidden = true; }, 4000);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      hailBtn.disabled = false;
+      hailBtn.textContent = "Fire Proscenium Hail";
+    }
+  };
+  actions.appendChild(hailBtn);
+
+  card.appendChild(actions);
+  container.appendChild(card);
+}
+
+document.querySelectorAll(".fleet-card").forEach((card) => {
+  card.addEventListener("click", () => {
+    const lane = card.dataset.lane;
+    if (lane) refreshStudioDesk(lane);
+  });
+});
 if ($("rq")) $("rq").addEventListener("input", debounce(refreshResearch, 180));
 if ($("rformat")) $("rformat").addEventListener("change", refreshResearch);
 if ($("rtag")) $("rtag").addEventListener("input", debounce(refreshResearch, 180));

@@ -31,6 +31,9 @@
         <button type="button" class="view-tab active" data-view="register" id="tab-register">
           Asset Register
         </button>
+        <button type="button" class="view-tab" data-view="studio" id="tab-studio">
+          Axiom Games Studio
+        </button>
         <button type="button" class="view-tab" data-view="eidolon" id="tab-eidolon">
           Eidolon Renders
         </button>
@@ -94,6 +97,98 @@
             </thead>
             <tbody id="rows"></tbody>
           </table>
+        </div>
+      </div>
+
+      <div id="view-studio" hidden>
+        <section class="studio-fleet-bar" aria-label="Game Fleet Command">
+          <div class="fleet-card active" data-lane="bandit">
+            <div class="fleet-card-header">
+              <span class="priority-badge p1">1st Priority</span>
+              <h3>Bandit</h3>
+            </div>
+            <p class="fleet-card-desc">Fake-Credit Slot Overlay & Games Presentation</p>
+            <div class="fleet-card-status">
+              <span class="status-pill status-ok">100% Synced</span>
+              <span class="target-pill">Target: Arcade Google TV</span>
+            </div>
+            <div class="fleet-card-actions">
+              <button type="button" class="btn btn-tiny btn-action" data-action="test-hail" data-lane="bandit">Test Hail</button>
+              <button type="button" class="btn btn-tiny btn-secondary" data-action="sync-lane" data-lane="bandit">Sync Lane</button>
+              <button type="button" class="btn btn-tiny btn-secondary" data-action="verify-import" data-lane="bandit">Verify Godot</button>
+            </div>
+          </div>
+
+          <div class="fleet-card" data-lane="godot-threshold-affairs">
+            <div class="fleet-card-header">
+              <span class="priority-badge p2">2nd Priority</span>
+              <h3>Threshold Affairs</h3>
+            </div>
+            <p class="fleet-card-desc">3D Investigative / Mystery Game (Godot 4.x)</p>
+            <div class="fleet-card-status">
+              <span class="status-pill status-ok">100% Synced</span>
+              <span class="target-pill">Target: Operator Desk</span>
+            </div>
+            <div class="fleet-card-actions">
+              <button type="button" class="btn btn-tiny btn-action" data-action="test-hail" data-lane="godot-threshold-affairs">Test Hail</button>
+              <button type="button" class="btn btn-tiny btn-secondary" data-action="sync-lane" data-lane="godot-threshold-affairs">Sync Lane</button>
+              <button type="button" class="btn btn-tiny btn-secondary" data-action="verify-import" data-lane="godot-threshold-affairs">Verify Godot</button>
+            </div>
+          </div>
+
+          <div class="fleet-card" data-lane="godot-field-ops">
+            <div class="fleet-card-header">
+              <span class="priority-badge p3">Pipeline Ready</span>
+              <h3>Field Ops</h3>
+            </div>
+            <p class="fleet-card-desc">3D Tactical / Industrial Game (Godot 4.x)</p>
+            <div class="fleet-card-status">
+              <span class="status-pill status-info">Ready</span>
+              <span class="target-pill">Target: Operator Desk</span>
+            </div>
+            <div class="fleet-card-actions">
+              <button type="button" class="btn btn-tiny btn-action" data-action="test-hail" data-lane="godot-field-ops">Test Hail</button>
+              <button type="button" class="btn btn-tiny btn-secondary" data-action="sync-lane" data-lane="godot-field-ops">Sync Lane</button>
+              <button type="button" class="btn btn-tiny btn-secondary" data-action="verify-import" data-lane="godot-field-ops">Verify Godot</button>
+            </div>
+          </div>
+        </section>
+
+        <div class="studio-grid">
+          <section class="studio-column briefs-column" aria-label="Production Briefs">
+            <div class="column-header">
+              <h2>Production Briefs & Assets</h2>
+              <span id="brief-lane-indicator" class="lane-indicator">Bandit (1st Priority)</span>
+            </div>
+            <div id="briefs-container" class="briefs-container">
+              <!-- Dynamically rendered visual cards -->
+            </div>
+          </section>
+
+          <section class="studio-column stage-column" aria-label="Proscenium Stage Preview">
+            <div class="column-header">
+              <h2>Proscenium Live Stage Preview</h2>
+              <span class="stage-status-indicator">Connected (:8788)</span>
+            </div>
+            <div class="stage-viewport-container">
+              <div id="stage-canvas-box" class="stage-canvas-box">
+                <div class="stage-overlay-frame">
+                  <div class="stage-badge">PROSCENIUM STAGE</div>
+                  <div id="stage-active-title" class="stage-active-title">Select a Brief or Asset to Preview</div>
+                  <div id="stage-active-desc" class="stage-active-desc">Interactive WebGL preview window & Proscenium overlay trigger desk</div>
+                </div>
+                <div id="stage-hail-banner" class="stage-hail-banner" hidden>
+                  <div id="stage-hail-title" class="hail-title">CELEBRATION STINGER</div>
+                  <div id="stage-hail-msg" class="hail-msg">Event triggered live</div>
+                </div>
+              </div>
+              <div class="stage-controls-bar">
+                <button type="button" class="btn btn-tiny" id="btn-stage-reset">Reset View</button>
+                <button type="button" class="btn btn-tiny" id="btn-stage-lighting">Light: Studio</button>
+                <button type="button" class="btn btn-tiny btn-action" id="btn-stage-hail">Fire Proscenium Hail</button>
+              </div>
+            </div>
+          </section>
         </div>
       </div>
 
