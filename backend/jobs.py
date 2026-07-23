@@ -15,6 +15,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterator
 
+from . import game_ready as game_ready_mod
 from . import intake as intake_mod
 from . import lookdev as lookdev_mod
 from . import register as register_mod
@@ -23,12 +24,12 @@ ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_DB = ROOT / "data" / "jobs.sqlite3"
 
 AUTOMATABLE_STEP_IDS = frozenset(
-    {"stage_vault", "record_paths", "confirm_project_fit", "derive_lookdev"}
+    {"stage_vault", "record_paths", "confirm_project_fit", "derive_lookdev", "lane_sync", "headless_verify"}
 )
 
 # Handled by vellum-worker (Linux, vault-local).
 LINUX_WORKER_KINDS = frozenset(
-    {"prepare_stage", "record_paths", "confirm_project_fit", "derive_lookdev"}
+    {"prepare_stage", "record_paths", "confirm_project_fit", "derive_lookdev", "lane_sync", "headless_verify"}
 )
 # Handled by Windows UE agent (tools/unreal/vellum_ue_agent.ps1).
 UE_AGENT_KINDS = frozenset(
@@ -554,6 +555,130 @@ def _execute_derive_lookdev(job: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _execute_lane_sync(job: dict[str, Any]) -> dict[str, Any]:
+    import shutil
+    payload = job.get("payload") or {}
+    lane = str(payload.get("lane") or job.get("asset_id") or "godot-field-ops")
+    target_dir_str = str(payload.get("target_dir") or "")
+    if not target_dir_str:
+        if lane == "godot-field-ops":
+            target_dir_str = "/mnt/temp/projects/field_ops"
+        elif lane == "godot-threshold-affairs":
+            target_dir_str = "/mnt/temp/projects/threshold_affairs"
+        else:
+            target_dir_str = f"/mnt/temp/projects/{lane}"
+
+    dest_base = Path(target_dir_str) / "res" / "assets" / "vellum"
+    quarantine_base = dest_base / ".quarantine"
+    dest_base.mkdir(parents=True, exist_ok=True)
+
+    elements = game_ready_mod.list_elements(lane=lane)
+    synced_count = 0
+    synced_files = []
+
+    for el in elements:
+        src_path_str = el.get("file_path") or (el.get("lane_paths") or {}).get(lane)
+        if not src_path_str:
+            continue
+        src = Path(src_path_str)
+        if not src.is_file():
+            continue
+
+        rel_dir = str(el.get("kind") or "misc")
+        dest_dir = dest_base / rel_dir
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        dest_file = dest_dir / src.name
+
+        try:
+            shutil.copy2(src, dest_file)
+            synced_count += 1
+            synced_files.append(str(dest_file))
+        except Exception as exc:  # noqa: BLE001
+            quarantine_dir = quarantine_base / rel_dir
+            quarantine_dir.mkdir(parents=True, exist_ok=True)
+            if dest_file.exists():
+                try:
+                    dest_file.rename(quarantine_dir / src.name)
+                except Exception:
+                    pass
+
+    manifest = {
+        "lane": lane,
+        "synced_count": synced_count,
+        "synced_files": synced_files[:100],
+        "target_dir": str(dest_base),
+        "quarantine_dir": str(quarantine_base),
+        "synced_at": _now(),
+    }
+    (dest_base / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    return manifest
+
+
+def _execute_headless_verify(job: dict[str, Any]) -> dict[str, Any]:
+    import shutil
+    import subprocess
+    payload = job.get("payload") or {}
+    target_dir_str = str(payload.get("target_dir") or job.get("asset_id") or "")
+    if not target_dir_str:
+        target_dir_str = "/mnt/temp/projects/field_ops"
+
+    project_dir = Path(target_dir_str)
+    if not (project_dir / "project.godot").is_file() and not project_dir.is_dir():
+        return {
+            "target_dir": target_dir_str,
+            "verified": False,
+            "reason": "project_dir_not_found",
+            "import_errors": 0,
+        }
+
+    godot_bin = shutil.which("godot") or shutil.which("godot4")
+    if not godot_bin:
+        return {
+            "target_dir": target_dir_str,
+            "verified": False,
+            "reason": "godot_binary_not_in_path",
+            "import_errors": 0,
+            "status": "skipped",
+        }
+
+    try:
+        proc = subprocess.run(
+            [godot_bin, "--path", str(project_dir), "--headless", "-e", "--quit"],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        output = proc.stdout + proc.stderr
+        error_lines = [
+            line for line in output.splitlines()
+            if "ERROR:" in line or "Failed loading" in line or "SCRIPT ERROR" in line
+        ]
+        return {
+            "target_dir": target_dir_str,
+            "verified": True,
+            "status": "clean" if not error_lines else "import_errors",
+            "exit_code": proc.returncode,
+            "import_errors": len(error_lines),
+            "errors": error_lines[:20],
+        }
+    except subprocess.TimeoutExpired:
+        return {
+            "target_dir": target_dir_str,
+            "verified": False,
+            "status": "timeout",
+            "import_errors": 1,
+            "errors": ["Godot headless scan timed out after 60s"],
+        }
+    except Exception as exc:  # noqa: BLE001
+        return {
+            "target_dir": target_dir_str,
+            "verified": False,
+            "status": "exception",
+            "import_errors": 1,
+            "errors": [str(exc)],
+        }
+
+
 def run_job(job: dict[str, Any]) -> dict[str, Any]:
     kind = job.get("kind")
     if kind == "prepare_stage":
@@ -564,6 +689,10 @@ def run_job(job: dict[str, Any]) -> dict[str, Any]:
         result = _execute_confirm_fit(job)
     elif kind == "derive_lookdev":
         result = _execute_derive_lookdev(job)
+    elif kind == "lane_sync":
+        result = _execute_lane_sync(job)
+    elif kind == "headless_verify":
+        result = _execute_headless_verify(job)
     else:
         raise ValueError(f"unknown job kind: {kind}")
 

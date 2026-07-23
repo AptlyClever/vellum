@@ -168,3 +168,38 @@ def test_stale_running_ue_capture_is_failed(tmp_path: Path, monkeypatch) -> None
     nxt = jobs_mod.enqueue_job(kind="ue_capture", asset_id="next-pack", payload={})
     got = jobs_mod.claim_next_job(kinds=frozenset({"ue_capture"}))
     assert got and got["job_id"] == nxt["job_id"]
+
+
+def test_lane_sync_and_headless_verify_jobs(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("VELLUM_JOBS_DB_PATH", str(tmp_path / "jobs.sqlite3"))
+    monkeypatch.setenv("VELLUM_VAULT_ROOT", str(tmp_path / "vault"))
+    from backend import jobs as jobs_mod
+
+    # Enqueue lane_sync job
+    target = tmp_path / "game_project"
+    target.mkdir(parents=True, exist_ok=True)
+    job_sync = jobs_mod.enqueue_job(
+        kind="lane_sync",
+        asset_id="godot-field-ops",
+        payload={"lane": "godot-field-ops", "target_dir": str(target)},
+    )
+    assert job_sync["status"] == "queued"
+
+    done_sync = jobs_mod.process_one_job()
+    assert done_sync is not None
+    assert done_sync["job_id"] == job_sync["job_id"]
+    assert done_sync["status"] == "succeeded"
+    assert (target / "res" / "assets" / "vellum" / "manifest.json").is_file()
+
+    # Enqueue headless_verify job
+    job_verify = jobs_mod.enqueue_job(
+        kind="headless_verify",
+        asset_id="godot-field-ops",
+        payload={"target_dir": str(target)},
+    )
+    assert job_verify["status"] == "queued"
+
+    done_verify = jobs_mod.process_one_job()
+    assert done_verify is not None
+    assert done_verify["job_id"] == job_verify["job_id"]
+    assert done_verify["status"] == "succeeded"
