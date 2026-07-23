@@ -28,7 +28,7 @@
 
 ## 2. The Active Issue (Do Not Add Steps Here!)
 
-* **What success looks like:** A unified, machine-owned Control Alt Games platform and workflow where Vellum converts and vaults 3D/audio assets; Proscenium acts as the home presentation authority and live stage viewport; Eidolon and Mneme supply concept art and lore briefs; automated background sync delivers manifested assets directly into Field Ops and Threshold Affairs Godot repos on dev-ubuntu; and headless engine validation guarantees 0 import errors.
+* **What success looks like:** A unified, machine-owned Control Alt Games platform and workflow where Vellum converts and vaults 3D/audio assets; Proscenium acts as the home presentation authority and live stage viewport; Eidolon and Mneme supply concept art and lore briefs for Bandit (1st priority) and Threshold Affairs (2nd priority), with Field Ops pipeline-ready; automated background sync delivers manifested assets directly into Godot repos on dev-ubuntu; and headless engine validation guarantees 0 import errors.
 * **Stopped (do not resume without operator unpark):**
   - Warm Lookdev Worker (`Unpark: Lookdev Worker`)
   - Custom `VellumUeAgent` polling Capture control plane (`Unpark: Capture Agent`)

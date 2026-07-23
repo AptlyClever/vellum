@@ -10,8 +10,9 @@
   "status": "in_progress",
   "priority": "now",
   "problem": "Solo game development across Control Alt Games requires operating as a creative director without manual developer bookkeeping or technical 3D pipeline friction. Today's systems (Vellum asset vault, Proscenium presentation stage, Eidolon concept art, Mneme lore library, LCARD operator controls, and Godot game repos) operate as isolated silos, requiring manual hand-offs, manual CLI commands, and lacking a unified solo-operator workflow across stage presentation, concept art, lore briefs, asset conversion, and automated engine delivery.",
-  "desired_outcome": "A unified, machine-owned Control Alt Games platform and workflow reusing 90% of existing infrastructure: Vellum (:8770) converts and vaults 3D/audio assets via its SQLite job queue; Proscenium (:8788) acts as the home presentation authority and live stage viewport via delivery.py and overlay-apk; Eidolon (:7860) and Mneme (:8790) supply concept art and lore briefs; automated background sync delivers manifested assets directly into Field Ops and Threshold Affairs Godot repos on dev-ubuntu; and headless engine validation guarantees 0 import errors.",
+  "desired_outcome": "A unified, machine-owned Control Alt Games platform and workflow reusing 90% of existing infrastructure: Vellum (:8770) converts and vaults 3D/audio assets via its SQLite job queue; Proscenium (:8788) acts as the home presentation authority and live stage viewport via delivery.py and overlay-apk; Eidolon (:7860) and Mneme (:8790) supply concept art and lore briefs for Bandit (1st priority) and Threshold Affairs (2nd priority), with Field Ops pipeline-ready; automated background sync delivers manifested assets directly into Godot repos on dev-ubuntu; and headless engine validation guarantees 0 import errors.",
   "constraints": [
+    "Priority sequence: Bandit first, Threshold Affairs second, Field Ops pipeline-ready.",
     "Field Ops (godot-field-ops) and Threshold Affairs (godot-threshold-affairs) are separate, independent game targets.",
     "Proscenium (:8788) is the authoritative presentation stage, Hails engine, and display target router (overlay-apk / Android TV) using delivery.py and config/presentation/delivery-targets.json.",
     "Vellum (:8770) stores bytes, not prose, and executes lane_sync / headless_verify jobs via backend/jobs.py SQLite queue.",
@@ -26,10 +27,11 @@
     "Vellum SQLite job engine (jobs.py) executes lane_sync and headless_verify job kinds.",
     "Machine-owned background sync delivers published Vellum assets directly to Field Ops and Threshold Affairs repos on dev-ubuntu.",
     "Automated headless Godot import scanning (godot --headless) verifies 0 import errors and updates /api/ops/pulse.",
-    "Axiom Studio Leaf presents unified production briefs (Eidolon concept art + Mneme lore + Vellum assets + Proscenium stage preview)."
+    "Axiom Studio Leaf presents unified production briefs prioritized for Bandit and Threshold Affairs."
   ],
   "operator_brief": {
     "non_negotiables": [
+      "Priority order: Bandit -> Threshold Affairs -> Field Ops (ready)",
       "Keep Field Ops and Threshold Affairs completely independent",
       "Reuse Proscenium delivery.py for presentation, Hails, and display target routing",
       "Reuse Vellum jobs.py SQLite queue for machine-owned lane_sync and headless_verify jobs",
