@@ -1,0 +1,84 @@
+{
+  "schema_version": 1,
+  "title": "Vellum asset journey",
+  "root": {
+    "id": "asset_journey",
+    "type": "layout.stack",
+    "props": {},
+    "children": [
+      {
+        "id": "kanon_contract_lens",
+        "type": "surface.section",
+        "props": {
+          "title": "Kanon contract lens",
+          "description": "Visible in embedded Page Studio previews; omitted from the production route. It proves governed content, live Vellum data, links, visibility, and product-owned slots in one authorable document."
+        },
+        "visible_when": [
+          { "context": "embed", "operator": "equals", "value": true }
+        ],
+        "children": [
+          {
+            "id": "kanon_contract_note",
+            "type": "content.text",
+            "props": {
+              "text": "Kanon owns semantic theme and composition. Vellum owns the evidence, the Fireworks-derived expression layer, and the complete no-Kanon fallback.",
+              "tone": "secondary"
+            }
+          },
+          {
+            "id": "kanon_contract_metrics",
+            "type": "data.metric-strip",
+            "source": "vellum.asset.journey",
+            "props": {
+              "fields": [
+                { "label": "Registered systems", "path": "counts.systems", "format": "number" },
+                { "label": "Derived outputs", "path": "counts.game_ready", "format": "number" },
+                { "label": "Bandit-ready clips", "path": "counts.bandit_ready_clips", "format": "number" }
+              ]
+            }
+          },
+          {
+            "id": "kanon_contract_link",
+            "type": "action.link",
+            "props": {
+              "link": "vellum.assets.detail",
+              "label": "Open the production asset journey",
+              "variant": "outline",
+              "target": "_self"
+            }
+          }
+        ]
+      },
+      {
+        "id": "asset_identity",
+        "type": "slot.custom",
+        "props": { "slot": "vellum.asset.identity" }
+      },
+      {
+        "id": "asset_transformation",
+        "type": "slot.custom",
+        "props": { "slot": "vellum.asset.transformation" }
+      },
+      {
+        "id": "asset_provenance",
+        "type": "slot.custom",
+        "props": { "slot": "vellum.asset.journey" }
+      },
+      {
+        "id": "asset_outputs",
+        "type": "slot.custom",
+        "props": { "slot": "vellum.asset.outputs" }
+      },
+      {
+        "id": "asset_destinations",
+        "type": "slot.custom",
+        "props": { "slot": "vellum.asset.destinations" }
+      },
+      {
+        "id": "asset_evidence_footer",
+        "type": "slot.custom",
+        "props": { "slot": "vellum.asset.evidence-footer" }
+      }
+    ]
+  }
+}

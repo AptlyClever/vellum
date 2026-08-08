@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "active": "factory",
+  "notes": "Example host map. Copy and edit for your own machines. 'factory' is the machine that runs Unreal, holds the Library project, and executes MRQ capture jobs; 'studio' is a secondary dev workstation. Paths are Windows paths on those hosts.",
+  "hosts": {
+    "factory": {
+      "label": "Factory",
+      "role": "asset-factory-primary",
+      "repo": "D:\\dev\\vellum",
+      "ssh_user": "vellum",
+      "ssh_host": "127.0.0.1",
+      "ue_editor": "D:\\Games\\UE_5.8\\Engine\\Binaries\\Win64\\UnrealEditor.exe",
+      "ue_cmd": "D:\\Games\\UE_5.8\\Engine\\Binaries\\Win64\\UnrealEditor-Cmd.exe",
+      "project": "D:\\Games\\VellumLibrary\\VellumLibrary.uproject",
+      "project_dir": "D:\\Games\\VellumLibrary",
+      "fab_target_project": "D:\\Games\\VellumLibrary\\VellumLibrary.uproject",
+      "fab_target_label": "VellumLibrary (D:\\Games\\VellumLibrary)",
+      "content_root": "/Game/FireworksV1",
+      "engine_version": "5.8",
+      "worker_port": 8771,
+      "content_scan_roots": [
+        "D:\\Games\\VellumLibrary\\Content"
+      ],
+      "library_layout": "Content/<Pack> (Fab default; never move .uasset folders on disk)"
+    },
+    "studio": {
+      "label": "Studio",
+      "role": "dev-primary-secondary-ue",
+      "repo": "C:\\dev\\vellum",
+      "ue_editor": "C:\\Program Files\\Epic Games\\UE_5.8\\Engine\\Binaries\\Win64\\UnrealEditor.exe",
+      "ue_cmd": "C:\\Program Files\\Epic Games\\UE_5.8\\Engine\\Binaries\\Win64\\UnrealEditor-Cmd.exe",
+      "project": "C:\\dev\\VellumImport\\VellumImport.uproject",
+      "project_dir": "C:\\dev\\VellumImport",
+      "fab_target_project": "C:\\dev\\VellumImport\\VellumImport.uproject",
+      "fab_target_label": "VellumImport (Studio)",
+      "content_root": "/Game/FireworksV1",
+      "engine_version": "5.8",
+      "worker_port": 8771,
+      "content_scan_roots": [
+        "C:\\dev\\VellumImport\\Content"
+      ]
+    }
+  }
+}

@@ -1,0 +1,82 @@
+# Backend CI. Added alongside PX001 Wave 4 (backend/register.py's move to
+# Postgres) -- until now this repo had zero backend CI, only the frontend-only
+# standards-parity.yml drift gate. Structure mirrors ctrl-alt-axiom's
+# .github/workflows/ci.yml backend job: one ephemeral pgvector service
+# container per run, bootstrapped the same shape press's real
+# /root/pg/migrate.sh uses (create the writer role + schema, apply
+# deploy/postgres/migrations/vellum/*.sql in order), then the real pytest
+# suite against it -- not a mock.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: .
+      # tests/conftest.py's pg_intake / pg_register fixtures and the
+      # session-wide ambient-Postgres fixture all read VELLUM_TEST_POSTGRES_*
+      # (never the real fleet VELLUM_POSTGRES_* names) and convert it for the
+      # duration of the run. This always points at the disposable CI service
+      # container below, never at press.
+      VELLUM_TEST_POSTGRES_HOST: localhost
+      VELLUM_TEST_POSTGRES_PORT: "5432"
+      VELLUM_TEST_POSTGRES_DB: control_alt_fleet_test
+      VELLUM_TEST_POSTGRES_USER: vellum_writer
+      VELLUM_TEST_POSTGRES_PASSWORD: ci-only-vellum-writer-password
+    services:
+      postgres:
+        # pgvector's official image, not plain postgres: prod (press) has
+        # the vector extension installed and CI should not test against a
+        # narrower capability set than prod actually has.
+        image: pgvector/pgvector:pg18
+        env:
+          POSTGRES_PASSWORD: ci-only-postgres-superuser-password
+          POSTGRES_DB: control_alt_fleet_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - run: pip install -r requirements.txt
+      - name: Bootstrap vellum schema (CI mirror of press's migrate.sh)
+        env:
+          PGPASSWORD: ci-only-postgres-superuser-password
+        run: |
+          psql -h localhost -p 5432 -U postgres -d control_alt_fleet_test -v ON_ERROR_STOP=1 <<'SQL'
+          DO $$
+          BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'vellum_writer') THEN
+              CREATE ROLE vellum_writer LOGIN PASSWORD 'ci-only-vellum-writer-password';
+            END IF;
+          END
+          $$;
+          CREATE SCHEMA IF NOT EXISTS vellum AUTHORIZATION vellum_writer;
+          SQL
+          for f in deploy/postgres/migrations/vellum/*.sql; do
+            echo "applying $f"
+            PGPASSWORD=ci-only-vellum-writer-password \
+              psql -h localhost -p 5432 -U vellum_writer -d control_alt_fleet_test -v ON_ERROR_STOP=1 -f "$f"
+          done
+      - run: pytest -q --durations=20 --junitxml=test-results.xml
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: backend-test-results
+          path: test-results.xml

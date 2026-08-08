@@ -1,0 +1,222 @@
+name: vellum
+
+services:
+  vault-permissions:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: vellum-vault-permissions
+    user: "0:0"
+    restart: "no"
+    entrypoint: ["sh", "-c"]
+    command:
+      - >-
+        touch /mnt/data/vault/vellum/02-index/derived-outputs.yaml &&
+        chown 1000:1000 /mnt/data/vault/vellum/02-index/derived-outputs.yaml
+    volumes:
+      - /mnt/data/vault/vellum:/mnt/data/vault/vellum
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: vellum-app
+    user: "1000:1000"
+    restart: unless-stopped
+    ports:
+      - "0.0.0.0:8770:8770"
+    # Host-managed secrets. `required: false` so a checkout with no secrets/ still
+    # starts - with OAuth unconfigured, which the two-tier ladder in backend/mneme.py
+    # handles by falling back to the deprecated static token and logging it.
+    #
+    # This is an env_file, and NOT `.env`, and NOT `KEY: ${KEY:-}` under
+    # `environment:`, for two reasons that each cost a live outage in this fleet:
+    #   1. `KEY: ${VAR:-}` exports an EMPTY STRING when VAR is unset, not an absent
+    #      variable. That crash-looped Keycloak. Never use it for a secret or a flag.
+    #   2. Compose reads `.env` only for its own interpolation and never injects it
+    #      into a container. A secret placed there reaches nothing.
+    # Anything listed under `environment:` below WINS over this file, so a value that
+    # must come from here must not also appear there.
+    env_file:
+      - path: ./secrets/vellum.env
+        required: false
+    environment:
+      # VELLUM_SEED_PATH stays a file: it is read-only, checked-in content
+      # (config/seed-catalog.yaml) used only to seed vellum.asset_register on
+      # first boot. There is no VELLUM_REGISTER_PATH, VELLUM_DERIVED_PATH,
+      # VELLUM_ATTACHMENTS_PATH or VELLUM_RESEARCH_PATH any more -- PX001
+      # (Wave 4) moved backend/register.py's asset catalog to Postgres, and a
+      # follow-up moved attach.py/lookdev.py/game_ready.py/research.py's
+      # catalogs to vellum.catalogs; see
+      # deploy/postgres/migrations/vellum/002__asset_register.sql,
+      # 003__catalogs.sql.
+      VELLUM_SEED_PATH: /app/config/seed-catalog.yaml
+      VELLUM_JOBS_DB_PATH: /app/data/jobs.sqlite3
+      VELLUM_VAULT_ROOT: /mnt/data/vault/vellum
+      # Diagnostic-only human-readable export of the Postgres catalog, kept
+      # for anyone browsing the vault filesystem directly. Not read from --
+      # Postgres is the only source of truth (see register.py's _mirror_to_vault).
+      VELLUM_VAULT_REGISTER_PATH: /mnt/data/vault/vellum/02-index/asset-register.yaml
+      VELLUM_VAULT_DERIVED_PATH: /mnt/data/vault/vellum/02-index/derived-outputs.yaml
+      VELLUM_VAULT_ATTACHMENTS_PATH: /mnt/data/vault/vellum/02-index/attachments.yaml
+      VELLUM_VAULT_RESEARCH_PATH: /mnt/data/vault/vellum/02-index/visual-research.yaml
+      # PX001 (Waves 3-4): backend/intake.py's IntakeRun ledger AND
+      # backend/register.py's asset catalog are both Postgres-backed now, not
+      # YAML files (the path/mirror pairs those replaced are gone). Host/port/
+      # db/user are not secrets -- same fleet convention as every other PX001
+      # leaf. VELLUM_POSTGRES_PASSWORD is a secret and comes from
+      # ./secrets/vellum.env above, deliberately absent from this block for
+      # the same reason VELLUM_RESEARCH_WRITE_TOKEN is: `${VAR:-}` here would
+      # shadow it with an empty string (fact 1 above).
+      VELLUM_POSTGRES_HOST: 127.0.0.1
+      VELLUM_POSTGRES_PORT: "5433"
+      VELLUM_POSTGRES_DB: control_alt_fleet
+      VELLUM_POSTGRES_USER: vellum_writer
+      # VELLUM_RESEARCH_WRITE_TOKEN and MNEME_WRITE_TOKEN are secrets and are supplied
+      # by ./secrets/vellum.env above. They are deliberately absent from this block:
+      # a key under `environment:` overrides env_file, so listing either here as
+      # `${VAR:-}` would export an empty string that permanently shadows the real
+      # value in the secrets file. That is fact 1 above, in its most expensive form.
+      VELLUM_PUBLIC_BASE_URL: http://127.0.0.1:8770
+      EIDOLON_BASE_URL: ${EIDOLON_BASE_URL:-http://127.0.0.1:7860}
+      MNEME_BASE_URL: http://127.0.0.1:8790
+      MNEME_DEFAULT_PROJECT_ID: ${MNEME_DEFAULT_PROJECT_ID:-bandit}
+      # --- OAuth 2.0 client credentials (outbound, Vellum -> Mneme) ----------
+      # Non-secret half only. VELLUM_OAUTH_CLIENT_SECRET comes from the env_file;
+      # with no secret present `oauth_configured()` is false and the deprecated
+      # static token still carries the call, loudly.
+      VELLUM_OAUTH_ISSUER: http://127.0.0.1:8794/realms/control-alt
+      VELLUM_OAUTH_CLIENT_ID: vellum
+      VELLUM_OAUTH_MNEME_AUDIENCE: https://mneme.control-alt.lan
+      # Enforcement ships OFF. Literal "false", not `${...:-}`: this flag decides
+      # whether the static fallback may fire at all, and turning it on is a separate,
+      # later, deliberate decision made once every caller is converted.
+      VELLUM_OAUTH_ENFORCE: "false"
+      AXIOM_BASE_URL: http://127.0.0.1:7895
+      AXIOM_PUBLIC_BASE_URL: http://127.0.0.1:7895
+      AXIOM_GLYPH_HERO_IMAGES: /srv/axiom/config/hails/glyph-hero-images
+      LCARD_VELLUM_MEDIA_DIR: /srv/lcard/app/media/vellum
+      LCARD_BASE_URL: http://127.0.0.1:8184
+      BANDIT_VELLUM_STATIC_DIR: /srv/bandit/web/vellum
+      BANDIT_BASE_URL: http://127.0.0.1:8766
+      # MRQ author/render often goes quiet >3m; do not kill live captures early.
+      VELLUM_STALE_JOB_SEC: "1800"
+    volumes:
+      - ./data:/app/data
+      - ./backend:/app/backend
+      - ./web:/app/web
+      - /mnt/data/vault/vellum:/mnt/data/vault/vellum
+      - /srv/axiom/config/hails/glyph-hero-images:/srv/axiom/config/hails/glyph-hero-images
+      - /srv/lcard/app/media:/srv/lcard/app/media
+      - /srv/bandit/web:/srv/bandit/web
+    # Hot-reload UI/API from host mounts (ops strip must not wait on image rebuild).
+    command:
+      [
+        "uvicorn",
+        "backend.main:app",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8770",
+        "--reload",
+      ]
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8770/api/health', timeout=5)\"",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 10s
+    depends_on:
+      vault-permissions:
+        condition: service_completed_successfully
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: vellum-worker
+    user: "1000:1000"
+    restart: unless-stopped
+    command: ["python", "-m", "backend.worker"]
+    # PX001 (Waves 3-4): the worker calls backend.jobs's run_job -> patch_step
+    # (backend/intake.py) and _execute_record_paths -> patch_asset
+    # (backend/register.py), both of which now write to Postgres, so it needs
+    # VELLUM_POSTGRES_PASSWORD the same as `app` does. This service had no
+    # env_file at all before Wave 3 -- the pre-existing
+    # `VELLUM_RESEARCH_WRITE_TOKEN: ${VELLUM_RESEARCH_WRITE_TOKEN:-}` line
+    # below predates this and is a known instance of fact 1 (an unset host
+    # var shadows with an empty string); left as-is, not this change's scope.
+    env_file:
+      - path: ./secrets/vellum.env
+        required: false
+    environment:
+      PYTHONPATH: /app
+      VELLUM_SEED_PATH: /app/config/seed-catalog.yaml
+      VELLUM_JOBS_DB_PATH: /app/data/jobs.sqlite3
+      VELLUM_VAULT_ROOT: /mnt/data/vault/vellum
+      VELLUM_VAULT_REGISTER_PATH: /mnt/data/vault/vellum/02-index/asset-register.yaml
+      VELLUM_VAULT_DERIVED_PATH: /mnt/data/vault/vellum/02-index/derived-outputs.yaml
+      VELLUM_VAULT_ATTACHMENTS_PATH: /mnt/data/vault/vellum/02-index/attachments.yaml
+      VELLUM_VAULT_RESEARCH_PATH: /mnt/data/vault/vellum/02-index/visual-research.yaml
+      VELLUM_POSTGRES_HOST: 127.0.0.1
+      VELLUM_POSTGRES_PORT: "5433"
+      VELLUM_POSTGRES_DB: control_alt_fleet
+      VELLUM_POSTGRES_USER: vellum_writer
+      VELLUM_RESEARCH_WRITE_TOKEN: ${VELLUM_RESEARCH_WRITE_TOKEN:-}
+      AXIOM_BASE_URL: http://127.0.0.1:7895
+      AXIOM_PUBLIC_BASE_URL: http://127.0.0.1:7895
+      AXIOM_GLYPH_HERO_IMAGES: /srv/axiom/config/hails/glyph-hero-images
+      LCARD_VELLUM_MEDIA_DIR: /srv/lcard/app/media/vellum
+      LCARD_BASE_URL: http://127.0.0.1:8184
+      BANDIT_VELLUM_STATIC_DIR: /srv/bandit/web/vellum
+      BANDIT_BASE_URL: http://127.0.0.1:8766
+      VELLUM_STALE_JOB_SEC: "1800"
+    volumes:
+      - ./data:/app/data
+      - /mnt/data/vault/vellum:/mnt/data/vault/vellum
+      - /srv/axiom/config/hails/glyph-hero-images:/srv/axiom/config/hails/glyph-hero-images
+      - /srv/lcard/app/media:/srv/lcard/app/media
+      - /srv/bandit/web:/srv/bandit/web
+    depends_on:
+      app:
+        condition: service_started
+      vault-permissions:
+        condition: service_completed_successfully
+
+  test:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    profiles: ["test"]
+    entrypoint: ["pytest", "-q"]
+    # Real Postgres credentials for the dedicated control_alt_fleet_test
+    # database (see tests/conftest.py's pg_intake/pg_register fixtures and
+    # the session-wide _vellum_register_ambient_postgres fixture). Filled
+    # from secrets/vellum.env like every other secret here; blank by default,
+    # so a checkout with no secrets/vellum.env just skips/fails the
+    # Postgres-backed tests instead of touching real fleet data.
+    env_file:
+      - path: ./secrets/vellum.env
+        required: false
+    environment:
+      PYTHONPATH: /app
+      VELLUM_SEED_PATH: /app/config/seed-catalog.yaml
+      VELLUM_JOBS_DB_PATH: /tmp/vellum-test-jobs.sqlite3
+      VELLUM_TEST_POSTGRES_HOST: 127.0.0.1
+      VELLUM_TEST_POSTGRES_PORT: "5433"
+      VELLUM_TEST_POSTGRES_DB: control_alt_fleet_test
+      VELLUM_TEST_POSTGRES_USER: vellum_writer
+      VELLUM_VAULT_ROOT: /tmp/vellum-test-vault
+      VELLUM_RESEARCH_WRITE_TOKEN: test-research-write-token
+      VELLUM_PUBLIC_BASE_URL: http://vellum.test
+      EIDOLON_BASE_URL: http://eidolon.test
+      MNEME_BASE_URL: http://mneme.test
+      MNEME_DEFAULT_PROJECT_ID: bandit
+      MNEME_WRITE_TOKEN: test-mneme-write-token
+      AXIOM_GLYPH_HERO_IMAGES: /tmp/vellum-test-glyph-images
+      LCARD_VELLUM_MEDIA_DIR: /tmp/vellum-test-lcard-media
+      BANDIT_VELLUM_STATIC_DIR: /tmp/vellum-test-bandit-web/vellum

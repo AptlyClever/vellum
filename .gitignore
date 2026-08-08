@@ -1,0 +1,52 @@
+# Vellum — gitignore
+
+# Secrets / env
+.env
+.env.local
+*.pem
+*.key
+# Host-managed per-service env file mounted by docker-compose (`env_file`,
+# `required: false`). Holds VELLUM_OAUTH_CLIENT_SECRET and the deprecated
+# MNEME_WRITE_TOKEN. The .example is tracked; nothing else in here ever is.
+#
+# `secrets/*` and not `secrets/`: a trailing-slash ignore excludes the directory
+# itself, git never descends into it, and a later negation for the .example can
+# never match. This form is what actually lets the example stay tracked.
+secrets/*
+!secrets/*.example
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+
+# asset-register.yaml is gone (PX001 Wave 4 -- Postgres-backed now, see
+# backend/register.py); the runtime register file this used to ignore no
+# longer gets written.
+data/jobs.sqlite3
+data/derived-outputs.yaml
+data/*.sqlite3
+data/game-ready.yaml
+data/visual-research.yaml
+data/attachments.yaml
+
+# Local dev vault artifacts (real vault lives on the hub)
+02-index/
+05-derived-renders/
+
+# Scratch
+tmp/
+
+# Never track vault raw assets (vault lives outside this repo)
+
+# Runtime (WinSW binary, stamped XML, service logs) — machine-local
+tools/unreal/host-install/runtime/
+
+data/*.db

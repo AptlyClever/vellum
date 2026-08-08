@@ -1,0 +1,9 @@
+[project]
+name = "vellum"
+version = "0.1.0"
+description = "Control Alt Games asset vault — register, intake, lookdev"
+requires-python = ">=3.12"
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]

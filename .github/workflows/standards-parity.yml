@@ -1,0 +1,20 @@
+# Lightweight design-foundation drift gate for Vellum's static games surface.
+
+name: Standards parity
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  verify:
+    uses: AptlyClever/ctrl-alt-standards/.github/workflows/verify-app-standards-parity.yml@main
+    secrets: inherit
+    with:
+      caller_repository: ${{ github.repository }}
+      checkout_ref: ${{ github.sha }}
+      app_repo: vellum
+      verify_shell: "false"
+      verify_foundation: "false"

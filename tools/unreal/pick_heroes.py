@@ -1,0 +1,184 @@
+#!/usr/bin/env python3
+"""Pick mid + max-luma PNG heroes from an MRQ sequence directory (stdlib only).
+
+Speed: score a spaced subset of frames (not every PNG). Full-pack capture
+cannot spend ~3 minutes decompressing 120×1080p frames per system.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import struct
+import zlib
+from pathlib import Path
+
+
+def png_max_rgb(path: Path, *, step_y: int = 48, step_x: int = 48) -> int:
+    data = path.read_bytes()
+    if data[:8] != b"\x89PNG\r\n\x1a\n":
+        return -1
+    i = 8
+    idat = b""
+    width = height = color = None
+    while i < len(data):
+        ln = struct.unpack(">I", data[i : i + 4])[0]
+        i += 4
+        typ = data[i : i + 4]
+        i += 4
+        chunk = data[i : i + ln]
+        i += ln + 4
+        if typ == b"IHDR":
+            width, height, _bit, color = struct.unpack(">IIBB", chunk[:10])
+        elif typ == b"IDAT":
+            idat += chunk
+        elif typ == b"IEND":
+            break
+    if not width or color not in (2, 6):
+        return -1
+    raw = zlib.decompress(idat)
+    bpp = 4 if color == 6 else 3
+    stride = width * bpp
+    mx = 0
+    o = 0
+    prev = bytearray(stride)
+    sy = max(1, height // step_y)
+    sx = max(1, width // step_x)
+    for y in range(height):
+        f = raw[o]
+        o += 1
+        row = bytearray(raw[o : o + stride])
+        o += stride
+        if f == 1:
+            for x in range(stride):
+                row[x] = (row[x] + (row[x - bpp] if x >= bpp else 0)) & 255
+        elif f == 2:
+            for x in range(stride):
+                row[x] = (row[x] + prev[x]) & 255
+        elif f == 3:
+            for x in range(stride):
+                left = row[x - bpp] if x >= bpp else 0
+                row[x] = (row[x] + ((left + prev[x]) // 2)) & 255
+        elif f == 4:
+            for x in range(stride):
+                a = row[x - bpp] if x >= bpp else 0
+                b = prev[x]
+                c = prev[x - bpp] if x >= bpp else 0
+                p = a + b - c
+                pa, pb, pc = abs(p - a), abs(p - b), abs(p - c)
+                pr = a if pa <= pb and pa <= pc else (b if pb <= pc else c)
+                row[x] = (row[x] + pr) & 255
+        elif f != 0:
+            return -1
+        if y % sy == 0:
+            for x in range(0, width, sx):
+                r = row[x * bpp]
+                g = row[x * bpp + 1]
+                bch = row[x * bpp + 2]
+                mx = max(mx, r, g, bch)
+        prev = row
+    return mx
+
+
+def _sample_indices(n: int, budget: int) -> list[int]:
+    """Evenly spaced indices including first, mid, last. Cap at budget."""
+    if n <= 0:
+        return []
+    if n <= budget:
+        return list(range(n))
+    mid = n // 2
+    # Reserve mid; fill rest evenly.
+    want = max(3, budget)
+    step = max(1, (n - 1) / (want - 1))
+    idxs = sorted({int(round(i * step)) for i in range(want)} | {mid, 0, n - 1})
+    return [i for i in idxs if 0 <= i < n]
+
+
+def build_heroes_payload(
+    sequence_dir: Path,
+    *,
+    min_rgb: int = 8,
+    score_budget: int = 8,
+) -> dict:
+    """Pick mid + max-luma heroes from an MRQ sequence directory."""
+    root = Path(sequence_dir)
+    frames = sorted(root.rglob("*.png"))
+    if not frames:
+        frames = sorted(root.rglob("*.jpg"))
+    if not frames:
+        return {
+            "sequence_dir": str(root),
+            "frame_count": 0,
+            "scored_frames": 0,
+            "peak_rgb": -1,
+            "heroes": [],
+            "ok": False,
+            "error": f"no_frames:{root}",
+        }
+
+    mid_i = len(frames) // 2
+    sample_is = _sample_indices(len(frames), max(3, int(score_budget)))
+
+    scored: list[tuple[int, Path]] = []
+    for i in sample_is:
+        p = frames[i]
+        mx = (
+            png_max_rgb(p)
+            if p.suffix.lower() == ".png"
+            else max(0, p.stat().st_size // 1000)
+        )
+        scored.append((mx, p))
+
+    mid = frames[mid_i]
+    mid_rgb = next((s[0] for s in scored if s[1] == mid), -1)
+    if mid_rgb < 0 and mid.suffix.lower() == ".png":
+        mid_rgb = png_max_rgb(mid)
+        scored.append((mid_rgb, mid))
+    peak = max(scored, key=lambda t: t[0])
+    heroes = []
+    if mid_rgb >= min_rgb:
+        heroes.append({"role": "mid", "path": str(mid), "max_rgb": mid_rgb})
+    if peak[0] >= min_rgb and peak[1] != mid:
+        heroes.append({"role": "max_luma", "path": str(peak[1]), "max_rgb": peak[0]})
+    elif peak[0] >= min_rgb and not heroes:
+        heroes.append({"role": "max_luma", "path": str(peak[1]), "max_rgb": peak[0]})
+
+    return {
+        "sequence_dir": str(root),
+        "frame_count": len(frames),
+        "scored_frames": len(sample_is),
+        "peak_rgb": peak[0],
+        "heroes": heroes,
+        "ok": bool(heroes),
+        "error": None if heroes else f"still_pure_black:peak_rgb={peak[0]}",
+    }
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("sequence_dir")
+    ap.add_argument("--min-rgb", type=int, default=8)
+    ap.add_argument("--json-out", default="")
+    ap.add_argument(
+        "--score-budget",
+        type=int,
+        default=8,
+        help="Max frames to fully score for peak luma (mid always included).",
+    )
+    args = ap.parse_args()
+    payload = build_heroes_payload(
+        Path(args.sequence_dir),
+        min_rgb=args.min_rgb,
+        score_budget=args.score_budget,
+    )
+    if str(payload.get("error") or "").startswith("no_frames:"):
+        raise SystemExit(payload["error"])
+    text = json.dumps(payload, indent=2) + "\n"
+    if args.json_out:
+        Path(args.json_out).write_text(text, encoding="utf-8")
+    else:
+        print(text)
+
+
+if __name__ == "__main__":
+    main()
